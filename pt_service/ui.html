@@ -1,0 +1,2260 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Photo Library</title>
+    <style>
+      /* ============================================================
+     THEME
+     ============================================================ */
+      :root {
+        --bg: #0e1014;
+        --panel: #161a21;
+        --panel-2: #1c2129;
+        --panel-3: #232936;
+        --border: #262c37;
+        --text: #e7eaf0;
+        --muted: #8f9aad;
+        --accent: #4d8dff;
+        --accent-2: #3d7ff5;
+        --accent-soft: rgba(77, 141, 255, 0.14);
+        --danger: #ff5f5f;
+        --danger-soft: rgba(255, 95, 95, 0.12);
+        --ok: #35d29a;
+        --warn: #f5b742;
+        --radius: 12px;
+        --shadow: 0 14px 40px rgba(0, 0, 0, 0.5);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          Helvetica,
+          Arial,
+          sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        min-height: 100vh;
+        -webkit-font-smoothing: antialiased;
+      }
+      body.modal-open {
+        overflow: hidden;
+      }
+      h1,
+      h2,
+      h3,
+      p,
+      dl,
+      dd,
+      dt {
+        margin: 0;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .small {
+        font-size: 0.78rem;
+      }
+      .grow {
+        flex: 1 1 auto;
+      }
+      .spacer {
+        flex: 1 1 auto;
+      }
+
+      /* ============================================================
+     TOP BAR
+     ============================================================ */
+      .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 30;
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        padding: 12px 20px;
+        background: rgba(14, 16, 20, 0.86);
+        backdrop-filter: blur(10px);
+        border-bottom: 1px solid var(--border);
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .brand h1 {
+        font-size: 1rem;
+        font-weight: 650;
+        letter-spacing: 0.2px;
+      }
+      .logo {
+        display: grid;
+        place-items: center;
+        width: 34px;
+        height: 34px;
+        border-radius: 10px;
+        background: linear-gradient(140deg, var(--accent), #8b5cf6);
+        font-size: 1rem;
+        color: #fff;
+      }
+      .stats {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .stat {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        padding: 5px 12px;
+        border-radius: 9px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        min-width: 92px;
+      }
+      .stat-label {
+        font-size: 0.66rem;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: var(--muted);
+      }
+      .stat-value {
+        font-size: 0.9rem;
+        font-weight: 650;
+      }
+      .topbar-actions {
+        margin-left: auto;
+        display: flex;
+        gap: 8px;
+      }
+
+      /* ============================================================
+     LAYOUT
+     ============================================================ */
+      .wrap {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 18px 20px 60px;
+      }
+
+      /* ============================================================
+     CONTROLS
+     ============================================================ */
+      .input {
+        font: inherit;
+        font-size: 0.85rem;
+        color: var(--text);
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        padding: 0.52rem 0.7rem;
+        outline: none;
+        transition:
+          border-color 0.15s,
+          background 0.15s;
+        min-width: 0;
+      }
+      .input::placeholder {
+        color: #667085;
+      }
+      .input:focus {
+        border-color: var(--accent);
+        background: var(--panel-2);
+      }
+      textarea.input {
+        resize: vertical;
+        font-family: inherit;
+      }
+
+      .btn {
+        font: inherit;
+        font-size: 0.84rem;
+        font-weight: 500;
+        color: var(--text);
+        background: var(--panel-2);
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        padding: 0.52rem 0.85rem;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        transition:
+          background 0.15s,
+          border-color 0.15s,
+          transform 0.05s;
+        text-decoration: none;
+        white-space: nowrap;
+      }
+      .btn:hover {
+        background: var(--panel-3);
+      }
+      .btn:active {
+        transform: translateY(1px);
+      }
+      .btn:disabled {
+        opacity: 0.42;
+        cursor: not-allowed;
+        transform: none;
+      }
+      .btn.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      .btn.primary:hover {
+        background: var(--accent-2);
+      }
+      .btn.danger {
+        color: var(--danger);
+        border-color: rgba(255, 95, 95, 0.32);
+        background: transparent;
+      }
+      .btn.danger:hover {
+        background: var(--danger-soft);
+      }
+      .btn.ghost {
+        background: transparent;
+      }
+      .btn.ghost:hover {
+        background: var(--panel-2);
+      }
+
+      .toolbar {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 14px;
+        margin-bottom: 16px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+      }
+      .tb-row {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .inline-field {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.78rem;
+        color: var(--muted);
+      }
+      .inline-field .input {
+        padding: 0.42rem 0.55rem;
+        font-size: 0.82rem;
+      }
+
+      /* ============================================================
+     UPLOAD PANEL
+     ============================================================ */
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 16px;
+        margin-bottom: 16px;
+      }
+      .upload-grid {
+        display: grid;
+        grid-template-columns: minmax(240px, 1fr) minmax(240px, 1fr);
+        gap: 18px;
+      }
+      @media (max-width: 760px) {
+        .upload-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .dropzone {
+        position: relative;
+        display: grid;
+        place-items: center;
+        min-height: 190px;
+        padding: 18px;
+        border: 1.5px dashed #333b49;
+        border-radius: 11px;
+        background: #12161d;
+        cursor: pointer;
+        text-align: center;
+        transition:
+          border-color 0.15s,
+          background 0.15s;
+      }
+      .dropzone:hover,
+      .dropzone:focus-visible {
+        border-color: var(--accent);
+        background: var(--accent-soft);
+        outline: none;
+      }
+      .dropzone.dragover {
+        border-color: var(--accent);
+        background: var(--accent-soft);
+      }
+      .dz-icon {
+        font-size: 1.5rem;
+        margin-bottom: 6px;
+        color: var(--accent);
+      }
+      .dz-inner p {
+        font-size: 0.86rem;
+      }
+      .dz-inner .muted {
+        font-size: 0.74rem;
+        margin-top: 4px;
+      }
+      .dz-file {
+        position: absolute;
+        left: 10px;
+        right: 10px;
+        bottom: 10px;
+        padding: 6px 10px;
+        border-radius: 8px;
+        background: rgba(77, 141, 255, 0.16);
+        border: 1px solid rgba(77, 141, 255, 0.35);
+        font-size: 0.76rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .upload-fields {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+      .field-label {
+        font-size: 0.74rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+      }
+      .field-hint {
+        font-size: 0.72rem;
+        color: var(--muted);
+        line-height: 1.4;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      /* ============================================================
+     BULK BAR
+     ============================================================ */
+      .bulkbar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 14px;
+        margin-bottom: 14px;
+        background: var(--accent-soft);
+        border: 1px solid rgba(77, 141, 255, 0.34);
+        border-radius: var(--radius);
+        font-size: 0.85rem;
+        position: sticky;
+        top: 68px;
+        z-index: 20;
+        backdrop-filter: blur(8px);
+      }
+      .bulkbar strong {
+        font-weight: 650;
+      }
+
+      /* ============================================================
+     GALLERY
+     ============================================================ */
+      .gallery {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+        gap: 14px;
+        min-height: 120px;
+        transition: opacity 0.15s;
+      }
+      .gallery.loading {
+        opacity: 0.45;
+        pointer-events: none;
+      }
+
+      .card {
+        position: relative;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        overflow: hidden;
+        cursor: pointer;
+        transition:
+          border-color 0.15s,
+          transform 0.12s,
+          box-shadow 0.15s;
+        display: flex;
+        flex-direction: column;
+      }
+      .card:hover {
+        border-color: #3a4453;
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+      }
+      .card.selected {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 1px var(--accent) inset;
+      }
+
+      .card-check {
+        position: absolute;
+        top: 9px;
+        left: 9px;
+        z-index: 3;
+        width: 17px;
+        height: 17px;
+        cursor: pointer;
+        accent-color: var(--accent);
+        opacity: 0.6;
+        transition: opacity 0.15s;
+      }
+      .card:hover .card-check,
+      .card-check:checked {
+        opacity: 1;
+      }
+
+      .card-media {
+        aspect-ratio: 4 / 3;
+        background: #090b0f;
+        overflow: hidden;
+      }
+      .thumb {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+      .thumb-broken {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        width: 100%;
+        height: 100%;
+        background: repeating-linear-gradient(
+          45deg,
+          #12151b,
+          #12151b 10px,
+          #151922 10px,
+          #151922 20px
+        );
+        color: var(--muted);
+        font-size: 0.72rem;
+      }
+      .broken-glyph {
+        font-size: 1.3rem;
+        color: var(--warn);
+      }
+
+      .card-body {
+        padding: 10px 11px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .card-title {
+        font-size: 0.84rem;
+        font-weight: 600;
+        line-height: 1.3;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .card-sub {
+        font-size: 0.72rem;
+        color: var(--muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .card-tags {
+        display: flex;
+        gap: 4px;
+        flex-wrap: wrap;
+        margin-top: 3px;
+      }
+
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 0.7rem;
+        line-height: 1;
+        padding: 4px 7px;
+        border-radius: 999px;
+        background: var(--panel-3);
+        border: 1px solid var(--border);
+        color: #c6cddb;
+        white-space: nowrap;
+      }
+      .chip-sm {
+        font-size: 0.66rem;
+        padding: 3px 6px;
+      }
+      .chip-more {
+        color: var(--muted);
+      }
+      .chip-x {
+        appearance: none;
+        border: 0;
+        background: none;
+        color: var(--muted);
+        cursor: pointer;
+        font-size: 0.85rem;
+        line-height: 1;
+        padding: 0 0 0 1px;
+      }
+      .chip-x:hover {
+        color: var(--danger);
+      }
+
+      /* ============================================================
+     EMPTY / PAGER
+     ============================================================ */
+      .empty {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        padding: 70px 20px;
+        text-align: center;
+        border: 1px dashed var(--border);
+        border-radius: var(--radius);
+        color: var(--muted);
+      }
+      .empty .big {
+        font-size: 2rem;
+      }
+
+      .pager {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        padding: 22px 0 0;
+        font-size: 0.84rem;
+        color: var(--muted);
+      }
+      .pager span {
+        min-width: 130px;
+        text-align: center;
+      }
+
+      /* ============================================================
+     MODAL
+     ============================================================ */
+      .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 60;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 22px;
+        background: rgba(6, 8, 12, 0.76);
+        backdrop-filter: blur(4px);
+      }
+      .modal {
+        width: min(1040px, 100%);
+        max-height: 92vh;
+        display: flex;
+        flex-direction: column;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+      .modal-head {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 13px 16px;
+        border-bottom: 1px solid var(--border);
+        background: var(--panel-2);
+      }
+      .modal-head h2 {
+        font-size: 0.95rem;
+        font-weight: 650;
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .icon-btn {
+        appearance: none;
+        border: 0;
+        background: none;
+        color: var(--muted);
+        font-size: 1rem;
+        cursor: pointer;
+        padding: 4px 8px;
+        border-radius: 7px;
+      }
+      .icon-btn:hover {
+        background: var(--panel-3);
+        color: var(--text);
+      }
+
+      .modal-body {
+        display: grid;
+        grid-template-columns: 1.1fr 0.9fr;
+        overflow: hidden;
+        flex: 1;
+      }
+      @media (max-width: 820px) {
+        .modal-body {
+          grid-template-columns: 1fr;
+          overflow: auto;
+        }
+        .modal-media {
+          min-height: 220px;
+        }
+      }
+
+      .modal-media {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #090b0f;
+        min-height: 340px;
+        padding: 12px;
+        overflow: auto;
+      }
+      .modal-img {
+        max-width: 100%;
+        max-height: 62vh;
+        object-fit: contain;
+        display: block;
+        border-radius: 6px;
+      }
+      .broken-box {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        text-align: center;
+        padding: 24px;
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+      .broken-icon {
+        font-size: 2.2rem;
+        color: var(--warn);
+      }
+
+      .modal-info {
+        padding: 16px;
+        overflow: auto;
+        border-left: 1px solid var(--border);
+      }
+      @media (max-width: 820px) {
+        .modal-info {
+          border-left: 0;
+          border-top: 1px solid var(--border);
+        }
+      }
+
+      .meta {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+      }
+      .meta-row {
+        display: grid;
+        grid-template-columns: 112px 1fr;
+        gap: 10px;
+        padding: 7px 0;
+        border-bottom: 1px solid #1d222b;
+        font-size: 0.82rem;
+        align-items: start;
+      }
+      .meta-row:last-child {
+        border-bottom: 0;
+      }
+      .meta-row dt {
+        color: var(--muted);
+        font-size: 0.74rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        padding-top: 2px;
+      }
+      .meta-row dd {
+        margin: 0;
+        word-break: break-word;
+      }
+      .tag-list {
+        display: flex;
+        gap: 5px;
+        flex-wrap: wrap;
+      }
+
+      .modal-foot {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 16px;
+        border-top: 1px solid var(--border);
+        background: var(--panel-2);
+      }
+      .foot-left,
+      .foot-right {
+        display: flex;
+        gap: 8px;
+      }
+      .foot-right {
+        margin-left: auto;
+      }
+
+      /* ============================================================
+     FORMS IN MODAL
+     ============================================================ */
+      .edit-form {
+        display: flex;
+        flex-direction: column;
+        gap: 13px;
+      }
+      .edit-form .row {
+        margin-top: 4px;
+      }
+
+      .tag-editor {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        align-items: center;
+        padding: 7px;
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        background: var(--panel-2);
+        min-height: 42px;
+      }
+      .tag-editor:focus-within {
+        border-color: var(--accent);
+      }
+      .tag-editor .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+      }
+      .tag-input {
+        flex: 1 1 90px;
+        min-width: 90px;
+        border: 0;
+        background: none;
+        outline: none;
+        color: var(--text);
+        font: inherit;
+        font-size: 0.82rem;
+        padding: 3px 2px;
+      }
+      .checkbox-row {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .checkbox-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.84rem;
+        cursor: pointer;
+      }
+      .checkbox-label input {
+        accent-color: var(--accent);
+        width: 15px;
+        height: 15px;
+      }
+
+      /* ============================================================
+     TOASTS
+     ============================================================ */
+      #toasts {
+        position: fixed;
+        right: 18px;
+        bottom: 18px;
+        z-index: 90;
+        display: flex;
+        flex-direction: column;
+        gap: 9px;
+        max-width: min(380px, calc(100vw - 36px));
+      }
+      .toast {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 11px 12px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: var(--panel-2);
+        box-shadow: var(--shadow);
+        font-size: 0.82rem;
+        line-height: 1.45;
+        opacity: 0;
+        transform: translateY(8px);
+        transition:
+          opacity 0.18s,
+          transform 0.18s;
+      }
+      .toast.in {
+        opacity: 1;
+        transform: translateY(0);
+      }
+      .toast-msg {
+        flex: 1;
+      }
+      .toast-x {
+        appearance: none;
+        border: 0;
+        background: none;
+        color: var(--muted);
+        cursor: pointer;
+        font-size: 0.8rem;
+        padding: 0 2px;
+        line-height: 1.2;
+      }
+      .toast-x:hover {
+        color: var(--text);
+      }
+      .toast-error {
+        border-color: rgba(255, 95, 95, 0.4);
+        background: #1e1418;
+      }
+      .toast-success {
+        border-color: rgba(53, 210, 154, 0.4);
+        background: #101d18;
+      }
+      .toast-warn {
+        border-color: rgba(245, 183, 66, 0.4);
+        background: #1e1a10;
+      }
+      .toast-info {
+        border-color: rgba(77, 141, 255, 0.4);
+        background: #111823;
+      }
+
+      [hidden] {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- ================= TOP BAR ================= -->
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo">◈</span>
+        <div>
+          <h1>Photo Library</h1>
+          <p class="muted small">Photo API v2</p>
+        </div>
+      </div>
+
+      <div class="stats" id="stats"></div>
+
+      <div class="topbar-actions">
+        <a class="btn ghost" href="/camera">Camera</a>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <!-- ================= TOOLBAR ================= -->
+      <section class="toolbar">
+        <div class="tb-row">
+          <input
+            id="search"
+            class="input grow"
+            type="search"
+            placeholder="Search name, description, tags…"
+            autocomplete="off"
+          />
+          <input
+            id="ownerFilter"
+            class="input"
+            type="text"
+            placeholder="Owner (user_id)"
+            autocomplete="off"
+            style="width: 170px"
+          />
+          <input
+            id="tagFilter"
+            class="input"
+            type="text"
+            placeholder="Tag"
+            autocomplete="off"
+            style="width: 140px"
+          />
+        </div>
+        <div class="tb-row">
+          <label class="inline-field"
+            >Sort
+            <select id="sortBy" class="input">
+              <option value="timestamp">Date</option>
+              <option value="display_name">Name</option>
+              <option value="size_bytes">Size</option>
+              <option value="id">ID</option>
+            </select>
+          </label>
+          <button
+            id="orderToggle"
+            class="btn"
+            type="button"
+            title="Toggle sort direction"
+          >
+            ↓ Desc
+          </button>
+
+          <label class="inline-field"
+            >Per page
+            <select id="pageSize" class="input">
+              <option value="25">25</option>
+              <option value="50" selected>50</option>
+              <option value="100">100</option>
+              <option value="200">200</option>
+            </select>
+          </label>
+
+          <span class="spacer"></span>
+          <button id="refreshBtn" class="btn" type="button">Refresh</button>
+          <button id="uploadToggle" class="btn primary" type="button">
+            ＋ Upload
+          </button>
+        </div>
+      </section>
+
+      <!-- ================= UPLOAD PANEL ================= -->
+      <section class="panel" id="uploadPanel" hidden>
+        <form id="uploadForm" class="upload-grid">
+          <div
+            class="dropzone"
+            id="dropzone"
+            tabindex="0"
+            role="button"
+            aria-label="Choose an image to upload"
+          >
+            <input
+              type="file"
+              id="fileInput"
+              hidden
+              accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.heic"
+            />
+            <div class="dz-inner">
+              <div class="dz-icon">⬆</div>
+              <p><strong>Drop an image</strong> or click to browse</p>
+              <p class="muted">
+                jpg · jpeg · png · gif · webp · bmp · heic — max 15 MB
+              </p>
+            </div>
+            <div class="dz-file" id="dzFile" hidden></div>
+          </div>
+
+          <div class="upload-fields">
+            <div class="field">
+              <label class="field-label" for="upUser">Owner (user_id) *</label>
+              <input
+                id="upUser"
+                class="input"
+                placeholder="alice"
+                autocomplete="off"
+                required
+              />
+            </div>
+            <div class="field">
+              <label class="field-label" for="upName">Display name</label>
+              <input
+                id="upName"
+                class="input"
+                placeholder="Beach sunset"
+                autocomplete="off"
+              />
+            </div>
+            <div class="field">
+              <label class="field-label" for="upDesc">Description</label>
+              <textarea
+                id="upDesc"
+                class="input"
+                rows="2"
+                placeholder="Optional"
+              ></textarea>
+            </div>
+            <div class="field">
+              <label class="field-label" for="upTags"
+                >Tags
+                <span class="muted">(comma separated on upload)</span></label
+              >
+              <input
+                id="upTags"
+                class="input"
+                placeholder="beach,sunset"
+                autocomplete="off"
+              />
+            </div>
+            <div class="row">
+              <button class="btn primary" type="submit" id="upSubmit">
+                Upload
+              </button>
+              <button class="btn ghost" type="button" id="upCancel">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </form>
+      </section>
+
+      <!-- ================= BULK BAR ================= -->
+      <div class="bulkbar" id="bulkbar" hidden>
+        <strong id="bulkCount">0 selected</strong>
+        <span class="spacer"></span>
+        <button class="btn ghost" id="selectAllBtn" type="button">
+          Select page
+        </button>
+        <button class="btn ghost" id="clearSelBtn" type="button">Clear</button>
+        <button class="btn danger" id="bulkDeleteBtn" type="button">
+          Delete selected
+        </button>
+      </div>
+
+      <!-- ================= GALLERY ================= -->
+      <section class="gallery" id="gallery" aria-live="polite"></section>
+
+      <div class="empty" id="emptyState" hidden>
+        <div class="big">🗂</div>
+        <p><strong>No photos found</strong></p>
+        <p class="small">Try clearing the filters, or upload something new.</p>
+        <button class="btn" id="clearFiltersBtn" type="button">
+          Clear filters
+        </button>
+      </div>
+
+      <div class="pager">
+        <button class="btn" id="prevBtn" type="button">← Prev</button>
+        <span id="pageInfo">—</span>
+        <button class="btn" id="nextBtn" type="button">Next →</button>
+      </div>
+    </main>
+
+    <!-- ================= DETAIL MODAL ================= -->
+    <div class="modal-backdrop" id="backdrop" hidden>
+      <div
+        class="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modalTitle"
+      >
+        <header class="modal-head">
+          <h2 id="modalTitle">Photo</h2>
+          <button
+            class="icon-btn"
+            id="modalClose"
+            type="button"
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        </header>
+        <div class="modal-body">
+          <div class="modal-media" id="modalMedia"></div>
+          <div class="modal-info" id="modalInfo"></div>
+        </div>
+        <footer class="modal-foot" id="modalFoot"></footer>
+      </div>
+    </div>
+
+    <div id="toasts" aria-live="polite" aria-atomic="false"></div>
+
+    <script>
+      (() => {
+        "use strict";
+
+        /* ============================================================
+     CONFIG
+     ============================================================ */
+        const API_BASE = ""; // '' = same origin. e.g. 'http://localhost:8000'
+        const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
+        const ALLOWED_EXT = [
+          "jpg",
+          "jpeg",
+          "png",
+          "gif",
+          "webp",
+          "bmp",
+          "heic",
+        ];
+
+        /* ============================================================
+     DOM HELPERS
+     ============================================================ */
+        const $ = (sel, root = document) => root.querySelector(sel);
+        const $$ = (sel, root = document) =>
+          Array.from(root.querySelectorAll(sel));
+
+        function el(tag, cls, text) {
+          const node = document.createElement(tag);
+          if (cls) node.className = cls;
+          if (text != null) node.textContent = text;
+          return node;
+        }
+
+        function btn(label, cls, onClick) {
+          const b = el("button", cls, label);
+          b.type = "button";
+          b.addEventListener("click", onClick);
+          return b;
+        }
+
+        let fieldUid = 0;
+        function field(labelText, control, hint) {
+          const wrap = el("div", "field");
+          if (labelText) {
+            if (!control.id) control.id = "f" + ++fieldUid;
+            const lab = el("label", "field-label", labelText);
+            lab.htmlFor = control.id;
+            wrap.appendChild(lab);
+          }
+          wrap.appendChild(control);
+          if (hint) wrap.appendChild(el("small", "field-hint", hint));
+          return wrap;
+        }
+
+        function debounce(fn, ms = 320) {
+          let t;
+          return (...args) => {
+            clearTimeout(t);
+            t = setTimeout(() => fn(...args), ms);
+          };
+        }
+
+        /* ============================================================
+     STATE
+     ============================================================ */
+        const state = {
+          items: [],
+          total: 0,
+          limit: 50,
+          offset: 0,
+          q: "",
+          user_id: "",
+          tag: "",
+          sort_by: "timestamp",
+          order: "desc",
+          selected: new Set(),
+          current: null,
+          busy: false,
+        };
+
+        /* ============================================================
+     API LAYER
+     ============================================================ */
+        function absUrl(path) {
+          if (!path) return path;
+          if (/^https?:\/\//i.test(path)) return path;
+          return API_BASE + path;
+        }
+
+        /**
+         * Single choke point for every request.
+         * Non-2xx -> Error with `.status` and the backend's `detail` as the message.
+         */
+        async function api(path, options = {}) {
+          let res;
+          try {
+            res = await fetch(absUrl(path), options);
+          } catch (netErr) {
+            const err = new Error("Network error — is the backend reachable?");
+            err.status = 0;
+            throw err;
+          }
+
+          if (!res.ok) {
+            let detail = "Request failed (" + res.status + ")";
+            try {
+              const data = await res.json();
+              if (data && data.detail != null) {
+                detail =
+                  typeof data.detail === "string"
+                    ? data.detail
+                    : JSON.stringify(data.detail);
+              }
+            } catch (_) {
+              /* body wasn't JSON — keep the generic message */
+            }
+
+            const err = new Error(detail);
+            err.status = res.status;
+            throw err;
+          }
+
+          if (res.status === 204) return null;
+          const ct = res.headers.get("content-type") || "";
+          return ct.includes("application/json") ? res.json() : null;
+        }
+
+        /**
+         * Cache-busting image URL.
+         * The file endpoint is cached for an hour and the URL is ID-based,
+         * so it never changes when the file is renamed on disk.
+         * `?v=updated_at` forces a fresh fetch after every mutation.
+         */
+        function fileUrl(photo) {
+          const base = absUrl(photo.url || "/photos/" + photo.id + "/file");
+          const v = encodeURIComponent(
+            photo.updated_at || photo.timestamp || "",
+          );
+          return base + (base.includes("?") ? "&" : "?") + "v=" + v;
+        }
+
+        /* ============================================================
+     TOASTS
+     ============================================================ */
+        function toast(message, type = "error", ms = 4500) {
+          const box = $("#toasts");
+          const t = el("div", "toast toast-" + type);
+          t.appendChild(el("span", "toast-msg", message));
+          const x = btn("✕", "toast-x", () => dismiss());
+          t.appendChild(x);
+          box.appendChild(t);
+
+          requestAnimationFrame(() => t.classList.add("in"));
+          const timer = setTimeout(dismiss, ms);
+
+          function dismiss() {
+            clearTimeout(timer);
+            t.classList.remove("in");
+            setTimeout(() => t.remove(), 200);
+          }
+        }
+
+        /** `missing_files` is non-fatal — log it, mention it quietly, never alarm the user. */
+        function noteMissing(missing) {
+          if (!Array.isArray(missing) || missing.length === 0) return;
+          console.warn(
+            "[photos] records deleted, but these files were already gone from disk:",
+            missing,
+          );
+          toast(
+            missing.length +
+              " file(s) were already missing on disk — record removed anyway.",
+            "info",
+            5000,
+          );
+        }
+
+        /* ============================================================
+     FORMATTERS
+     ============================================================ */
+        function formatBytes(n) {
+          if (n == null || isNaN(n)) return "—";
+          if (n < 1024) return n + " B";
+          const units = ["KB", "MB", "GB", "TB"];
+          let v = n / 1024,
+            i = 0;
+          while (v >= 1024 && i < units.length - 1) {
+            v /= 1024;
+            i++;
+          }
+          return v.toFixed(v < 10 ? 1 : 0) + " " + units[i];
+        }
+
+        function formatDate(s) {
+          if (!s) return "—";
+          const d = new Date(s);
+          if (isNaN(d.getTime())) return s;
+          return d.toLocaleString(undefined, {
+            year: "numeric",
+            month: "short",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+        }
+
+        /* ============================================================
+     STATS
+     ============================================================ */
+        async function loadStats() {
+          try {
+            const s = await api("/stats");
+            const box = $("#stats");
+            box.innerHTML = "";
+            const cards = [
+              ["Photos", (s.total_photos ?? 0).toLocaleString()],
+              ["Library size", (s.total_megabytes ?? 0).toFixed(1) + " MB"],
+              ["Owners", (s.distinct_users ?? 0).toLocaleString()],
+            ];
+            for (const [label, value] of cards) {
+              const c = el("div", "stat");
+              c.appendChild(el("span", "stat-label", label));
+              c.appendChild(el("span", "stat-value", value));
+              box.appendChild(c);
+            }
+          } catch (err) {
+            // Stats are decorative — never block the app on them.
+            console.warn("[photos] /stats failed:", err.message);
+          }
+        }
+
+        /* ============================================================
+     LIST / SEARCH
+     ============================================================ */
+        function setLoading(on) {
+          state.busy = on;
+          $("#gallery").classList.toggle("loading", on);
+        }
+
+        async function loadPhotos() {
+          const p = new URLSearchParams();
+          if (state.q) p.set("q", state.q);
+          if (state.user_id) p.set("user_id", state.user_id);
+          if (state.tag) p.set("tag", state.tag);
+          p.set("limit", state.limit);
+          p.set("offset", state.offset);
+          p.set("sort_by", state.sort_by);
+          p.set("order", state.order);
+
+          setLoading(true);
+          try {
+            const data = await api("/photos?" + p.toString());
+            const total = data.total ?? (data.items || []).length;
+
+            // If a delete left us past the end of the list, step back one page.
+            if (state.offset > 0 && state.offset >= total) {
+              state.offset =
+                Math.max(0, Math.ceil(total / state.limit) - 1) * state.limit;
+              return loadPhotos(); // total === 0 => offset === 0 => terminates
+            }
+
+            state.items = data.items || [];
+            state.total = total;
+
+            renderGallery();
+            renderPager();
+          } catch (err) {
+            state.items = [];
+            state.total = 0;
+            renderGallery();
+            renderPager();
+            toast(err.message);
+          } finally {
+            setLoading(false);
+          }
+        }
+
+        function resetAndLoad() {
+          state.offset = 0;
+          loadPhotos();
+        }
+
+        /* ============================================================
+     GALLERY RENDER
+     ============================================================ */
+        function renderGallery() {
+          const gallery = $("#gallery");
+          gallery.innerHTML = "";
+
+          if (!state.items.length) {
+            $("#emptyState").hidden = false;
+            return;
+          }
+          $("#emptyState").hidden = true;
+
+          const frag = document.createDocumentFragment();
+          for (const photo of state.items) frag.appendChild(photoTile(photo));
+          gallery.appendChild(frag);
+          syncCheckboxes();
+        }
+
+        function photoTile(photo) {
+          const card = el("article", "card");
+          card.dataset.id = photo.id;
+          if (state.selected.has(photo.id)) card.classList.add("selected");
+
+          // --- selection checkbox ---
+          const check = document.createElement("input");
+          check.type = "checkbox";
+          check.className = "card-check";
+          check.title = "Select";
+          check.checked = state.selected.has(photo.id);
+          check.addEventListener("click", (e) => e.stopPropagation());
+          check.addEventListener("change", () =>
+            setSelected(photo.id, check.checked),
+          );
+
+          // --- thumbnail ---
+          const media = el("div", "card-media");
+          const img = new Image();
+          img.className = "thumb";
+          img.loading = "lazy";
+          img.decoding = "async";
+          img.alt = photo.display_name || photo.original_filename || "";
+          img.src = fileUrl(photo);
+          img.addEventListener("error", () => {
+            // Covers 410 Gone and any other load failure: broken-image placeholder.
+            const ph = el("div", "thumb thumb-broken");
+            ph.appendChild(el("span", "broken-glyph", "⚠"));
+            ph.appendChild(el("small", null, "File unavailable"));
+            img.replaceWith(ph);
+          });
+          media.appendChild(img);
+
+          // --- caption ---
+          const body = el("div", "card-body");
+          body.appendChild(
+            el(
+              "h3",
+              "card-title",
+              photo.display_name || photo.original_filename || "#" + photo.id,
+            ),
+          );
+          body.appendChild(
+            el(
+              "p",
+              "card-sub",
+              (photo.user_id ?? "—") + " · " + formatBytes(photo.size_bytes),
+            ),
+          );
+
+          if (Array.isArray(photo.tags) && photo.tags.length) {
+            const tags = el("div", "card-tags");
+            photo.tags
+              .slice(0, 3)
+              .forEach((t) => tags.appendChild(el("span", "chip chip-sm", t)));
+            if (photo.tags.length > 3) {
+              tags.appendChild(
+                el(
+                  "span",
+                  "chip chip-sm chip-more",
+                  "+" + (photo.tags.length - 3),
+                ),
+              );
+            }
+            body.appendChild(tags);
+          }
+
+          card.append(check, media, body);
+          card.addEventListener("click", () => openDetail(photo.id));
+          return card;
+        }
+
+        function syncCheckboxes() {
+          $$("#gallery .card").forEach((card) => {
+            const id = Number(card.dataset.id);
+            const cb = $(".card-check", card);
+            if (cb) cb.checked = state.selected.has(id);
+            card.classList.toggle("selected", state.selected.has(id));
+          });
+        }
+
+        /* ============================================================
+     SELECTION / BULK
+     ============================================================ */
+        function setSelected(id, on) {
+          if (on) state.selected.add(id);
+          else state.selected.delete(id);
+          renderBulkBar();
+          syncCheckboxes();
+        }
+
+        function renderBulkBar() {
+          const n = state.selected.size;
+          $("#bulkbar").hidden = n === 0;
+          $("#bulkCount").textContent = n + " selected";
+        }
+
+        async function bulkDelete() {
+          const ids = Array.from(state.selected);
+          if (!ids.length) return;
+          if (
+            !confirm(
+              "Delete " + ids.length + " photo(s)? This cannot be undone.",
+            )
+          )
+            return;
+
+          try {
+            // POST, not DELETE — DELETE with a body is flaky across clients.
+            const res = await api("/photos/bulk-delete", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ ids }),
+            });
+            noteMissing(res && res.missing_files);
+            toast(
+              "Deleted " + ((res && res.deleted) ?? ids.length) + " photo(s)",
+              "success",
+            );
+            state.selected.clear();
+            renderBulkBar();
+            await Promise.all([loadPhotos(), loadStats()]);
+          } catch (err) {
+            toast(err.message);
+          }
+        }
+
+        /* ============================================================
+     PAGER
+     ============================================================ */
+        function renderPager() {
+          const total = state.total;
+          const from = total === 0 ? 0 : state.offset + 1;
+          const to = Math.min(state.offset + state.limit, total);
+
+          $("#pageInfo").textContent =
+            total === 0
+              ? "No results"
+              : from.toLocaleString() +
+                "–" +
+                to.toLocaleString() +
+                " of " +
+                total.toLocaleString();
+
+          $("#prevBtn").disabled = state.offset <= 0 || state.busy;
+          $("#nextBtn").disabled =
+            state.offset + state.limit >= total || state.busy;
+        }
+
+        /* ============================================================
+     DETAIL MODAL
+     ============================================================ */
+        function openModal() {
+          $("#backdrop").hidden = false;
+          document.body.classList.add("modal-open");
+        }
+
+        function closeModal() {
+          $("#backdrop").hidden = true;
+          document.body.classList.remove("modal-open");
+          state.current = null;
+        }
+
+        async function openDetail(id) {
+          try {
+            const photo = await api("/photos/" + id);
+            state.current = photo;
+            renderDetail(photo);
+            openModal();
+          } catch (err) {
+            if (err.status === 410) {
+              // Record exists, file is gone.
+              toast(
+                "That photo's file is missing from disk (410 Gone).",
+                "warn",
+              );
+              if (
+                confirm(
+                  "The record exists but its file is gone. Remove it from the library?",
+                )
+              ) {
+                deletePhoto(id, { skipConfirm: true });
+              }
+            } else {
+              toast(err.message);
+            }
+          }
+        }
+
+        function renderDetail(photo) {
+          $("#modalTitle").textContent =
+            photo.display_name ||
+            photo.original_filename ||
+            "Photo #" + photo.id;
+
+          // ---- media ----
+          const media = $("#modalMedia");
+          media.innerHTML = "";
+          const img = new Image();
+          img.className = "modal-img";
+          img.alt = photo.display_name || "";
+          img.src = fileUrl(photo);
+          img.addEventListener("error", () => {
+            media.innerHTML = "";
+            const box = el("div", "broken-box");
+            box.appendChild(el("div", "broken-icon", "⚠"));
+            box.appendChild(el("p", null, "This file is missing from disk."));
+            box.appendChild(
+              el(
+                "p",
+                "small muted",
+                "The record still exists, but the image can't be loaded.",
+              ),
+            );
+            box.appendChild(
+              btn("Remove from library", "btn danger", () =>
+                deletePhoto(photo.id, { skipConfirm: false }),
+              ),
+            );
+            media.appendChild(box);
+          });
+          media.appendChild(img);
+
+          renderMetaTable(photo);
+          renderModalActions(photo);
+        }
+
+        function renderMetaTable(photo) {
+          const info = $("#modalInfo");
+          info.innerHTML = "";
+
+          const dl = el("dl", "meta");
+          const rows = [
+            ["ID", "#" + photo.id],
+            ["Owner", photo.user_id],
+            ["Display name", photo.display_name],
+            ["Description", photo.description || "—"],
+            ["Type", photo.content_type],
+            [
+              "Size",
+              formatBytes(photo.size_bytes) +
+                "  (" +
+                (photo.size_bytes ?? 0).toLocaleString() +
+                " bytes)",
+            ],
+            ["Filename", photo.filename],
+            ["Original name", photo.original_filename],
+            ["Uploaded", formatDate(photo.timestamp)],
+            ["Updated", formatDate(photo.updated_at)],
+          ];
+
+          for (const [label, value] of rows) {
+            const row = el("div", "meta-row");
+            row.appendChild(el("dt", null, label));
+            row.appendChild(
+              el("dd", null, value == null ? "—" : String(value)),
+            );
+            dl.appendChild(row);
+          }
+
+          // Tags row (chips, not a string)
+          const tagRow = el("div", "meta-row");
+          tagRow.appendChild(el("dt", null, "Tags"));
+          const dd = el("dd");
+          if (Array.isArray(photo.tags) && photo.tags.length) {
+            const list = el("div", "tag-list");
+            photo.tags.forEach((t) => list.appendChild(el("span", "chip", t)));
+            dd.appendChild(list);
+          } else {
+            dd.textContent = "—";
+            dd.className = "muted";
+          }
+          tagRow.appendChild(dd);
+          dl.appendChild(tagRow);
+
+          info.appendChild(dl);
+        }
+
+        function renderModalActions(photo) {
+          const foot = $("#modalFoot");
+          foot.innerHTML = "";
+
+          const left = el("div", "foot-left");
+          left.appendChild(
+            btn("Delete", "btn danger", () => deletePhoto(photo.id)),
+          );
+
+          const right = el("div", "foot-right");
+          right.appendChild(btn("Download", "btn", () => downloadPhoto(photo)));
+          right.appendChild(
+            btn("Rename…", "btn", () => renderRenameForm(photo)),
+          );
+          right.appendChild(
+            btn("Edit", "btn primary", () => renderEditForm(photo)),
+          );
+
+          foot.append(left, right);
+        }
+
+        function downloadPhoto(photo) {
+          const a = document.createElement("a");
+          a.href = absUrl(
+            photo.download_url || "/photos/" + photo.id + "/download",
+          );
+          a.rel = "noopener";
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        }
+
+        /* ============================================================
+     EDIT FORM  ->  PATCH /photos/{id}
+     ============================================================ */
+        function diffPhoto(photo, values) {
+          const body = {};
+          const origName = photo.display_name ?? "";
+          const origDesc = photo.description ?? "";
+          const origTags = photo.tags ?? [];
+          const origUser = photo.user_id ?? "";
+
+          if (values.display_name !== origName)
+            body.display_name = values.display_name;
+          if (values.description !== origDesc)
+            body.description = values.description; // "" clears -> null
+          if (JSON.stringify(values.tags) !== JSON.stringify(origTags))
+            body.tags = values.tags;
+          if (values.user_id !== origUser) body.user_id = values.user_id;
+
+          return body;
+        }
+
+        function renderEditForm(photo) {
+          const info = $("#modalInfo");
+          $("#modalFoot").innerHTML = "";
+          info.innerHTML = "";
+
+          const form = el("form", "edit-form");
+
+          const nameInput = el("input", "input");
+          nameInput.type = "text";
+          nameInput.value = photo.display_name ?? "";
+
+          const descInput = el("textarea", "input");
+          descInput.rows = 3;
+          descInput.value = photo.description ?? "";
+
+          const userInput = el("input", "input");
+          userInput.type = "text";
+          userInput.value = photo.user_id ?? "";
+
+          const tags = tagEditor(photo.tags ?? []);
+
+          form.append(
+            field("Display name", nameInput, "Cannot be empty."),
+            field(
+              "Description",
+              descInput,
+              "Clear the field to remove the description.",
+            ),
+            field(
+              "Owner (user_id)",
+              userInput,
+              "Reassigns the photo to another user.",
+            ),
+            field(
+              "Tags",
+              tags.element,
+              "Enter or comma to add. Click × to remove.",
+            ),
+          );
+
+          const row = el("div", "row");
+          const save = btn("Save changes", "btn primary", () => {});
+          save.type = "submit";
+          row.append(
+            save,
+            btn("Cancel", "btn ghost", () => renderDetail(state.current)),
+          );
+          form.appendChild(row);
+
+          form.addEventListener("submit", async (e) => {
+            e.preventDefault();
+
+            const values = {
+              display_name: nameInput.value.trim(),
+              description: descInput.value,
+              tags: tags.getTags(),
+              user_id: userInput.value.trim(),
+            };
+
+            // Backend returns 422 for an empty display_name — catch it here first.
+            if (!values.display_name) {
+              toast("Display name cannot be empty.", "warn");
+              nameInput.focus();
+              return;
+            }
+            if (!values.user_id) {
+              toast("Owner (user_id) cannot be empty.", "warn");
+              userInput.focus();
+              return;
+            }
+
+            const body = diffPhoto(photo, values);
+            if (!Object.keys(body).length) {
+              toast("No changes to save.", "info");
+              return;
+            }
+
+            save.disabled = true;
+            save.textContent = "Saving…";
+            try {
+              const updated = await api("/photos/" + photo.id, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(body),
+              });
+              state.current = updated;
+              toast("Saved.", "success");
+              renderDetail(updated);
+              await loadPhotos();
+            } catch (err) {
+              toast(err.message);
+            } finally {
+              save.disabled = false;
+              save.textContent = "Save changes";
+            }
+          });
+
+          info.appendChild(form);
+          nameInput.focus();
+        }
+
+        /* ============================================================
+     RENAME FORM  ->  POST /photos/{id}/rename
+     ============================================================ */
+        function renderRenameForm(photo) {
+          const info = $("#modalInfo");
+          $("#modalFoot").innerHTML = "";
+          info.innerHTML = "";
+
+          const form = el("form", "edit-form");
+
+          const nameInput = el("input", "input");
+          nameInput.type = "text";
+          nameInput.value = photo.display_name ?? "";
+
+          const chk = document.createElement("input");
+          chk.type = "checkbox";
+          chk.id = "renameFileChk";
+          chk.checked = false; // default OFF — power-user opt-in
+
+          const chkWrap = el("div", "checkbox-row");
+          const chkLabel = el("label", "checkbox-label");
+          chkLabel.htmlFor = "renameFileChk";
+          chkLabel.append(
+            chk,
+            el("span", null, "Also rename the physical file on disk"),
+          );
+          chkWrap.append(
+            chkLabel,
+            el(
+              "small",
+              "field-hint",
+              "Off by default. The image URL is ID-based so it never changes — the browser may serve a cached copy, which is why the UI appends ?v=updated_at.",
+            ),
+          );
+
+          form.append(field("Display name", nameInput), chkWrap);
+
+          const row = el("div", "row");
+          const save = btn("Rename", "btn primary", () => {});
+          save.type = "submit";
+          row.append(
+            save,
+            btn("Cancel", "btn ghost", () => renderDetail(state.current)),
+          );
+          form.appendChild(row);
+
+          form.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const newName = nameInput.value.trim();
+            if (!newName) {
+              toast("Display name cannot be empty.", "warn");
+              nameInput.focus();
+              return;
+            }
+
+            save.disabled = true;
+            save.textContent = "Renaming…";
+            try {
+              const updated = await api("/photos/" + photo.id + "/rename", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  display_name: newName,
+                  rename_file: chk.checked,
+                }),
+              });
+              state.current = updated;
+              toast("Renamed.", "success");
+              renderDetail(updated); // re-renders <img> with the new ?v=
+              await loadPhotos();
+            } catch (err) {
+              toast(err.message);
+            } finally {
+              save.disabled = false;
+              save.textContent = "Rename";
+            }
+          });
+
+          info.appendChild(form);
+          nameInput.focus();
+          nameInput.select();
+        }
+
+        /* ============================================================
+     TAG CHIP EDITOR
+     ============================================================ */
+        function tagEditor(initial) {
+          const tags = Array.isArray(initial) ? initial.slice() : [];
+
+          const box = el("div", "tag-editor");
+          const chips = el("div", "chips");
+          const input = el("input", "tag-input");
+          input.type = "text";
+          input.placeholder = "Add tag + Enter";
+          input.autocomplete = "off";
+
+          function render() {
+            chips.innerHTML = "";
+            tags.forEach((t, i) => {
+              const chip = el("span", "chip", t);
+              const x = btn("×", "chip-x", () => {
+                tags.splice(i, 1);
+                render();
+              });
+              chip.appendChild(x);
+              chips.appendChild(chip);
+            });
+          }
+
+          function commit() {
+            const raw = input.value.trim();
+            if (!raw) return;
+            raw
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean)
+              .forEach((t) => {
+                if (!tags.includes(t)) tags.push(t);
+              });
+            input.value = "";
+            render();
+          }
+
+          input.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" || e.key === ",") {
+              e.preventDefault();
+              commit();
+            } else if (e.key === "Backspace" && !input.value && tags.length) {
+              tags.pop();
+              render();
+            }
+          });
+          input.addEventListener("blur", commit);
+
+          render();
+          box.append(chips, input);
+
+          return {
+            element: box,
+            getTags() {
+              commit();
+              return tags.slice();
+            },
+          };
+        }
+
+        /* ============================================================
+     DELETE
+     ============================================================ */
+        async function deletePhoto(id, { skipConfirm = false } = {}) {
+          if (
+            !skipConfirm &&
+            !confirm("Delete this photo? This cannot be undone.")
+          )
+            return;
+
+          try {
+            const res = await api("/photos/" + id, { method: "DELETE" });
+            noteMissing(res && res.missing_files);
+            toast("Photo deleted.", "success");
+
+            state.selected.delete(id);
+            renderBulkBar();
+
+            if (state.current && state.current.id === id) closeModal();
+
+            await Promise.all([loadPhotos(), loadStats()]);
+          } catch (err) {
+            toast(err.message);
+          }
+        }
+
+        /* ============================================================
+     UPLOAD
+     ============================================================ */
+        function setPickedFile(file) {
+          const dzFile = $("#dzFile");
+          if (!file) {
+            dzFile.hidden = true;
+            dzFile.textContent = "";
+            return;
+          }
+          dzFile.hidden = false;
+          dzFile.textContent = file.name + " · " + formatBytes(file.size);
+        }
+
+        async function submitUpload(e) {
+          e.preventDefault();
+
+          const file = $("#fileInput").files[0];
+          const userId = $("#upUser").value.trim();
+
+          if (!userId) {
+            toast("Owner (user_id) is required.", "warn");
+            $("#upUser").focus();
+            return;
+          }
+          if (!file) {
+            toast("Pick an image first.", "warn");
+            return;
+          }
+
+          const ext = (file.name.split(".").pop() || "").toLowerCase();
+          if (!ALLOWED_EXT.includes(ext)) {
+            toast(
+              'Unsupported file type ".' +
+                ext +
+                '". Allowed: ' +
+                ALLOWED_EXT.join(", "),
+              "warn",
+            );
+            return;
+          }
+          if (file.size > MAX_UPLOAD_BYTES) {
+            toast(
+              "File is " + formatBytes(file.size) + " — the limit is 15 MB.",
+              "warn",
+            );
+            return;
+          }
+
+          const fd = new FormData();
+          fd.append("user_id", userId);
+          fd.append("file", file, file.name);
+
+          // NOTE: on upload, tags is a COMMA-SEPARATED STRING, not an array.
+          const name = $("#upName").value.trim();
+          const desc = $("#upDesc").value.trim();
+          const tags = $("#upTags").value.trim();
+          if (name) fd.append("display_name", name);
+          if (desc) fd.append("description", desc);
+          if (tags) fd.append("tags", tags);
+
+          const submit = $("#upSubmit");
+          submit.disabled = true;
+          submit.textContent = "Uploading…";
+
+          try {
+            // No Content-Type header — the browser sets the multipart boundary.
+            const photo = await api("/upload", { method: "POST", body: fd });
+            toast(
+              "Uploaded “" +
+                (photo.display_name || photo.original_filename) +
+                "”.",
+              "success",
+            );
+
+            $("#uploadForm").reset();
+            setPickedFile(null);
+            state.offset = 0;
+            await Promise.all([loadPhotos(), loadStats()]);
+          } catch (err) {
+            toast(err.message); // surfaces 415 / 413 / 400 details directly
+          } finally {
+            submit.disabled = false;
+            submit.textContent = "Upload";
+          }
+        }
+
+        /* ============================================================
+     EVENT WIRING
+     ============================================================ */
+        function wireEvents() {
+          /* ---- filters ---- */
+          $("#search").addEventListener(
+            "input",
+            debounce((e) => {
+              state.q = e.target.value.trim();
+              resetAndLoad();
+            }),
+          );
+
+          $("#ownerFilter").addEventListener(
+            "input",
+            debounce((e) => {
+              state.user_id = e.target.value.trim();
+              resetAndLoad();
+            }),
+          );
+
+          $("#tagFilter").addEventListener(
+            "input",
+            debounce((e) => {
+              state.tag = e.target.value.trim();
+              resetAndLoad();
+            }),
+          );
+
+          $("#sortBy").addEventListener("change", (e) => {
+            state.sort_by = e.target.value;
+            resetAndLoad();
+          });
+
+          $("#orderToggle").addEventListener("click", () => {
+            state.order = state.order === "desc" ? "asc" : "desc";
+            $("#orderToggle").textContent =
+              state.order === "desc" ? "↓ Desc" : "↑ Asc";
+            resetAndLoad();
+          });
+
+          $("#pageSize").addEventListener("change", (e) => {
+            state.limit = Number(e.target.value);
+            resetAndLoad();
+          });
+
+          $("#refreshBtn").addEventListener("click", () => {
+            loadPhotos();
+            loadStats();
+          });
+
+          $("#clearFiltersBtn").addEventListener("click", clearFilters);
+
+          function clearFilters() {
+            state.q = "";
+            state.user_id = "";
+            state.tag = "";
+            $("#search").value = "";
+            $("#ownerFilter").value = "";
+            $("#tagFilter").value = "";
+            resetAndLoad();
+          }
+
+          /* ---- paging ---- */
+          $("#prevBtn").addEventListener("click", () => {
+            state.offset = Math.max(0, state.offset - state.limit);
+            loadPhotos();
+          });
+          $("#nextBtn").addEventListener("click", () => {
+            if (state.offset + state.limit >= state.total) return;
+            state.offset += state.limit;
+            loadPhotos();
+          });
+
+          /* ---- bulk ---- */
+          $("#selectAllBtn").addEventListener("click", () => {
+            const allOnPage =
+              state.items.length > 0 &&
+              state.items.every((p) => state.selected.has(p.id));
+            state.items.forEach((p) => {
+              if (allOnPage) state.selected.delete(p.id);
+              else state.selected.add(p.id);
+            });
+            renderBulkBar();
+            syncCheckboxes();
+          });
+
+          $("#clearSelBtn").addEventListener("click", () => {
+            state.selected.clear();
+            renderBulkBar();
+            syncCheckboxes();
+          });
+
+          $("#bulkDeleteBtn").addEventListener("click", bulkDelete);
+
+          /* ---- upload ---- */
+          const panel = $("#uploadPanel");
+          $("#uploadToggle").addEventListener("click", () => {
+            panel.hidden = !panel.hidden;
+            if (!panel.hidden) $("#upUser").focus();
+          });
+          $("#upCancel").addEventListener("click", () => {
+            panel.hidden = true;
+            $("#uploadForm").reset();
+            setPickedFile(null);
+          });
+          $("#uploadForm").addEventListener("submit", submitUpload);
+
+          const dropzone = $("#dropzone");
+          const fileInput = $("#fileInput");
+
+          dropzone.addEventListener("click", () => fileInput.click());
+          dropzone.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              fileInput.click();
+            }
+          });
+
+          fileInput.addEventListener("change", () =>
+            setPickedFile(fileInput.files[0]),
+          );
+
+          ["dragenter", "dragover"].forEach((evt) =>
+            dropzone.addEventListener(evt, (e) => {
+              e.preventDefault();
+              dropzone.classList.add("dragover");
+            }),
+          );
+
+          ["dragleave", "drop"].forEach((evt) =>
+            dropzone.addEventListener(evt, (e) => {
+              e.preventDefault();
+              dropzone.classList.remove("dragover");
+            }),
+          );
+
+          dropzone.addEventListener("drop", (e) => {
+            const f =
+              e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+            if (!f) return;
+            // DataTransfer is read-only in most browsers — use the input's own list.
+            try {
+              const dt = new DataTransfer();
+              dt.items.add(f);
+              fileInput.files = dt.files;
+            } catch (_) {
+              toast(
+                "Could not attach the dropped file — please use the browse dialog.",
+                "warn",
+              );
+              return;
+            }
+            setPickedFile(f);
+          });
+
+          /* ---- modal ---- */
+          $("#modalClose").addEventListener("click", closeModal);
+          $("#backdrop").addEventListener("click", (e) => {
+            if (e.target === $("#backdrop")) closeModal();
+          });
+          document.addEventListener("keydown", (e) => {
+            if (e.key === "Escape" && !$("#backdrop").hidden) closeModal();
+          });
+        }
+
+        /* ============================================================
+     BOOT
+     ============================================================ */
+        wireEvents();
+        renderBulkBar();
+        renderPager();
+        Promise.all([loadPhotos(), loadStats()]);
+      })();
+    </script>
+  </body>
+</html>
