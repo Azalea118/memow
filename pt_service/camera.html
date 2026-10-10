@@ -1,125 +1,611 @@
 <!doctype html>
-<html>
+<html lang="en">
   <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#0f1115" />
     <title>Timestamp Camera</title>
     <style>
+      :root {
+        --bg: #0f1115;
+        --surface: #181b22;
+        --surface-2: #232833;
+        --text: #f2f4f8;
+        --muted: #98a1b2;
+        --accent: #4f8cff;
+        --accent-hover: #6b9dff;
+        --danger: #ff6b6b;
+        --success: #4ade80;
+        --border: rgba(255, 255, 255, 0.09);
+        --radius: 16px;
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      [hidden] {
+        display: none !important;
+      }
+
+      html,
       body {
-        font-family: sans-serif;
-        text-align: center;
-        padding: 20px;
+        height: 100%;
       }
-      video,
-      img {
+
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: max(16px, env(safe-area-inset-top)) 16px
+          max(16px, env(safe-area-inset-bottom));
+        background: radial-gradient(
+          120% 90% at 50% 0%,
+          #1b2130 0%,
+          var(--bg) 55%
+        );
+        color: var(--text);
+        font-family:
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          "Helvetica Neue",
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      /* ---------- Card ---------- */
+      .app {
         width: 100%;
-        max-width: 400px;
-        border-radius: 8px;
-        margin-bottom: 10px;
+        max-width: 460px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        padding: 20px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 22px;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
       }
-      .hidden {
-        display: none;
+
+      .header h1 {
+        margin: 0;
+        font-size: clamp(1.15rem, 4.5vw, 1.4rem);
+        font-weight: 700;
+        letter-spacing: -0.01em;
       }
-      button {
-        padding: 10px 20px;
-        margin: 5px;
+
+      .header p {
+        margin: 4px 0 0;
+        font-size: 0.85rem;
+        color: var(--muted);
+      }
+
+      /* ---------- Camera stage ---------- */
+      .stage {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 3 / 4;
+        max-height: 58vh;
+        background: #05070a;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        overflow: hidden;
+      }
+
+      .stage video,
+      .stage img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        display: block;
+      }
+
+      .placeholder {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        padding: 24px;
+        text-align: center;
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+
+      .placeholder svg {
+        width: 42px;
+        height: 42px;
+        opacity: 0.6;
+      }
+
+      /* ---------- Timestamp toggle ---------- */
+      .switch {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 0.85rem;
+        color: var(--muted);
         cursor: pointer;
-        font-size: 16px;
+        user-select: none;
+        width: fit-content;
+      }
+
+      .switch input {
+        position: absolute;
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+
+      .track {
+        position: relative;
+        flex: none;
+        width: 42px;
+        height: 24px;
+        border-radius: 999px;
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        transition:
+          background 0.18s ease,
+          border-color 0.18s ease;
+      }
+
+      .thumb {
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: #8b93a3;
+        transition:
+          transform 0.18s ease,
+          background 0.18s ease;
+      }
+
+      .switch input:checked + .track {
+        background: var(--accent);
+        border-color: var(--accent);
+      }
+
+      .switch input:checked + .track .thumb {
+        transform: translateX(18px);
+        background: #fff;
+      }
+
+      .switch input:focus-visible + .track {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+
+      /* ---------- Buttons ---------- */
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .btn {
+        flex: 1 1 140px;
+        min-height: 48px;
+        padding: 13px 18px;
+        font: inherit;
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: #fff;
+        background: var(--surface-2);
+        border: 1px solid transparent;
+        border-radius: 12px;
+        cursor: pointer;
+        -webkit-tap-highlight-color: transparent;
+        transition:
+          background 0.18s ease,
+          transform 0.12s ease,
+          opacity 0.18s ease;
+      }
+
+      .btn:active {
+        transform: scale(0.97);
+      }
+
+      .btn:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+
+      .btn.primary {
+        background: var(--accent);
+      }
+
+      .btn.primary:hover {
+        background: var(--accent-hover);
+      }
+
+      .btn.ghost {
+        background: transparent;
+        border-color: var(--border);
+        color: var(--text);
+      }
+
+      .btn.ghost:hover {
+        background: var(--surface-2);
+      }
+
+      .btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        transform: none;
+      }
+
+      /* ---------- Status ---------- */
+      .status {
+        margin: 0;
+        min-height: 1.1em;
+        font-size: 0.82rem;
+        text-align: center;
+        color: var(--muted);
+      }
+
+      .status[data-type="error"] {
+        color: var(--danger);
+      }
+
+      .status[data-type="success"] {
+        color: var(--success);
+      }
+
+      @media (max-width: 400px) {
+        .app {
+          padding: 16px;
+          border-radius: 18px;
+        }
+
+        .btn {
+          flex: 1 1 100%;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          transition: none !important;
+          animation: none !important;
+        }
       }
     </style>
   </head>
   <body>
-    <h2>Capture Location Photo</h2>
+    <main class="app">
+      <header class="header">
+        <h1>Timestamp Camera</h1>
+        <p>Capture a photo and upload it to the server.</p>
+      </header>
 
-    <!-- Video stream and Canvas for capturing -->
-    <video id="cameraStream" autoplay playsinline></video>
-    <canvas id="snapshotCanvas" class="hidden"></canvas>
+      <!-- Live preview / captured photo -->
+      <div class="stage">
+        <video id="cameraStream" autoplay playsinline muted hidden></video>
+        <img id="photoPreview" alt="Captured photo" hidden />
+        <canvas id="snapshotCanvas" hidden></canvas>
 
-    <!-- Preview image -->
-    <img id="photoPreview" class="hidden" />
+        <div class="placeholder" id="placeholder">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path
+              d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"
+            />
+            <circle cx="12" cy="13" r="4" />
+          </svg>
+          <p>Your camera preview will appear here</p>
+        </div>
+      </div>
 
-    <div>
-      <button id="btnStart">Start Camera</button>
-      <button id="btnCapture" class="hidden">Take Photo</button>
-      <button id="btnRetake" class="hidden">Retake</button>
-      <button id="btnUpload" class="hidden">Upload to Server</button>
-    </div>
+      <!-- Timestamp option -->
+      <label class="switch">
+        <input type="checkbox" id="stampToggle" checked />
+        <span class="track"><span class="thumb"></span></span>
+        <span>Add timestamp to photo</span>
+      </label>
+
+      <!-- Controls -->
+      <div class="actions">
+        <button id="btnStart" class="btn primary" type="button">
+          Start Camera
+        </button>
+        <button id="btnCapture" class="btn primary" type="button" hidden>
+          Take Photo
+        </button>
+        <button id="btnRetake" class="btn ghost" type="button" hidden>
+          Retake
+        </button>
+        <button id="btnUpload" class="btn primary" type="button" hidden>
+          Upload to Server
+        </button>
+      </div>
+
+      <p class="status" id="status" role="status" aria-live="polite"></p>
+    </main>
 
     <script>
       const video = document.getElementById("cameraStream");
       const canvas = document.getElementById("snapshotCanvas");
       const preview = document.getElementById("photoPreview");
+      const placeholder = document.getElementById("placeholder");
+      const statusEl = document.getElementById("status");
+      const stampToggle = document.getElementById("stampToggle");
 
       const btnStart = document.getElementById("btnStart");
       const btnCapture = document.getElementById("btnCapture");
       const btnRetake = document.getElementById("btnRetake");
       const btnUpload = document.getElementById("btnUpload");
 
+      const USER_ID = "47985355"; // hardcoded for the prototype
+
+      let stream = null;
       let currentBlob = null;
+      let previewUrl = null;
 
-      // Ask for camera permission and start video
-      btnStart.onclick = async () => {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment" },
+      /* ---------------- Helpers ---------------- */
+
+      function setStatus(message, type = "") {
+        statusEl.textContent = message;
+        statusEl.dataset.type = type;
+      }
+
+      function describeCameraError(error) {
+        switch (error && error.name) {
+          case "NotAllowedError":
+          case "SecurityError":
+            return "Camera permission was denied. Allow access and try again.";
+          case "NotFoundError":
+          case "OverconstrainedError":
+            return "No camera was found on this device.";
+          case "NotReadableError":
+            return "The camera is already being used by another app.";
+          default:
+            return "Couldn't start the camera. The page must be served over HTTPS.";
+        }
+      }
+
+      /* ---------------- Start camera ---------------- */
+
+      btnStart.addEventListener("click", startCamera);
+
+      async function startCamera() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          setStatus("This browser doesn't support camera access.", "error");
+          return;
+        }
+
+        const label = btnStart.textContent;
+        btnStart.disabled = true;
+        btnStart.textContent = "Starting…";
+        setStatus("");
+
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              facingMode: { ideal: "environment" },
+              width: { ideal: 1280 },
+              height: { ideal: 960 },
+            },
+            audio: false,
+          });
+
+          video.srcObject = stream;
+          try {
+            await video.play();
+          } catch (_) {
+            /* autoplay guard – non-fatal */
+          }
+
+          placeholder.hidden = true;
+          video.hidden = false;
+          btnStart.hidden = true;
+          btnCapture.hidden = false;
+        } catch (error) {
+          setStatus(describeCameraError(error), "error");
+        } finally {
+          btnStart.disabled = false;
+          btnStart.textContent = label;
+        }
+      }
+
+      /* ---------------- Capture ---------------- */
+
+      btnCapture.addEventListener("click", capturePhoto);
+
+      function capturePhoto() {
+        const width = video.videoWidth;
+        const height = video.videoHeight;
+
+        if (!width || !height) {
+          setStatus(
+            "The camera isn't ready yet. Try again in a moment.",
+            "error",
+          );
+          return;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(video, 0, 0, width, height);
+
+        if (stampToggle.checked) {
+          drawTimestamp(ctx, width, height);
+        }
+
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              setStatus("Couldn't capture the photo.", "error");
+              return;
+            }
+
+            currentBlob = blob;
+
+            if (previewUrl) URL.revokeObjectURL(previewUrl);
+            previewUrl = URL.createObjectURL(blob);
+            preview.src = previewUrl;
+
+            video.hidden = true;
+            preview.hidden = false;
+            btnCapture.hidden = true;
+            btnRetake.hidden = false;
+            btnUpload.hidden = false;
+
+            setStatus("Photo captured. Upload it or retake.");
+          },
+          "image/jpeg",
+          0.92,
+        );
+      }
+
+      /* ---------------- Timestamp overlay ---------------- */
+
+      function drawTimestamp(ctx, width, height) {
+        const text = new Date().toLocaleString(undefined, {
+          year: "numeric",
+          month: "short",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
         });
-        video.srcObject = stream;
-        btnStart.classList.add("hidden");
-        btnCapture.classList.remove("hidden");
-      };
 
-      // Snap the photo and hold it in memory
-      btnCapture.onclick = () => {
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        canvas.getContext("2d").drawImage(video, 0, 0);
+        const fontSize = Math.max(16, Math.round(width * 0.042));
+        const pad = Math.round(fontSize * 0.55);
 
-        // Convert to a Blob file
-        canvas.toBlob((blob) => {
-          currentBlob = blob;
-          preview.src = URL.createObjectURL(blob);
+        ctx.save();
+        ctx.font = `600 ${fontSize}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+        ctx.textBaseline = "middle";
 
-          // Toggle UI to preview mode
-          video.classList.add("hidden");
-          preview.classList.remove("hidden");
-          btnCapture.classList.add("hidden");
-          btnRetake.classList.remove("hidden");
-          btnUpload.classList.remove("hidden");
-        }, "image/jpeg");
-      };
+        const boxW = ctx.measureText(text).width + pad * 2;
+        const boxH = fontSize + pad * 2;
+        const x = pad;
+        const y = height - boxH - pad;
 
-      // Discard the photo and go back to live video
-      btnRetake.onclick = () => {
+        ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
+        roundRect(ctx, x, y, boxW, boxH, fontSize * 0.5);
+        ctx.fill();
+
+        ctx.fillStyle = "#ffffff";
+        ctx.fillText(text, x + pad, y + boxH / 2);
+        ctx.restore();
+      }
+
+      function roundRect(ctx, x, y, w, h, r) {
+        const radius = Math.min(r, w / 2, h / 2);
+        ctx.beginPath();
+
+        if (typeof ctx.roundRect === "function") {
+          ctx.roundRect(x, y, w, h, radius);
+          return;
+        }
+
+        ctx.moveTo(x + radius, y);
+        ctx.arcTo(x + w, y, x + w, y + h, radius);
+        ctx.arcTo(x + w, y + h, x, y + h, radius);
+        ctx.arcTo(x, y + h, x, y, radius);
+        ctx.arcTo(x, y, x + w, y, radius);
+        ctx.closePath();
+      }
+
+      /* ---------------- Retake ---------------- */
+
+      btnRetake.addEventListener("click", resetToLiveView);
+
+      function resetToLiveView() {
         currentBlob = null;
-        preview.classList.add("hidden");
-        video.classList.remove("hidden");
-        btnRetake.classList.add("hidden");
-        btnUpload.classList.add("hidden");
-        btnCapture.classList.remove("hidden");
-      };
 
-      // Send to FastAPI
-      btnUpload.onclick = async () => {
+        if (previewUrl) {
+          URL.revokeObjectURL(previewUrl);
+          previewUrl = null;
+        }
+        preview.removeAttribute("src");
+        preview.hidden = true;
+
+        video.hidden = false;
+        btnRetake.hidden = true;
+        btnUpload.hidden = true;
+        btnUpload.disabled = false;
+        btnUpload.textContent = "Upload to Server";
+        btnCapture.hidden = false;
+
+        setStatus("");
+      }
+
+      /* ---------------- Upload ---------------- */
+
+      btnUpload.addEventListener("click", uploadPhoto);
+
+      async function uploadPhoto() {
+        if (!currentBlob) return;
+
+        const label = btnUpload.textContent;
+        btnUpload.disabled = true;
+        btnUpload.textContent = "Uploading…";
+        setStatus("Uploading photo…");
+
         const formData = new FormData();
-        formData.append("user_id", "47985355"); // Hardcoded for prototype
+        formData.append("user_id", USER_ID);
         formData.append("file", currentBlob, "capture.jpg");
-
-        btnUpload.innerText = "Uploading...";
 
         try {
           const response = await fetch("/upload", {
             method: "POST",
             body: formData,
           });
+
+          if (!response.ok) {
+            throw new Error(`Server responded with ${response.status}.`);
+          }
+
           const result = await response.json();
 
-          if (result.status === "success") {
-            alert("Photo saved!");
-            btnRetake.click(); // Reset the UI
-            btnUpload.innerText = "Upload to Server";
+          if (!result || result.status !== "success") {
+            throw new Error(
+              (result && result.message) || "The server rejected the upload.",
+            );
           }
+
+          resetToLiveView();
+          setStatus("Photo saved!", "success");
         } catch (error) {
-          alert("Upload failed. Make sure the backend is running.");
-          btnUpload.innerText = "Upload to Server";
+          setStatus(
+            error.message || "Upload failed. Is the backend running?",
+            "error",
+          );
+          btnUpload.disabled = false;
+          btnUpload.textContent = label;
         }
-      };
+      }
+
+      /* ---------------- Cleanup ---------------- */
+
+      window.addEventListener("pagehide", () => {
+        if (stream) stream.getTracks().forEach((track) => track.stop());
+      });
     </script>
   </body>
 </html>
