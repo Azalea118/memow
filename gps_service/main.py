@@ -1,36 +1,36 @@
-from fastapi import FastAPI, Form, Depends
+import math, time, datetime
+import threading
+from zoneinfo import ZoneInfo
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
-import msgpack
-import datetime
-import time
-from sqlalchemy import create_engine, Column, Integer, Date, LargeBinary, String
-from sqlalchemy.orm import declarative_base, sessionmaker, Session
+from pydantic import BaseModel
+from sqlalchemy import create_engine, Column, Integer, BigInteger, Float, String, Index, event
+from sqlalchemy.orm import declarative_base, sessionmaker
 
-# 1. Database Setup
+TZ = ZoneInfo("Asia/Manila")
+MAX_ACC, MAX_SPEED, GAP, MIN_MOVE, MAX_REJECTS = 25, 70, 60, 8, 5
+
+# ---------- DB ----------
 engine = create_engine("sqlite:///./tracking.db", connect_args={"check_same_thread": False})
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+@event.listens_for(engine, "connect")
+def wal(conn, _):
+    conn.execute("PRAGMA journal_mode=WAL")
+
+SessionLocal = sessionmaker(bind=engine, autoflush=False)
 Base = declarative_base()
 
-class DailyTracking(Base):
-    __tablename__ = "daily_tracking"
-    id = Column(Integer, primary_key=True, index=True)
-    device_id = Column(String, index=True) # Updated to device_id
-    date = Column(Date, default=datetime.date.today, index=True)
-    path_blob = Column(LargeBinary)
+class TrackPoint(Base):
+    __tablename__ = "track_points"
+    id = Column(Integer, primary_key=True)
+    device_id = Column(String, nullable=False)
+    ts = Column(BigInteger, nullable=False)
+    lat = Column(Float, nullable=False)
+    lon = Column(Float, nullable=False)
+    segment = Column(Integer, nullable=False)
+    __table_args__ = (Index("ix_device_ts", "device_id", "ts", unique=True),)
 
-# Rebuild tables
-Base.metadata.create_all(bind=engine)
-
-gps_service = FastAPI()
-
-# Allow the frontend HTML file to fetch data
-gps_service.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+Base.metadata.create_all(engine)
 
 def get_db():
     db = SessionLocal()
@@ -39,85 +39,105 @@ def get_db():
     finally:
         db.close()
 
-# 2. In-Memory Storage
-live_devices = {}       # For instant map updates
-device_buffers = {}     # For batching database saves by specific device
-BUFFER_LIMIT = 5 
+def day_start():
+    return int(datetime.datetime.now(TZ).replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
 
-# 3. Core Endpoints
-@gps_service.post("/")
-async def receive_location(
-    id: str = Form(...),
-    lat: float = Form(...),
-    lon: float = Form(...),
-    timestamp: int = Form(None),
-    db: Session = Depends(get_db)
-):
-    new_point = {"lat": lat, "lon": lon, "ts": timestamp}
-    
-    # A. Update live map status instantly (No database needed)
-    live_devices[id] = {
-        "lat": lat,
-        "lon": lon,
-        "last_seen": time.time()
-    }
-    
-    # B. Add to this specific device's database buffer
-    if id not in device_buffers:
-        device_buffers[id] = []
-    device_buffers[id].append(new_point)
-    
-    print(f"Ping received from {id} | Buffer: {len(device_buffers[id])}/{BUFFER_LIMIT}")
-    
-    # C. Flush to Database only when buffer is full
-    if len(device_buffers[id]) >= BUFFER_LIMIT:
-        today = datetime.date.today()
-        record = db.query(DailyTracking).filter(
-            DailyTracking.device_id == id,
-            DailyTracking.date == today
-        ).first()
+# ---------- App ----------
+gps_service = FastAPI()
+gps_service.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-        if not record:
-            packed_data = msgpack.packb(device_buffers[id])
-            new_record = DailyTracking(device_id=id, date=today, path_blob=packed_data)
-            db.add(new_record)
-        else:
-            path_list = msgpack.unpackb(record.path_blob)
-            path_list.extend(device_buffers[id])
-            record.path_blob = msgpack.packb(path_list)
+state = {}  # device_id -> {lat, lon, ts (last accepted), seen (last point seen), seg, rejects}
+live = {}   # device_id -> {lat, lon, last_seen}
 
+# daily reset: wipe old points on startup
+def purge():
+    with SessionLocal() as db:
+        n = db.query(TrackPoint).filter(TrackPoint.ts < day_start()).delete()
         db.commit()
-        device_buffers[id].clear()
-        print(f"Saved {BUFFER_LIMIT} points to database for {id}.")
-        
-    return {"status": "success"}
+    if n:
+        state.clear()  # forget yesterday's last points, so each device restarts at segment 0
 
-@gps_service.get("/live/{device_id}")
-async def get_live_location(device_id: str):
-    device = live_devices.get(device_id)
-    
-    if not device:
+def purge_loop():
+    while True:
+        time.sleep(3600)  # check hourly
+        purge()
+
+purge()  # on startup
+threading.Thread(target=purge_loop, daemon=True).start()
+
+class Point(BaseModel):
+    lat: float
+    lon: float
+    ts: int
+    acc: float | None = None
+
+class Batch(BaseModel):
+    id: str
+    points: list[Point]
+
+def haversine(a, b, c, d):
+    p1, p2 = math.radians(a), math.radians(c)
+    h = math.sin((p2 - p1) / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(math.radians(d - b) / 2) ** 2
+    return 12742000 * math.asin(math.sqrt(h))
+
+def load_state(db, dev):
+    if dev not in state:  # rebuild after a server restart
+        last = db.query(TrackPoint).filter_by(device_id=dev).order_by(TrackPoint.ts.desc()).first()
+        state[dev] = {"lat": last.lat, "lon": last.lon, "ts": last.ts, "seen": last.ts,
+                      "seg": last.segment, "rejects": 0} if last else None
+    return state[dev]
+
+@gps_service.post("/")
+def receive(batch: Batch, db=Depends(get_db)):
+    s = load_state(db, batch.id)
+    rows = []
+
+    for p in sorted(batch.points, key=lambda p: p.ts):
+        if p.acc is not None and p.acc > MAX_ACC:
+            continue                                   # unreliable fix
+        if s is None:
+            s = {"seg": 0, "rejects": 0}               # first point ever
+        elif p.ts <= s["seen"]:
+            continue                                   # duplicate / out of order
+        else:
+            gap = p.ts - s["seen"]
+            s["seen"] = p.ts                           # device is alive either way
+            d = haversine(s["lat"], s["lon"], p.lat, p.lon)
+            if gap > GAP:
+                s["seg"] += 1                          # was offline -> new segment
+            elif d / max(p.ts - s["ts"], 1) > MAX_SPEED:
+                s["rejects"] += 1
+                if s["rejects"] < MAX_REJECTS:
+                    continue                           # teleport spike
+                s["seg"] += 1                          # jump is real -> new segment
+            elif d < max(MIN_MOVE, p.acc or 0):
+                continue                               # standing still / jitter
+
+        s.update(lat=p.lat, lon=p.lon, ts=p.ts, seen=p.ts, rejects=0)
+        rows.append(TrackPoint(device_id=batch.id, ts=p.ts, lat=p.lat, lon=p.lon, segment=s["seg"]))
+
+    state[batch.id] = s
+    if rows:
+        db.add_all(rows)
+        db.commit()
+    if s:
+        live[batch.id] = {"lat": s["lat"], "lon": s["lon"], "last_seen": time.time()}
+    return {"status": "success", "saved": len(rows)}
+
+@gps_service.get("/live/{dev}")
+def get_live(dev: str):
+    d = live.get(dev)
+    if not d:
         return {"status": "not_connected"}
-        
-    # If no ping in 15 seconds, they went offline
-    is_online = (time.time() - device["last_seen"]) < 15
-    
-    return {
-        "status": "online" if is_online else "disconnected",
-        "lat": device["lat"],
-        "lon": device["lon"]
-    }
+    online = time.time() - d["last_seen"] < 15
+    return {"status": "online" if online else "disconnected", "lat": d["lat"], "lon": d["lon"]}
 
-@gps_service.get("/route/{device_id}")
-async def get_route(device_id: str, db: Session = Depends(get_db)):
-    today = datetime.date.today()
-    record = db.query(DailyTracking).filter(
-        DailyTracking.device_id == device_id,
-        DailyTracking.date == today
-    ).first()
-    
-    if not record:
-        return {"error": "No route found for today"}
-        
-    path_list = msgpack.unpackb(record.path_blob)
-    return {"path": path_list}
+@gps_service.get("/route/{dev}")
+def route(dev: str, db=Depends(get_db)):
+    rows = (db.query(TrackPoint)
+              .filter(TrackPoint.device_id == dev, TrackPoint.ts >= day_start())
+              .order_by(TrackPoint.ts))
+    segs = {}
+    for r in rows:
+        segs.setdefault(r.segment, []).append([r.lat, r.lon])
+    return {"segments": list(segs.values())}
