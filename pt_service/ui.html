@@ -1096,7 +1096,8 @@
         /* ============================================================
      CONFIG
      ============================================================ */
-        const API_BASE = ""; // '' = same origin. e.g. 'http://localhost:8000'
+        // '' = same origin. e.g. 'http://localhost:8000'
+        const API_BASE = location.pathname.replace(/\/[^/]*$/, "");
         const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
         const ALLOWED_EXT = [
           "jpg",

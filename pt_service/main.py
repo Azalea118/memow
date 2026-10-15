@@ -4,6 +4,7 @@ import uuid
 import datetime
 import shutil
 from typing import List, Optional
+from pathlib import Path
 
 from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,14 +19,17 @@ from sqlalchemy.orm import declarative_base, sessionmaker, Session
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-UPLOAD_DIR = "uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".heic"}
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024  # 15 MB
+BASE_DIR = Path(__file__).resolve().parent
+DB_PATH = BASE_DIR / "photos.db"
+UPLOAD_DIR = BASE_DIR / "uploads"
+
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 engine = create_engine(
-    "sqlite:///./photos.db", connect_args={"check_same_thread": False}
+    f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False}
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -96,13 +100,14 @@ def ensure_schema() -> None:
 
         # Fill in file sizes from disk where we can.
         missing = conn.execute(
-            text("SELECT id, filepath FROM photo_records WHERE size_bytes IS NULL")
+            text("SELECT id, filename FROM photo_records WHERE size_bytes IS NULL")
         ).fetchall()
-        for photo_id, filepath in missing:
-            if filepath and os.path.isfile(filepath):
+        for photo_id, filename in missing:
+            p = UPLOAD_DIR / Path(filename or "").name
+            if filename and p.is_file():
                 conn.execute(
                     text("UPDATE photo_records SET size_bytes = :s WHERE id = :i"),
-                    {"s": os.path.getsize(filepath), "i": photo_id},
+                    {"s": p.stat().st_size, "i": photo_id},
                 )
 
 
@@ -208,25 +213,15 @@ def serialize(photo: PhotoRecord) -> dict:
 
 def resolve_stored_path(photo: PhotoRecord) -> str:
     """Return the absolute path of the file, guarding against traversal."""
-    stored = photo.filepath or ""
-    if not stored:
+    name = photo.filename or os.path.basename(photo.filepath or "")
+    if not name:
         raise HTTPException(status_code=410, detail="Photo has no file attached")
 
-    full = os.path.abspath(stored)
-    base = os.path.abspath(UPLOAD_DIR)
-    try:
-        inside = os.path.commonpath([full, base]) == base
-    except ValueError:
-        inside = False
-
-    if not inside:
-        raise HTTPException(status_code=400, detail="Stored path is invalid")
-    if not os.path.isfile(full):
-        raise HTTPException(
-            status_code=410, detail="Photo file is missing from disk"
-        )
-    return full
-
+    # Path(name).name drops any directory parts, so traversal is impossible
+    full = UPLOAD_DIR / Path(name).name
+    if not full.is_file():
+        raise HTTPException(status_code=410, detail="Photo file is missing from disk")
+    return str(full)
 
 def get_photo_or_404(db: Session, photo_id: int) -> PhotoRecord:
     photo = db.get(PhotoRecord, photo_id)
@@ -298,11 +293,11 @@ def get_db():
 # ---------------------------------------------------------------------------
 @pt_app.get("/camera")
 async def serve_camera_app():
-    return FileResponse("camera.html")
+    return FileResponse(BASE_DIR / "camera.html")
 
 @pt_app.get("/ui")
 async def serve_camera_app():
-    return FileResponse("ui.html")
+    return FileResponse(BASE_DIR / "ui.html")
 
 
 
@@ -345,7 +340,7 @@ async def upload_photo(
     record = PhotoRecord(
         user_id=user_id,
         filename=stored_name,
-        filepath=file_location,
+        filepath=f"uploads/{stored_name}",
         original_filename=original_name,
         display_name=(display_name or "").strip()
         or os.path.splitext(original_name)[0],
@@ -574,7 +569,7 @@ def rename_photo(
             )
 
         photo.filename = new_filename
-        photo.filepath = new_path
+        photo.filepath = f"uploads/{new_filename}"
 
     photo.display_name = new_display
     photo.updated_at = datetime.datetime.now()

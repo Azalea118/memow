@@ -10,7 +10,8 @@ const CONFIG = {
   //   'http://192.168.1.42:8000'              — LAN / office box
   //   'https://api.violation-tracker.example' — production
   //   ''                                       — same-origin (use behind a proxy)
-  BASE_URL: "http://127.0.0.1:8000",
+  // BASE_URL: "http://127.0.0.1:8000",
+  BASE_URL: "/app1",
 };
 
 /* Invalidate stale localStorage overrides when BASE_URL above changes.

@@ -1,17 +1,22 @@
 import math, time, datetime
 import threading
+
+from pathlib import Path
 from zoneinfo import ZoneInfo
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, Integer, BigInteger, Float, String, Index, event
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 TZ = ZoneInfo("Asia/Manila")
 MAX_ACC, MAX_SPEED, GAP, MIN_MOVE, MAX_REJECTS = 25, 70, 60, 8, 5
+BASE_DIR = Path(__file__).resolve().parent
+DB_PATH = BASE_DIR / "tracking.db"
 
 # ---------- DB ----------
-engine = create_engine("sqlite:///./tracking.db", connect_args={"check_same_thread": False})
+engine = create_engine(f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False})
 
 @event.listens_for(engine, "connect")
 def wal(conn, _):
@@ -86,6 +91,11 @@ def load_state(db, dev):
         state[dev] = {"lat": last.lat, "lon": last.lon, "ts": last.ts, "seen": last.ts,
                       "seg": last.segment, "rejects": 0} if last else None
     return state[dev]
+
+
+@gps_service.get("/map")
+async def serve_camera_app():
+    return FileResponse(BASE_DIR / "map.html")
 
 @gps_service.post("/")
 def receive(batch: Batch, db=Depends(get_db)):

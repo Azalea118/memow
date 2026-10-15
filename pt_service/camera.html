@@ -572,7 +572,7 @@
         formData.append("file", currentBlob, "capture.jpg");
 
         try {
-          const response = await fetch("/upload", {
+          const response = await fetch("/app2/upload", {
             method: "POST",
             body: formData,
           });
@@ -583,12 +583,13 @@
 
           const result = await response.json();
 
-          if (!result || result.status !== "success") {
-            throw new Error(
-              (result && result.message) || "The server rejected the upload.",
-            );
+          if (!response.ok) {
+            let msg = `Server responded with ${response.status}.`;
+            try {
+              msg = (await response.json()).detail || msg;
+            } catch (_) {}
+            throw new Error(msg);
           }
-
           resetToLiveView();
           setStatus("Photo saved!", "success");
         } catch (error) {
