@@ -1,0 +1,3 @@
+myapp.duckdns.org {
+  reverse_proxy nginx:80
+}
