@@ -6,3 +6,7 @@ WORKDIR /app
 
 ENV UV_PROJECT_ENVIRONMENT=/venv
 ENV PATH="/venv/bin:$PATH"
+ENV UV_LINK_MODE=copy
+
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-install-project
