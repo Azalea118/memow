@@ -11,10 +11,11 @@ from app.schemas.violation import (
     ViolationRecordRead,
     ViolationRecordUpdate,
 )
+from app.schemas.removal import ViolationRemovalCreate, ViolationRemovalRead
 from queries import (
     assign_violation,
     clear_employee_violations,
-    delete_violation_record,
+    remove_violation_record,
     get_violation_record,
     list_employee_violations,
     list_recent_violations,
@@ -67,15 +68,20 @@ def list_for_employee(
     )
 
 
-@router.delete(
-    "/employees/{employee_id}/violations",
+@router.post(
+    "/employees/{employee_id}/violations/clear",
     response_model=ClearResult,
-    summary="Amnesty — wipe all records for this employee",
+    summary="Amnesty — remove all records for this employee, with audit log",
 )
-def clear_all(db: DbSession, employee_id: Annotated[int, Path(ge=1)]):
-    deleted = clear_employee_violations(db, employee_id)
+def clear_all(
+    db: DbSession,
+    employee_id: Annotated[int, Path(ge=1)],
+    payload: ViolationRemovalCreate,
+):
+    deleted = clear_employee_violations(
+        db, employee_id, removed_by=payload.removed_by, reason=payload.reason
+    )
     return ClearResult(deleted=deleted)
-
 
 # ============ company-wide ============
 # /violations/recent BEFORE /violations/{id}
@@ -111,9 +117,17 @@ def update(
     return update_violation_record(db, violation_id, **payload.model_dump(exclude_unset=True))
 
 
-@router.delete(
-    "/violations/{violation_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
+@router.post(
+    "/violations/{violation_id}/remove",
+    response_model=ViolationRemovalRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Remove one violation record, with audit log",
 )
-def remove(db: DbSession, violation_id: Annotated[int, Path(ge=1)]):
-    delete_violation_record(db, violation_id)
+def remove_record(
+    db: DbSession,
+    violation_id: Annotated[int, Path(ge=1)],
+    payload: ViolationRemovalCreate,
+):
+    return remove_violation_record(
+        db, violation_id, removed_by=payload.removed_by, reason=payload.reason
+    )
