@@ -6,7 +6,7 @@ from typing import Optional, Sequence
 from sqlalchemy import String, delete, func, or_, select, update
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from models import Employee, EmployeeStatus, ViolationRecord, ViolationType
+from models import Employee, EmployeeStatus, ViolationRecord, ViolationRemoval, ViolationType
 
 
 # ============================================================================
@@ -569,22 +569,53 @@ def delete_violation_record(session: Session, record_id: int, *, commit: bool = 
         session.flush()
 
 
-def clear_employee_violations(session: Session, employee_id: int, *, commit: bool = True) -> int:
-    """
-    Delete every violation record for an employee (e.g., annual amnesty).
-    Returns the number of rows deleted.
-    """
+def clear_employee_violations(
+    session: Session,
+    employee_id: int,
+    *,
+    removed_by: str,
+    reason: str,
+    commit: bool = True,
+) -> int:
+    """Delete every violation for an employee, logging each to the audit table."""
     employee = session.get(Employee, employee_id)
     if employee is None:
         raise EmployeeNotFound(employee_id)
-    result = session.execute(
-        delete(ViolationRecord).where(ViolationRecord.employee_id == employee_id)
-    )
+
+    records = session.execute(
+        select(ViolationRecord)
+        .options(
+            joinedload(ViolationRecord.violation_type),
+            joinedload(ViolationRecord.employee),
+        )
+        .where(ViolationRecord.employee_id == employee_id)
+    ).scalars().all()
+
+    now = datetime.now(timezone.utc)
+    for record in records:
+        session.add(ViolationRemoval(
+            violation_record_id=record.id,
+            violation_type_id=record.violation_type_id,
+            violation_type_name=record.violation_type.name if record.violation_type else "",
+            points=record.points,
+            is_strike=record.is_strike,
+            original_notes=record.notes,
+            original_issued_by=record.issued_by,
+            original_issued_at=record.issued_at,
+            employee_id=record.employee_id,
+            employee_code=employee.employee_code,
+            employee_full_name=employee.full_name,
+            removed_by=removed_by,
+            reason=reason,
+            removed_at=now,
+        ))
+        session.delete(record)
+
     if commit:
         session.commit()
     else:
         session.flush()
-    return result.rowcount or 0
+    return len(records)
 
 
 # ============================================================================
@@ -865,3 +896,124 @@ def violation_free_employees(
         .order_by(Employee.last_name, Employee.first_name)
     )
     return session.execute(stmt).all()
+
+
+
+# ============================================================================
+# VIOLATION REMOVAL — audit log
+# ============================================================================
+
+def remove_violation_record(
+    session: Session,
+    record_id: int,
+    *,
+    removed_by: str,
+    reason: str,
+    commit: bool = True,
+) -> ViolationRemoval:
+    """Delete one violation record and log the removal."""
+    record = session.execute(
+        select(ViolationRecord)
+        .options(
+            joinedload(ViolationRecord.violation_type),
+            joinedload(ViolationRecord.employee),
+        )
+        .where(ViolationRecord.id == record_id)
+    ).scalar_one_or_none()
+    if record is None:
+        raise ViolationRecordNotFound(record_id)
+
+    removal = ViolationRemoval(
+        violation_record_id=record.id,
+        violation_type_id=record.violation_type_id,
+        violation_type_name=record.violation_type.name if record.violation_type else "",
+        points=record.points,
+        is_strike=record.is_strike,
+        original_notes=record.notes,
+        original_issued_by=record.issued_by,
+        original_issued_at=record.issued_at,
+        employee_id=record.employee_id,
+        employee_code=record.employee.employee_code if record.employee else "",
+        employee_full_name=record.employee.full_name if record.employee else "",
+        removed_by=removed_by,
+        reason=reason,
+        removed_at=datetime.now(timezone.utc),
+    )
+    session.add(removal)
+    session.delete(record)
+    if commit:
+        session.commit()
+    else:
+        session.flush()
+    return removal
+
+
+def list_violation_removals(
+    session: Session,
+    *,
+    employee_id: Optional[int] = None,
+    removed_by: Optional[str] = None,
+    since: Optional[datetime] = None,
+    until: Optional[datetime] = None,
+    search: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> Sequence[ViolationRemoval]:
+    stmt = (
+        select(ViolationRemoval)
+        .order_by(ViolationRemoval.removed_at.desc(), ViolationRemoval.id.desc())
+    )
+    if employee_id is not None:
+        stmt = stmt.where(ViolationRemoval.employee_id == employee_id)
+    if removed_by:
+        stmt = stmt.where(ViolationRemoval.removed_by.ilike(f"%{removed_by}%"))
+    if since is not None:
+        stmt = stmt.where(ViolationRemoval.removed_at >= since)
+    if until is not None:
+        stmt = stmt.where(ViolationRemoval.removed_at <= until)
+    if search and (term := search.strip()):
+        pattern = f"%{term}%"
+        stmt = stmt.where(or_(
+            ViolationRemoval.reason.ilike(pattern),
+            ViolationRemoval.employee_code.ilike(pattern),
+            ViolationRemoval.employee_full_name.ilike(pattern),
+            ViolationRemoval.violation_type_name.ilike(pattern),
+        ))
+    stmt = stmt.limit(limit).offset(offset)
+    return session.execute(stmt).scalars().all()
+
+
+def count_violation_removals(
+    session: Session,
+    *,
+    employee_id: Optional[int] = None,
+    removed_by: Optional[str] = None,
+    since: Optional[datetime] = None,
+    until: Optional[datetime] = None,
+    search: Optional[str] = None,
+) -> int:
+    stmt = select(func.count(ViolationRemoval.id))
+    if employee_id is not None:
+        stmt = stmt.where(ViolationRemoval.employee_id == employee_id)
+    if removed_by:
+        stmt = stmt.where(ViolationRemoval.removed_by.ilike(f"%{removed_by}%"))
+    if since is not None:
+        stmt = stmt.where(ViolationRemoval.removed_at >= since)
+    if until is not None:
+        stmt = stmt.where(ViolationRemoval.removed_at <= until)
+    if search and (term := search.strip()):
+        pattern = f"%{term}%"
+        stmt = stmt.where(or_(
+            ViolationRemoval.reason.ilike(pattern),
+            ViolationRemoval.employee_code.ilike(pattern),
+            ViolationRemoval.employee_full_name.ilike(pattern),
+            ViolationRemoval.violation_type_name.ilike(pattern),
+        ))
+    return session.execute(stmt).scalar_one()
+
+
+def get_violation_removal(
+    session: Session,
+    removal_id: int,
+) -> Optional[ViolationRemoval]:
+    return session.get(ViolationRemoval, removal_id)
