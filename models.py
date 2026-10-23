@@ -194,3 +194,44 @@ class ViolationRecord(Base):
         CheckConstraint("points >= 0", name="ck_violation_records_points_non_negative"),
         Index("ix_violation_records_employee_issued_at", "employee_id", "issued_at"),
     )
+
+class ViolationRemoval(Base):
+    """Immutable audit log entry for a deleted violation record.
+
+    Deliberately has NO foreign keys to employees or violation_types —
+    the log must survive if either is later hard-deleted. All identifying
+    fields are snapshotted at removal time.
+    """
+
+    __tablename__ = "violation_removals"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    # ---- snapshot of the removed violation record ----
+    violation_record_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    violation_type_id: Mapped[Optional[int]] = mapped_column(Integer)
+    violation_type_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    points: Mapped[int] = mapped_column(Integer, nullable=False)
+    is_strike: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    original_notes: Mapped[Optional[str]] = mapped_column(Text)
+    original_issued_by: Mapped[Optional[str]] = mapped_column(String(150))
+    original_issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    # ---- to whom ----
+    employee_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    employee_code: Mapped[str] = mapped_column(String(50), nullable=False)
+    employee_full_name: Mapped[str] = mapped_column(String(200), nullable=False)
+
+    # ---- by whom + why ----
+    removed_by: Mapped[str] = mapped_column(String(150), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    removed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        index=True,
+    )
+
+    __table_args__ = (
+        Index("ix_violation_removals_employee_removed_at", "employee_id", "removed_at"),
+    )
