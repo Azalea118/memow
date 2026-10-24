@@ -1,21 +1,10 @@
 /* ============================================================
    ⚙️  CONFIG — EDIT THIS BEFORE SHIPPING
-   ────────────────────────────────────────────────────────────
-   The ONLY block you need to change to point the app at a
-   different API server. Everything below reads from here.
    ──────────────────────────────────────────────────────────── */
 const CONFIG = {
-  // API base URL. Examples:
-  //   'http://127.0.0.1:8000'                 — local dev
-  //   'http://192.168.1.42:8000'              — LAN / office box
-  //   'https://api.violation-tracker.example' — production
-  //   ''                                       — same-origin (use behind a proxy)
-  // BASE_URL: "http://127.0.0.1:8000",
   BASE_URL: "/app1",
 };
 
-/* Invalidate stale localStorage overrides when BASE_URL above changes.
-   Edit CONFIG.BASE_URL, reload, and the new value wins — no manual reset. */
 const STORAGE_KEYS = {
   baseUrl: "vt.baseUrl",
   configBase: "vt.configBase",
@@ -25,9 +14,6 @@ if (localStorage.getItem(STORAGE_KEYS.configBase) !== CONFIG.BASE_URL) {
   localStorage.removeItem(STORAGE_KEYS.baseUrl);
 }
 
-/* ============================================================
-   STATE
-   ============================================================ */
 const state = {
   view: "dashboard",
   baseUrl: localStorage.getItem(STORAGE_KEYS.baseUrl) || CONFIG.BASE_URL,
@@ -64,7 +50,6 @@ function parseUTC(s) {
   const d = new Date(str);
   return isNaN(d) ? null : d;
 }
-
 function fmtDate(iso) {
   const d = parseUTC(iso);
   if (!d) return "—";
@@ -76,7 +61,6 @@ function fmtDate(iso) {
     minute: "2-digit",
   });
 }
-
 function fmtDateShort(iso) {
   const d = parseUTC(iso);
   if (!d) return "—";
@@ -85,7 +69,6 @@ function fmtDateShort(iso) {
     day: "numeric",
   });
 }
-
 function relTime(iso) {
   const d = parseUTC(iso);
   if (!d) return "—";
@@ -99,7 +82,6 @@ function relTime(iso) {
   if (days < 30) return days + "d ago";
   return fmtDateShort(iso);
 }
-
 function initials(name) {
   if (!name) return "?";
   return name
@@ -109,7 +91,6 @@ function initials(name) {
     .join("")
     .toUpperCase();
 }
-
 function toast(title, detail, kind = "") {
   const el = document.createElement("div");
   el.className = "toast " + kind;
@@ -122,7 +103,6 @@ function toast(title, detail, kind = "") {
     setTimeout(() => el.remove(), 320);
   }, 4200);
 }
-
 function highlightJSON(data) {
   const json = JSON.stringify(data, null, 2);
   if (json === undefined) return '<span class="faint">undefined</span>';
@@ -139,7 +119,7 @@ function highlightJSON(data) {
 }
 
 /* ============================================================
-   HTTP LAYER  (no auth — the X-Admin-Token header is gone)
+   HTTP LAYER
    ============================================================ */
 class ApiError extends Error {
   constructor(kind, message, result) {
@@ -148,7 +128,6 @@ class ApiError extends Error {
     this.result = result;
   }
 }
-
 function buildQuery(query) {
   if (!query) return "";
   const usp = new URLSearchParams();
@@ -159,15 +138,12 @@ function buildQuery(query) {
   const s = usp.toString();
   return s ? "?" + s : "";
 }
-
 async function req(method, path, { query, body } = {}) {
   const base = state.baseUrl.replace(/\/+$/, "");
   const url = base + path + buildQuery(query);
-
   const headers = {};
   if (body !== undefined && body !== null)
     headers["Content-Type"] = "application/json";
-
   const t0 = performance.now();
   let res;
   try {
@@ -185,7 +161,6 @@ async function req(method, path, { query, body } = {}) {
     );
   }
   const ms = Math.round(performance.now() - t0);
-
   const text = await res.text();
   let data = null;
   if (text) {
@@ -195,26 +170,22 @@ async function req(method, path, { query, body } = {}) {
       data = text;
     }
   }
-
   return { ok: res.ok, status: res.status, data, ms, url, method };
 }
-
 async function call(method, path, opts) {
   const r = await req(method, path, opts);
   if (!r.ok) throw new ApiError("http", `HTTP ${r.status}`, r);
   return r.data;
 }
-
 function describeError(result) {
   if (!result) return { title: "Request failed", detail: "", fields: [] };
   const d = result.data;
-  if (!d || typeof d !== "object") {
+  if (!d || typeof d !== "object")
     return {
       title: `HTTP ${result.status}`,
       detail: typeof d === "string" ? d : "",
       fields: [],
     };
-  }
   if (Array.isArray(d.detail)) {
     return {
       title: "Validation failed (422)",
@@ -231,15 +202,10 @@ function describeError(result) {
     fields: [],
   };
 }
-
 function errorBanner(err) {
   if (err.kind === "network") {
-    return `<div class="callout err">
-      <div class="ic">⚠</div>
-      <div>
-        <strong>Cannot reach the API.</strong> The server may be down, or CORS is blocking the browser.
-        <br>Add this to <code>app/main.py</code> on the backend (before including routers):
-        <pre>from fastapi.middleware.cors import CORSMiddleware
+    return `<div class="callout err"><div class="ic">⚠</div><div><strong>Cannot reach the API.</strong> The server may be down, or CORS is blocking the browser.<br>Add this to <code>app/main.py</code> on the backend:
+      <pre>from fastapi.middleware.cors import CORSMiddleware
 
 app.add_middleware(
     CORSMiddleware,
@@ -247,32 +213,25 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-)</pre>
-      </div>
-    </div>`;
+)</pre></div></div>`;
   }
   const d = describeError(err.result);
   let html = `<div class="callout err"><div class="ic">✕</div><div><strong>${esc(d.title)}</strong>`;
   if (d.detail) html += `<br>${esc(d.detail)}`;
-  if (d.fields.length) {
+  if (d.fields.length)
     html +=
       "<br>" +
       d.fields
         .map((f) => `<code>${esc(f.loc)}</code> — ${esc(f.msg)}`)
         .join("<br>");
-  }
   html += "</div></div>";
   return html;
 }
 
-/* ============================================================
-   CONNECTION
-   ============================================================ */
 function setStatus(kind, title) {
   statusDot.className = "dot " + kind;
   statusDot.title = title || "";
 }
-
 async function ping() {
   setStatus("busy", "Checking…");
   try {
@@ -328,10 +287,7 @@ function confirmModal({
 }) {
   openModal(
     `
-    <div class="modal-head">
-      <h3>${esc(title)}</h3>
-      <button class="close" data-close>✕</button>
-    </div>
+    <div class="modal-head"><h3>${esc(title)}</h3><button class="close" data-close>✕</button></div>
     <div class="modal-body">${body}</div>
     <div class="modal-foot">
       <button class="btn" data-close>Cancel</button>
@@ -355,7 +311,7 @@ function confirmModal({
 }
 
 /* ============================================================
-   NAV  +  mobile drawer
+   NAV + drawer
    ============================================================ */
 const elHamburger = document.getElementById("hamburger");
 const elSidenav = document.getElementById("sidenav");
@@ -374,9 +330,9 @@ function closeNav() {
   elHamburger.setAttribute("aria-expanded", "false");
   document.body.classList.remove("nav-open");
 }
-elHamburger.addEventListener("click", () => {
-  elSidenav.classList.contains("open") ? closeNav() : openNav();
-});
+elHamburger.addEventListener("click", () =>
+  elSidenav.classList.contains("open") ? closeNav() : openNav(),
+);
 elNavOverlay.addEventListener("click", closeNav);
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && elSidenav.classList.contains("open")) closeNav();
@@ -390,6 +346,7 @@ const ROUTES = {
   employees: renderEmployees,
   types: renderTypes,
   violations: renderViolations,
+  removals: renderRemovals,
   analytics: renderAnalytics,
   explorer: renderExplorer,
 };
@@ -412,6 +369,182 @@ elSidenav.addEventListener("click", (e) => {
 });
 
 /* ============================================================
+   SHARED: removal form + clear-all form
+   ============================================================ */
+function removalFormModal(record, opts = {}) {
+  const { onDone } = opts;
+  const typeName =
+    record.violation_type_name ||
+    (record.violation_type && record.violation_type.name) ||
+    "Unknown";
+  const empName =
+    record.employee_full_name ||
+    (record.employee && record.employee.full_name) ||
+    "";
+  const empCode =
+    record.employee_code ||
+    (record.employee && record.employee.employee_code) ||
+    "";
+  const pts = record.points;
+  const at = record.issued_at;
+
+  openModal(
+    `
+    <div class="modal-head">
+      <h3>Remove violation</h3>
+      <span class="badge audit">audited</span>
+      <button class="close" data-close>✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="rmErr"></div>
+
+      <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:16px">
+        <div style="font-weight:600;font-size:13px">${esc(typeName)}</div>
+        <div class="faint mono" style="font-size:11.5px;margin-top:3px">
+          ${esc(empName)}${empCode ? " · " + esc(empCode) : ""} · +${pts} pts${record.is_strike ? " · strike" : ""} · ${esc(fmtDate(at))}
+        </div>
+        ${record.notes ? `<div class="faint" style="font-size:12px;margin-top:8px;border-top:1px solid var(--border);padding-top:8px">${esc(record.notes)}</div>` : ""}
+      </div>
+
+      <div class="callout info" style="margin-bottom:16px">
+        <div class="ic">📝</div>
+        <div><strong>Removal is permanent and audited.</strong> Both fields are required and written to the removal log.</div>
+      </div>
+
+      <div class="form-row">
+        <label>Removed by <span class="req">*</span> <span class="faint">(1–150 chars)</span></label>
+        <input type="text" id="rmBy" maxlength="150" placeholder="Your name or ID" autocomplete="off">
+      </div>
+      <div class="form-row">
+        <label>Reason <span class="req">*</span> <span class="faint">(1–2000 chars)</span></label>
+        <textarea id="rmReason" rows="4" maxlength="2000" placeholder="Why is this being removed?"></textarea>
+        <div class="faint" style="font-size:11px;text-align:right" id="rmCount">0 / 2000</div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" data-close>Cancel</button>
+      <button class="btn danger" id="rmSubmit">Remove violation</button>
+    </div>
+  `,
+    {
+      onMount(m) {
+        const reasonEl = m.querySelector("#rmReason");
+        const countEl = m.querySelector("#rmCount");
+        reasonEl.addEventListener("input", () => {
+          countEl.textContent = `${reasonEl.value.length} / 2000`;
+        });
+
+        m.querySelector("#rmSubmit").addEventListener("click", async () => {
+          const errBox = m.querySelector("#rmErr");
+          errBox.innerHTML = "";
+          const removed_by = m.querySelector("#rmBy").value.trim();
+          const reason = reasonEl.value.trim();
+
+          if (!removed_by || !reason) {
+            errBox.innerHTML = `<div class="callout err"><div class="ic">✕</div><div>Both <code>removed_by</code> and <code>reason</code> are required. Empty strings return <code>422</code>.</div></div>`;
+            return;
+          }
+
+          const btn = m.querySelector("#rmSubmit");
+          btn.disabled = true;
+          try {
+            const res = await call("POST", `/violations/${record.id}/remove`, {
+              body: { removed_by, reason },
+            });
+            toast(
+              "Violation removed",
+              `${res.violation_type_name || typeName} · logged`,
+              "ok",
+            );
+            closeModal();
+            if (onDone) onDone(res);
+          } catch (e) {
+            errBox.innerHTML = errorBanner(e);
+            btn.disabled = false;
+          }
+        });
+      },
+    },
+  );
+}
+
+function clearAllFormModal(emp, opts = {}) {
+  const { count, onDone } = opts;
+  openModal(
+    `
+    <div class="modal-head">
+      <h3>Clear all violations</h3>
+      <span class="badge audit">audited</span>
+      <button class="close" data-close>✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="clErr"></div>
+
+      <div class="callout err" style="margin-bottom:16px">
+        <div class="ic">⚠</div>
+        <div>This permanently removes <strong>${count} violation record${count === 1 ? "" : "s"}</strong> for <strong>${esc(emp.full_name)}</strong> and writes one audit entry per removal.</div>
+      </div>
+
+      <div class="form-row">
+        <label>Removed by <span class="req">*</span> <span class="faint">(1–150 chars)</span></label>
+        <input type="text" id="clBy" maxlength="150" placeholder="Your name or ID" autocomplete="off">
+      </div>
+      <div class="form-row">
+        <label>Reason <span class="req">*</span> <span class="faint">(1–2000 chars)</span></label>
+        <textarea id="clReason" rows="4" maxlength="2000" placeholder="Why are these being cleared?"></textarea>
+        <div class="faint" style="font-size:11px;text-align:right" id="clCount">0 / 2000</div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" data-close>Cancel</button>
+      <button class="btn danger" id="clSubmit">Clear all violations</button>
+    </div>
+  `,
+    {
+      onMount(m) {
+        const reasonEl = m.querySelector("#clReason");
+        const countEl = m.querySelector("#clCount");
+        reasonEl.addEventListener("input", () => {
+          countEl.textContent = `${reasonEl.value.length} / 2000`;
+        });
+
+        m.querySelector("#clSubmit").addEventListener("click", async () => {
+          const errBox = m.querySelector("#clErr");
+          errBox.innerHTML = "";
+          const removed_by = m.querySelector("#clBy").value.trim();
+          const reason = reasonEl.value.trim();
+
+          if (!removed_by || !reason) {
+            errBox.innerHTML = `<div class="callout err"><div class="ic">✕</div><div>Both <code>removed_by</code> and <code>reason</code> are required.</div></div>`;
+            return;
+          }
+
+          const btn = m.querySelector("#clSubmit");
+          btn.disabled = true;
+          try {
+            const res = await call(
+              "POST",
+              `/employees/${emp.id}/violations/clear`,
+              { body: { removed_by, reason } },
+            );
+            toast(
+              "Violations cleared",
+              `${res.deleted} removed · audited`,
+              "ok",
+            );
+            closeModal();
+            if (onDone) onDone(res);
+          } catch (e) {
+            errBox.innerHTML = errorBanner(e);
+            btn.disabled = false;
+          }
+        });
+      },
+    },
+  );
+}
+
+/* ============================================================
    VIEW: DASHBOARD
    ============================================================ */
 async function renderDashboard() {
@@ -421,9 +554,7 @@ async function renderDashboard() {
         <h2>Dashboard</h2>
         <p class="sub">Live overview pulled from every corner of the API.</p>
       </div>
-      <div class="actions">
-        <button class="btn" id="refreshDash">↻ Refresh</button>
-      </div>
+      <div class="actions"><button class="btn" id="refreshDash">↻ Refresh</button></div>
     </div>
     <div id="dashContent"><div class="loading"><span class="spinner"></span>Loading dashboard…</div></div>
   `;
@@ -437,7 +568,7 @@ async function loadDashboard() {
   const el = document.getElementById("dashContent");
   el.innerHTML = `<div class="loading"><span class="spinner"></span>Loading dashboard…</div>`;
 
-  const [empRes, actRes, offRes, watchRes, feedRes, deptRes] =
+  const [empRes, actRes, offRes, watchRes, feedRes, deptRes, remRes] =
     await Promise.allSettled([
       call("GET", "/employees", { query: { limit: 1 } }),
       call("GET", "/analytics/activity", {
@@ -451,14 +582,14 @@ async function loadDashboard() {
         query: { days: 14, limit: 6 },
       }),
       call("GET", "/analytics/departments"),
+      call("GET", "/violation-removals", { query: { limit: 5 } }),
     ]);
 
   const allFailed = [empRes, actRes, offRes, watchRes, feedRes, deptRes].every(
     (r) => r.status === "rejected",
   );
   if (allFailed) {
-    const err = empRes.reason;
-    el.innerHTML = errorBanner(err);
+    el.innerHTML = errorBanner(empRes.reason);
     return;
   }
 
@@ -469,6 +600,8 @@ async function loadDashboard() {
   const watchlist = watchRes.status === "fulfilled" ? watchRes.value : [];
   const feed = feedRes.status === "fulfilled" ? feedRes.value : [];
   const departments = deptRes.status === "fulfilled" ? deptRes.value : [];
+  const removals =
+    remRes.status === "fulfilled" ? remRes.value : { items: [], total: 0 };
 
   const totalPoints = departments.reduce(
     (s, d) => s + (d.total_points || 0),
@@ -483,26 +616,10 @@ async function loadDashboard() {
   let html = "";
 
   html += `<div class="stat-grid">
-    <div class="stat">
-      <div class="k">Employees</div>
-      <div class="v">${empRes.status === "fulfilled" ? employees.total : "—"}</div>
-      <div class="m">active records on file</div>
-    </div>
-    <div class="stat danger">
-      <div class="k">Total Violations</div>
-      <div class="v">${deptRes.status === "fulfilled" ? totalRecords : "—"}</div>
-      <div class="m">across all departments</div>
-    </div>
-    <div class="stat warn">
-      <div class="k">Total Points</div>
-      <div class="v">${deptRes.status === "fulfilled" ? totalPoints : "—"}</div>
-      <div class="m">issued company-wide</div>
-    </div>
-    <div class="stat ok">
-      <div class="k">Watchlist</div>
-      <div class="v">${watchRes.status === "fulfilled" ? watchlist.length : "—"}</div>
-      <div class="m">at ≥ 2 strikes</div>
-    </div>
+    <div class="stat"><div class="k">Employees</div><div class="v">${empRes.status === "fulfilled" ? employees.total : "—"}</div><div class="m">active records on file</div></div>
+    <div class="stat danger"><div class="k">Total Violations</div><div class="v">${deptRes.status === "fulfilled" ? totalRecords : "—"}</div><div class="m">across all departments</div></div>
+    <div class="stat warn"><div class="k">Total Points</div><div class="v">${deptRes.status === "fulfilled" ? totalPoints : "—"}</div><div class="m">issued company-wide</div></div>
+    <div class="stat ok"><div class="k">Watchlist</div><div class="v">${watchRes.status === "fulfilled" ? watchlist.length : "—"}</div><div class="m">at ≥ 2 strikes</div></div>
   </div>`;
 
   html += `<div class="card">
@@ -511,18 +628,13 @@ async function loadDashboard() {
       <span class="hint">GET /analytics/activity?days=30&amp;bucket=day</span>
       <div class="right"><span class="badge info">${filled.reduce((s, r) => s + r.count, 0)} events · 30d</span></div>
     </div>
-    <div class="chart-wrap">
-      ${renderBarChart(filled)}
-    </div>
+    <div class="chart-wrap">${renderBarChart(filled)}</div>
   </div>`;
 
   html += `<div class="grid-2" style="margin-top:18px">`;
 
   html += `<div class="card">
-    <div class="card-head">
-      <h3>Top Offenders</h3>
-      <span class="hint">by points</span>
-    </div>
+    <div class="card-head"><h3>Top Offenders</h3><span class="hint">by points</span></div>
     <div class="card-body tight">
       ${
         offenders.length
@@ -530,9 +642,7 @@ async function loadDashboard() {
               .map(
                 (o) => `
         <tr class="clickable" data-emp="${o.id}">
-          <td style="width:36px">
-            <div class="feed-avatar" style="width:28px;height:28px;font-size:10px">${esc(initials(o.full_name))}</div>
-          </td>
+          <td style="width:36px"><div class="feed-avatar" style="width:28px;height:28px;font-size:10px">${esc(initials(o.full_name))}</div></td>
           <td>
             <div style="font-weight:550">${esc(o.full_name)}</div>
             <div class="faint" style="font-size:11.5px">${esc(o.employee_code)}${o.department ? " · " + esc(o.department) : ""}</div>
@@ -548,10 +658,7 @@ async function loadDashboard() {
   </div>`;
 
   html += `<div class="card">
-    <div class="card-head">
-      <h3>Recent Activity</h3>
-      <span class="hint">last 14 days</span>
-    </div>
+    <div class="card-head"><h3>Recent Activity</h3><span class="hint">last 14 days</span></div>
     <div class="card-body tight">
       ${
         feed.length
@@ -567,9 +674,7 @@ async function loadDashboard() {
             </div>
             <div class="line2">${esc(f.violation_type_name || "—")} · +${f.points} pts</div>
           </div>
-          <div class="feed-meta">
-            <div class="faint" style="font-size:11px">${esc(relTime(f.issued_at))}</div>
-          </div>
+          <div class="feed-meta"><div class="faint" style="font-size:11px">${esc(relTime(f.issued_at))}</div></div>
         </div>`,
               )
               .join("")
@@ -582,16 +687,10 @@ async function loadDashboard() {
 
   if (departments.length) {
     html += `<div class="card" style="margin-top:18px">
-      <div class="card-head">
-        <h3>Department Rollup</h3>
-        <span class="hint">GET /analytics/departments</span>
-      </div>
+      <div class="card-head"><h3>Department Rollup</h3><span class="hint">GET /analytics/departments</span></div>
       <div class="card-body tight">
         <table>
-          <thead><tr>
-            <th>Department</th><th class="num">Employees</th><th class="num">Records</th>
-            <th class="num">Points</th><th class="num">Strikes</th>
-          </tr></thead>
+          <thead><tr><th>Department</th><th class="num">Employees</th><th class="num">Records</th><th class="num">Points</th><th class="num">Strikes</th></tr></thead>
           <tbody>${departments
             .map(
               (d) => `
@@ -610,11 +709,40 @@ async function loadDashboard() {
     </div>`;
   }
 
-  el.innerHTML = html;
+  if (removals.items && removals.items.length) {
+    html += `<div class="card" style="margin-top:18px">
+      <div class="card-head">
+        <h3>Recent Removals</h3>
+        <span class="hint">GET /violation-removals</span>
+        <div class="right"><button class="btn sm" id="dashViewRemovals">View all →</button></div>
+      </div>
+      <div class="card-body tight">
+        ${removals.items
+          .map(
+            (r) => `
+          <div class="feed-item">
+            <div class="feed-avatar" style="background:rgba(139,109,255,.15);color:#a891ff;border-color:rgba(139,109,255,.3)">✕</div>
+            <div class="feed-body">
+              <div class="line1">
+                <span class="who">${esc(r.employee_full_name)}</span>
+                <span class="badge audit">removed</span>
+              </div>
+              <div class="line2">${esc(r.violation_type_name)} · +${r.points} pts · by ${esc(r.removed_by)}</div>
+            </div>
+            <div class="feed-meta"><div class="faint" style="font-size:11px">${esc(relTime(r.removed_at))}</div></div>
+          </div>`,
+          )
+          .join("")}
+      </div>
+    </div>`;
+  }
 
-  el.querySelectorAll("[data-emp]").forEach((row) => {
-    row.addEventListener("click", () => openEmployee(Number(row.dataset.emp)));
-  });
+  el.innerHTML = html;
+  el.querySelectorAll("[data-emp]").forEach((row) =>
+    row.addEventListener("click", () => openEmployee(Number(row.dataset.emp))),
+  );
+  const vr = el.querySelector("#dashViewRemovals");
+  if (vr) vr.addEventListener("click", () => navigate("removals"));
 }
 
 function dayKey(d) {
@@ -633,13 +761,11 @@ function weekKey(date) {
   const week = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
   return `${d.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
 }
-
 function fillActivity(rows, days, bucket) {
   const map = new Map(rows.map((r) => [r.bucket, r]));
   const now = new Date();
   const start = new Date(now.getTime() - (days - 1) * 86400000);
   const keys = [];
-
   if (bucket === "day") {
     const d = new Date(
       Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()),
@@ -670,7 +796,6 @@ function fillActivity(rows, days, bucket) {
       d.setUTCMonth(d.getUTCMonth() + 1);
     }
   }
-
   const seen = new Set();
   const out = [];
   for (const k of keys) {
@@ -680,22 +805,16 @@ function fillActivity(rows, days, bucket) {
   }
   return out;
 }
-
 function renderBarChart(rows) {
   if (!rows.length) return '<div class="empty">No data</div>';
   const max = Math.max(...rows.map((r) => r.count), 1);
   const bars = rows
     .map((r) => {
       const pct = r.count === 0 ? 0 : Math.max(3, (r.count / max) * 100);
-      return `<div class="bar ${r.count === 0 ? "zero" : ""}"
-      style="height:${pct}%"
-      data-tip="${esc(r.bucket)} · ${r.count} violation${r.count === 1 ? "" : "s"} · ${r.points} pts"></div>`;
+      return `<div class="bar ${r.count === 0 ? "zero" : ""}" style="height:${pct}%" data-tip="${esc(r.bucket)} · ${r.count} violation${r.count === 1 ? "" : "s"} · ${r.points} pts"></div>`;
     })
     .join("");
-  const first = rows[0].bucket,
-    last = rows[rows.length - 1].bucket;
-  return `<div class="chart">${bars}</div>
-    <div class="xaxis"><span>${esc(first)}</span><span>${esc(last)}</span></div>`;
+  return `<div class="chart">${bars}</div><div class="xaxis"><span>${esc(rows[0].bucket)}</span><span>${esc(rows[rows.length - 1].bucket)}</span></div>`;
 }
 
 /* ============================================================
@@ -706,10 +825,7 @@ const empState = { offset: 0, limit: 25, filters: {} };
 async function renderEmployees() {
   view.innerHTML = `
     <div class="page-head">
-      <div>
-        <h2>Employees</h2>
-        <p class="sub">Search, filter, and manage every employee record.</p>
-      </div>
+      <div><h2>Employees</h2><p class="sub">Search, filter, and manage every employee record.</p></div>
       <div class="actions">
         <button class="btn" id="bulkBtn">Bulk import</button>
         <button class="btn primary" id="newEmpBtn">+ New Employee</button>
@@ -731,7 +847,6 @@ async function renderEmployees() {
       <div class="pager" id="empPager"></div>
     </div>
   `;
-
   document.getElementById("fApply").addEventListener("click", () => {
     empState.offset = 0;
     loadEmployees();
@@ -756,7 +871,6 @@ async function renderEmployees() {
   document
     .getElementById("bulkBtn")
     .addEventListener("click", bulkEmployeeModal);
-
   loadEmployees();
 }
 
@@ -788,16 +902,13 @@ async function loadEmployees() {
     const data = await call("GET", "/employees", {
       query: { ...f, limit: empState.limit, offset: empState.offset },
     });
-
     const unreliable = f.search || f.position || f.min_points || f.min_strikes;
     if (unreliable) {
       warn.innerHTML = `<div class="callout" style="margin:0;border-radius:0;border-left:none;border-right:none">
         <div class="ic">⚠</div>
-        <div><strong>Heads up:</strong> with <code>search</code>, <code>position</code>, <code>min_points</code> or <code>min_strikes</code> active,
-        the server's <code>total</code> is over-counted (rows are correct). Pagination is driven by row count instead.</div>
+        <div><strong>Heads up:</strong> with <code>search</code>, <code>position</code>, <code>min_points</code> or <code>min_strikes</code> active, the server's <code>total</code> is over-counted (rows are correct). Pagination is driven by row count instead.</div>
       </div>`;
     }
-
     if (!data.items.length) {
       list.innerHTML = `<div class="empty"><div class="big">◌</div>No employees match those filters.</div>`;
       return;
@@ -816,11 +927,7 @@ async function loadEmployees() {
           <td style="font-weight:550">${esc(e.full_name)}</td>
           <td>${e.department ? esc(e.department) : '<span class="faint">—</span>'}</td>
           <td>${e.position ? esc(e.position) : '<span class="faint">—</span>'}</td>
-          <td>${
-            e.status === "active"
-              ? '<span class="badge ok">active</span>'
-              : '<span class="badge off">inactive</span>'
-          }</td>
+          <td>${e.status === "active" ? '<span class="badge ok">active</span>' : '<span class="badge off">inactive</span>'}</td>
           <td class="num">${e.total_points}</td>
           <td class="num">${e.total_strikes > 0 ? `<span class="badge strike">${e.total_strikes}</span>` : '<span class="faint">0</span>'}</td>
           <td style="width:32px"><span class="faint">›</span></td>
@@ -866,19 +973,14 @@ async function loadEmployees() {
 async function openEmployee(id) {
   openModal(
     `
-    <div class="modal-head">
-      <h3>Employee</h3>
-      <button class="close" data-close>✕</button>
-    </div>
+    <div class="modal-head"><h3>Employee</h3><button class="close" data-close>✕</button></div>
     <div class="modal-body"><div class="loading"><span class="spinner"></span>Loading…</div></div>
   `,
     { wide: true },
   );
-
   try {
     const emp = await call("GET", `/employees/${id}`);
-    const modal = modalRoot.querySelector(".modal");
-    renderEmployeeDetail(modal, emp);
+    renderEmployeeDetail(modalRoot.querySelector(".modal"), emp);
   } catch (e) {
     modalRoot.querySelector(".modal-body").innerHTML = errorBanner(e);
   }
@@ -938,7 +1040,7 @@ function renderEmployeeDetail(modal, emp) {
             </div>
           </div>
           <div class="feed-meta">
-            <button class="btn sm danger" data-del-rec="${r.id}" title="Delete record">✕</button>
+            <button class="btn sm danger" data-remove-rec="${r.id}" title="Remove violation (audited)">Remove</button>
           </div>
         </div>`,
         )
@@ -950,18 +1052,14 @@ function renderEmployeeDetail(modal, emp) {
     <div class="divider"></div>
     <div class="row-flex modal-actions" style="flex-wrap:wrap;gap:8px">
       <button class="btn primary" id="mIssue">+ Issue violation</button>
-      ${
-        isActive
-          ? '<button class="btn" id="mDeactivate">Deactivate</button>'
-          : '<button class="btn" id="mReactivate">Reactivate</button>'
-      }
+      ${isActive ? '<button class="btn" id="mDeactivate">Deactivate</button>' : '<button class="btn" id="mReactivate">Reactivate</button>'}
       <button class="btn" id="mEdit">Edit details</button>
       <span class="right"></span>
-      <button class="btn danger" id="mAmnesty">Amnesty (clear all)</button>
-      <button class="btn danger" id="mDelete">Delete</button>
+      <button class="btn danger" id="mClearAll" ${records.length ? "" : "disabled"}>Clear all violations</button>
+      <button class="btn danger" id="mDelete">Delete employee</button>
     </div>
     <div class="faint" style="font-size:11px;margin-top:10px">
-      Delete cascades — it also removes every violation record.
+      Clearing and removing are audited (requires <code>removed_by</code> + <code>reason</code>). Deleting the employee <strong>bypasses the audit trail</strong> — prefer deactivate.
     </div>
   `;
 
@@ -997,21 +1095,14 @@ function renderEmployeeDetail(modal, emp) {
       ),
     );
 
-  body.querySelector("#mAmnesty").addEventListener("click", () => {
-    confirmModal({
-      title: "Clear all violations?",
-      danger: true,
-      confirmLabel: "Clear all",
-      body: `<p style="font-size:13px;color:var(--muted)">This permanently deletes <strong>every</strong> violation record for <strong>${esc(emp.full_name)}</strong>. This cannot be undone.</p>`,
-      onConfirm: async () => {
-        try {
-          const r = await call("DELETE", `/employees/${emp.id}/violations`);
-          toast("Amnesty applied", `${r.deleted} record(s) deleted`, "ok");
-          closeModal();
-          if (state.view === "employees") loadEmployees();
-        } catch (e) {
-          toast("Failed", describeError(e.result).title, "err");
-        }
+  body.querySelector("#mClearAll").addEventListener("click", () => {
+    if (!records.length) return;
+    clearAllFormModal(emp, {
+      count: records.length,
+      onDone: () => {
+        if (state.view === "employees") loadEmployees();
+        if (state.view === "removals") renderRemovals();
+        else openEmployee(emp.id);
       },
     });
   });
@@ -1021,7 +1112,13 @@ function renderEmployeeDetail(modal, emp) {
       title: "Delete employee?",
       danger: true,
       confirmLabel: "Delete permanently",
-      body: `<p style="font-size:13px;color:var(--muted)">Hard-deletes <strong>${esc(emp.full_name)}</strong> and cascades to all of their violation records. Consider <em>deactivate</em> instead.</p>`,
+      body: `
+        <div class="callout err" style="margin-bottom:14px">
+          <div class="ic">⚠</div>
+          <div><strong>This bypasses the audit trail.</strong> All ${records.length} violation record${records.length === 1 ? "" : "s"} for this employee will be deleted <em>silently</em> — no <code>violation_removals</code> entries are written.</div>
+        </div>
+        <p style="font-size:13px;color:var(--muted)">Hard-deletes <strong>${esc(emp.full_name)}</strong> and cascades. If you need every removal logged, use <em>deactivate</em> instead.</p>
+      `,
       onConfirm: async () => {
         try {
           await call("DELETE", `/employees/${emp.id}`);
@@ -1035,22 +1132,19 @@ function renderEmployeeDetail(modal, emp) {
     });
   });
 
-  body.querySelectorAll("[data-del-rec]").forEach((b) => {
+  body.querySelectorAll("[data-remove-rec]").forEach((b) => {
     b.addEventListener("click", () => {
-      const rid = b.dataset.delRec;
-      confirmModal({
-        title: "Delete violation record?",
-        danger: true,
-        confirmLabel: "Delete",
-        body: `<p style="font-size:13px;color:var(--muted)">This removes violation record <code>#${rid}</code>.</p>`,
-        onConfirm: async () => {
-          try {
-            await call("DELETE", `/violations/${rid}`);
-            toast("Record deleted", `#${rid}`, "ok");
-            openEmployee(emp.id);
-          } catch (e) {
-            toast("Delete failed", describeError(e.result).title, "err");
-          }
+      const rec = records.find((r) => r.id === Number(b.dataset.removeRec));
+      if (!rec) return;
+      const enriched = {
+        ...rec,
+        employee_full_name: emp.full_name,
+        employee_code: emp.employee_code,
+      };
+      removalFormModal(enriched, {
+        onDone: () => {
+          openEmployee(emp.id);
+          if (state.view === "removals") renderRemovals();
         },
       });
     });
@@ -1161,12 +1255,10 @@ function editEmployeeModal(emp, after) {
           if (dept && dept !== (emp.department || ""))
             payload.department = dept;
           if (pos && pos !== (emp.position || "")) payload.position = pos;
-
           if (!Object.keys(payload).length) {
             toast("Nothing to update", "No fields changed", "warn");
             return;
           }
-
           try {
             await call("PATCH", `/employees/${emp.id}`, {
               body: payload,
@@ -1269,7 +1361,6 @@ async function issueViolationModal(emp) {
     );
     return;
   }
-
   if (!types.length) {
     toast(
       "No violation types",
@@ -1323,7 +1414,6 @@ async function issueViolationModal(emp) {
           if (by) payload.issued_by = by;
           if (notes) payload.notes = notes;
           if (at) payload.issued_at = new Date(at).toISOString();
-
           try {
             const rec = await call("POST", `/employees/${emp.id}/violations`, {
               body: payload,
@@ -1351,13 +1441,8 @@ async function issueViolationModal(emp) {
 async function renderTypes() {
   view.innerHTML = `
     <div class="page-head">
-      <div>
-        <h2>Violation Types</h2>
-        <p class="sub">The rulebook. Editing a type never rewrites historical records.</p>
-      </div>
-      <div class="actions">
-        <button class="btn primary" id="newTypeBtn">+ New Type</button>
-      </div>
+      <div><h2>Violation Types</h2><p class="sub">The rulebook. Editing a type never rewrites historical records.</p></div>
+      <div class="actions"><button class="btn primary" id="newTypeBtn">+ New Type</button></div>
     </div>
     <div class="card">
       <div class="filters">
@@ -1382,12 +1467,10 @@ async function renderTypes() {
 async function loadTypes() {
   const el = document.getElementById("typeList");
   el.innerHTML = `<div class="loading"><span class="spinner"></span>Loading…</div>`;
-
   const includeInactive = document.getElementById("tInactive").checked
     ? "true"
     : "false";
   const onlyStrikes = document.getElementById("tStrikes").value;
-
   try {
     const types = await call("GET", "/violation-types/all", {
       query: {
@@ -1395,17 +1478,13 @@ async function loadTypes() {
         only_strikes: onlyStrikes || null,
       },
     });
-
     if (!types.length) {
       el.innerHTML = `<div class="empty"><div class="big">◌</div>No violation types.</div>`;
       return;
     }
 
     el.innerHTML = `<table>
-      <thead><tr>
-        <th>Name</th><th>Description</th><th class="num">Default pts</th>
-        <th>Strike</th><th>Status</th><th></th>
-      </tr></thead>
+      <thead><tr><th>Name</th><th>Description</th><th class="num">Default pts</th><th>Strike</th><th>Status</th><th></th></tr></thead>
       <tbody>${types
         .map(
           (t) => `
@@ -1417,11 +1496,7 @@ async function loadTypes() {
           <td>${t.is_active ? '<span class="badge ok">active</span>' : '<span class="badge off">inactive</span>'}</td>
           <td style="text-align:right;white-space:nowrap">
             <button class="btn sm" data-edit="${t.id}">Edit</button>
-            ${
-              t.is_active
-                ? `<button class="btn sm" data-deact="${t.id}">Deactivate</button>`
-                : `<button class="btn sm" data-act="${t.id}">Activate</button>`
-            }
+            ${t.is_active ? `<button class="btn sm" data-deact="${t.id}">Deactivate</button>` : `<button class="btn sm" data-act="${t.id}">Activate</button>`}
             <button class="btn sm danger" data-del="${t.id}">Delete</button>
           </td>
         </tr>`,
@@ -1431,12 +1506,13 @@ async function loadTypes() {
     </table>`;
 
     el.querySelectorAll("[data-edit]").forEach((b) =>
-      b.addEventListener("click", () => {
-        const t = types.find((x) => x.id === Number(b.dataset.edit));
-        editTypeModal(t, loadTypes);
-      }),
+      b.addEventListener("click", () =>
+        editTypeModal(
+          types.find((x) => x.id === Number(b.dataset.edit)),
+          loadTypes,
+        ),
+      ),
     );
-
     el.querySelectorAll("[data-act]").forEach((b) =>
       b.addEventListener("click", () =>
         typeAction(
@@ -1445,7 +1521,6 @@ async function loadTypes() {
         ),
       ),
     );
-
     el.querySelectorAll("[data-deact]").forEach((b) =>
       b.addEventListener("click", () =>
         typeAction(
@@ -1454,12 +1529,10 @@ async function loadTypes() {
         ),
       ),
     );
-
     el.querySelectorAll("[data-del]").forEach((b) =>
-      b.addEventListener("click", () => {
-        const t = types.find((x) => x.id === Number(b.dataset.del));
-        deleteTypeFlow(t);
-      }),
+      b.addEventListener("click", () =>
+        deleteTypeFlow(types.find((x) => x.id === Number(b.dataset.del))),
+      ),
     );
   } catch (e) {
     el.innerHTML = errorBanner(e);
@@ -1528,36 +1601,19 @@ function typeFormModal(existing, after) {
   const isEdit = !!existing;
   openModal(
     `
-    <div class="modal-head">
-      <h3>${isEdit ? "Edit Violation Type" : "New Violation Type"}</h3>
-      <button class="close" data-close>✕</button>
-    </div>
+    <div class="modal-head"><h3>${isEdit ? "Edit Violation Type" : "New Violation Type"}</h3><button class="close" data-close>✕</button></div>
     <div class="modal-body">
       <div id="tpErr"></div>
-      <div class="form-row">
-        <label>Name</label>
-        <input type="text" id="tpName" value="${existing ? esc(existing.name) : ""}" placeholder="Late Arrival">
-      </div>
-      <div class="form-row">
-        <label>Description <span class="opt">optional</span></label>
-        <textarea id="tpDesc" rows="2" placeholder="Short explanation…">${existing && existing.description ? esc(existing.description) : ""}</textarea>
-      </div>
+      <div class="form-row"><label>Name</label><input type="text" id="tpName" value="${existing ? esc(existing.name) : ""}" placeholder="Late Arrival"></div>
+      <div class="form-row"><label>Description <span class="opt">optional</span></label><textarea id="tpDesc" rows="2" placeholder="Short explanation…">${existing && existing.description ? esc(existing.description) : ""}</textarea></div>
       <div class="form-grid">
-        <div class="form-row">
-          <label>Default points</label>
-          <input type="number" id="tpPoints" min="0" value="${existing ? existing.default_points : 0}">
-        </div>
+        <div class="form-row"><label>Default points</label><input type="number" id="tpPoints" min="0" value="${existing ? existing.default_points : 0}"></div>
         <div class="form-row" style="justify-content:flex-end">
           <label>&nbsp;</label>
           <label class="chk" style="height:34px"><input type="checkbox" id="tpStrike" ${existing && existing.is_strike ? "checked" : ""}> Counts as a strike</label>
         </div>
       </div>
-      ${
-        isEdit
-          ? `<div class="callout" style="margin:0"><div class="ic">⚠</div>
-        <div>Changing <code>default_points</code> or <code>is_strike</code> does <strong>not</strong> rewrite historical violation records — they keep their snapshotted values.</div></div>`
-          : ""
-      }
+      ${isEdit ? `<div class="callout" style="margin:0"><div class="ic">⚠</div><div>Changing <code>default_points</code> or <code>is_strike</code> does <strong>not</strong> rewrite historical violation records — they keep their snapshotted values.</div></div>` : ""}
     </div>
     <div class="modal-foot">
       <button class="btn" data-close>Cancel</button>
@@ -1573,12 +1629,10 @@ function typeFormModal(existing, after) {
           const desc = m.querySelector("#tpDesc").value.trim();
           const points = Number(m.querySelector("#tpPoints").value) || 0;
           const strike = m.querySelector("#tpStrike").checked;
-
           if (!name) {
             errBox.innerHTML = `<div class="callout err"><div class="ic">✕</div><div>Name is required.</div></div>`;
             return;
           }
-
           try {
             if (isEdit) {
               const payload = {};
@@ -1624,10 +1678,7 @@ function typeFormModal(existing, after) {
 async function renderViolations() {
   view.innerHTML = `
     <div class="page-head">
-      <div>
-        <h2>Violations</h2>
-        <p class="sub">Company-wide activity feed — every record, newest first.</p>
-      </div>
+      <div><h2>Violations</h2><p class="sub">Company-wide activity feed — every record, newest first.</p></div>
       <div class="actions">
         <button class="btn" id="issueBtn">+ Issue violation</button>
         <button class="btn" id="feedRefresh">↻ Refresh</button>
@@ -1637,10 +1688,8 @@ async function renderViolations() {
       <div class="filters">
         <label class="chk">Look-back</label>
         <select id="feedDays" style="width:130px">
-          <option value="7">7 days</option>
-          <option value="30" selected>30 days</option>
-          <option value="90">90 days</option>
-          <option value="365">365 days</option>
+          <option value="7">7 days</option><option value="30" selected>30 days</option>
+          <option value="90">90 days</option><option value="365">365 days</option>
         </select>
         <label class="chk"><input type="checkbox" id="feedStrikes"> Strikes only</label>
         <input type="number" id="feedLimit" value="50" min="1" max="200" style="width:100px" title="Limit (1-200)">
@@ -1669,7 +1718,6 @@ async function renderViolations() {
 async function loadRecentFeed() {
   const el = document.getElementById("feedList");
   el.innerHTML = `<div class="loading"><span class="spinner"></span>Loading…</div>`;
-
   const days = document.getElementById("feedDays").value;
   const onlyStrikes = document.getElementById("feedStrikes").checked
     ? "true"
@@ -1678,12 +1726,10 @@ async function loadRecentFeed() {
     200,
     Math.max(1, Number(document.getElementById("feedLimit").value) || 50),
   );
-
   try {
     const items = await call("GET", "/violations/recent", {
       query: { days, only_strikes: onlyStrikes, limit },
     });
-
     if (!items.length) {
       el.innerHTML = `<div class="empty"><div class="big">◌</div>No violations in the last ${days} days.</div>`;
       return;
@@ -1701,39 +1747,24 @@ async function loadRecentFeed() {
             ${f.is_strike ? '<span class="badge strike">strike</span>' : ""}
           </div>
           <div class="line2">
-            ${esc(f.violation_type_name || (f.violation_type ? f.violation_type.name : "—"))}
-            · +${f.points} pts
-            ${f.issued_by ? " · " + esc(f.issued_by) : ""}
+            ${esc(f.violation_type_name || (f.violation_type ? f.violation_type.name : "—"))} · +${f.points} pts${f.issued_by ? " · " + esc(f.issued_by) : ""}
             ${f.notes ? '<br><span style="color:var(--muted)">' + esc(f.notes) + "</span>" : ""}
           </div>
         </div>
         <div class="feed-meta">
           <div style="font-size:11.5px" class="muted">${esc(fmtDateShort(f.issued_at))}</div>
           <div class="faint" style="font-size:11px">${esc(relTime(f.issued_at))}</div>
-          <button class="btn sm danger" data-del="${f.id}" style="margin-top:6px">Delete</button>
+          <button class="btn sm danger" data-remove="${f.id}" style="margin-top:6px">Remove</button>
         </div>
       </div>`,
       )
       .join("");
 
-    el.querySelectorAll("[data-del]").forEach((b) =>
+    el.querySelectorAll("[data-remove]").forEach((b) =>
       b.addEventListener("click", () => {
-        confirmModal({
-          title: "Delete violation record?",
-          danger: true,
-          confirmLabel: "Delete",
-          body: `<p style="font-size:13px;color:var(--muted)">Removes record <code>#${b.dataset.del}</code> permanently.</p>`,
-          onConfirm: async () => {
-            try {
-              await call("DELETE", `/violations/${b.dataset.del}`);
-              toast("Record deleted", `#${b.dataset.del}`, "ok");
-              closeModal();
-              loadRecentFeed();
-            } catch (e) {
-              toast("Delete failed", describeError(e.result).title, "err");
-            }
-          },
-        });
+        const f = items.find((x) => x.id === Number(b.dataset.remove));
+        if (!f) return;
+        removalFormModal(f, { onDone: () => loadRecentFeed() });
       }),
     );
   } catch (e) {
@@ -1770,11 +1801,12 @@ function issueByLookupModal() {
           try {
             let results;
             try {
-              const one = await call(
-                "GET",
-                `/employees/by-code/${encodeURIComponent(q)}`,
-              );
-              results = [one];
+              results = [
+                await call(
+                  "GET",
+                  `/employees/by-code/${encodeURIComponent(q)}`,
+                ),
+              ];
             } catch {
               const page = await call("GET", "/employees", {
                 query: { search: q, limit: 10 },
@@ -1797,12 +1829,13 @@ function issueByLookupModal() {
             </button>`,
               )
               .join("");
-
             box.querySelectorAll("[data-pick]").forEach((b) =>
               b.addEventListener("click", async () => {
-                const id = Number(b.dataset.pick);
                 try {
-                  const full = await call("GET", `/employees/${id}`);
+                  const full = await call(
+                    "GET",
+                    `/employees/${b.dataset.pick}`,
+                  );
                   closeModal();
                   issueViolationModal(full);
                 } catch (e) {
@@ -1825,15 +1858,206 @@ function issueByLookupModal() {
 }
 
 /* ============================================================
+   VIEW: REMOVAL LOG
+   ============================================================ */
+const remState = { offset: 0, limit: 25 };
+
+async function renderRemovals() {
+  view.innerHTML = `
+    <div class="page-head">
+      <div>
+        <h2>Removal Log</h2>
+        <p class="sub">Immutable audit trail for every violation removal. Newest first.</p>
+      </div>
+      <div class="actions"><button class="btn" id="remRefresh">↻ Refresh</button></div>
+    </div>
+    <div class="callout info">
+      <div class="ic">ℹ</div>
+      <div>
+        <strong>One entry per removal.</strong> Hard-deleting an employee bypasses this log entirely — prefer <em>deactivate</em> when the audit trail must stay complete.
+      </div>
+    </div>
+    <div class="card">
+      <div class="filters">
+        <input type="text" id="remSearch" placeholder="Search reason or name…">
+        <input type="text" id="remBy" placeholder="Removed by">
+        <input type="date" id="remSince" title="Since" style="width:150px">
+        <input type="date" id="remUntil" title="Until" style="width:150px">
+        <button class="btn" id="remApply">Search</button>
+        <button class="btn ghost" id="remClearBtn">Clear</button>
+      </div>
+      <div id="remList"><div class="loading"><span class="spinner"></span>Loading…</div></div>
+      <div class="pager" id="remPager"></div>
+    </div>
+  `;
+  document.getElementById("remApply").addEventListener("click", () => {
+    remState.offset = 0;
+    loadRemovals();
+  });
+  document.getElementById("remRefresh").addEventListener("click", () => {
+    remState.offset = 0;
+    loadRemovals();
+  });
+  document.getElementById("remClearBtn").addEventListener("click", () => {
+    ["remSearch", "remBy", "remSince", "remUntil"].forEach(
+      (id) => (document.getElementById(id).value = ""),
+    );
+    remState.offset = 0;
+    loadRemovals();
+  });
+  document.getElementById("remSearch").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      remState.offset = 0;
+      loadRemovals();
+    }
+  });
+  loadRemovals();
+}
+
+async function loadRemovals() {
+  const list = document.getElementById("remList");
+  const pager = document.getElementById("remPager");
+  list.innerHTML = `<div class="loading"><span class="spinner"></span>Loading…</div>`;
+  pager.innerHTML = "";
+
+  const since = document.getElementById("remSince").value;
+  const until = document.getElementById("remUntil").value;
+  const query = {
+    search: document.getElementById("remSearch").value.trim(),
+    removed_by: document.getElementById("remBy").value.trim(),
+    since: since ? new Date(since + "T00:00:00Z").toISOString() : "",
+    until: until ? new Date(until + "T23:59:59Z").toISOString() : "",
+    limit: remState.limit,
+    offset: remState.offset,
+  };
+
+  try {
+    const data = await call("GET", "/violation-removals", { query });
+
+    if (!data.items || !data.items.length) {
+      list.innerHTML = `<div class="empty"><div class="big">◌</div>No removals match those filters.</div>`;
+      return;
+    }
+
+    list.innerHTML = `<table>
+      <thead><tr>
+        <th>Removed</th><th>Employee</th><th>Violation</th>
+        <th class="num">Pts</th><th>Removed by</th><th>Reason</th><th></th>
+      </tr></thead>
+      <tbody>${data.items
+        .map(
+          (r) => `
+        <tr class="clickable" data-rem="${r.id}">
+          <td>
+            <div style="font-size:12.5px">${esc(fmtDateShort(r.removed_at))}</div>
+            <div class="faint" style="font-size:11px">${esc(relTime(r.removed_at))}</div>
+          </td>
+          <td>
+            <div style="font-weight:550">${esc(r.employee_full_name)}</div>
+            <div class="faint mono" style="font-size:11px">${esc(r.employee_code)}</div>
+          </td>
+          <td>
+            <div>${esc(r.violation_type_name)}</div>
+            ${r.is_strike ? '<span class="badge strike">strike</span>' : ""}
+          </td>
+          <td class="num">${r.points}</td>
+          <td>${esc(r.removed_by)}</td>
+          <td class="faint trunc" title="${esc(r.reason)}">${esc(r.reason)}</td>
+          <td style="width:32px"><span class="faint">›</span></td>
+        </tr>`,
+        )
+        .join("")}
+      </tbody>
+    </table>`;
+
+    list.querySelectorAll("tr[data-rem]").forEach((tr) => {
+      tr.addEventListener("click", () => {
+        const r = data.items.find((x) => x.id === Number(tr.dataset.rem));
+        if (r) openRemoval(r);
+      });
+    });
+
+    const shownEnd = remState.offset + data.items.length;
+    const hasNext = data.items.length === remState.limit;
+    pager.innerHTML = `
+      <span class="info">${remState.offset + 1}–${shownEnd}${typeof data.total === "number" ? " of " + data.total : ""}</span>
+      <span class="spacer"></span>
+      <button class="btn sm" id="rPrev" ${remState.offset === 0 ? "disabled" : ""}>← Prev</button>
+      <button class="btn sm" id="rNext" ${!hasNext ? "disabled" : ""}>Next →</button>
+    `;
+    const prev = pager.querySelector("#rPrev");
+    const next = pager.querySelector("#rNext");
+    if (prev)
+      prev.addEventListener("click", () => {
+        remState.offset = Math.max(0, remState.offset - remState.limit);
+        loadRemovals();
+      });
+    if (next)
+      next.addEventListener("click", () => {
+        remState.offset += remState.limit;
+        loadRemovals();
+      });
+  } catch (e) {
+    list.innerHTML = errorBanner(e);
+  }
+}
+
+function openRemoval(r) {
+  openModal(
+    `
+    <div class="modal-head">
+      <h3>Removal #${r.id}</h3>
+      <span class="badge audit">audit entry</span>
+      <button class="close" data-close>✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="stat-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:18px">
+        <div class="stat" style="padding:12px 14px"><div class="k">Points removed</div><div class="v" style="font-size:22px">${r.points}</div></div>
+        <div class="stat ${r.is_strike ? "danger" : ""}" style="padding:12px 14px"><div class="k">Strike</div><div class="v" style="font-size:22px">${r.is_strike ? "Yes" : "No"}</div></div>
+        <div class="stat warn" style="padding:12px 14px"><div class="k">When</div><div class="v" style="font-size:14px;letter-spacing:0;font-weight:600">${esc(fmtDateShort(r.removed_at))}</div></div>
+      </div>
+
+      <div style="font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--faint);margin-bottom:8px">Removed</div>
+      <div class="kv-grid" style="margin-bottom:16px">
+        <div class="k">by</div><div class="v">${esc(r.removed_by)}</div>
+        <div class="k">at</div><div class="v">${esc(fmtDate(r.removed_at))}</div>
+        <div class="k">reason</div><div class="v" style="white-space:pre-wrap">${esc(r.reason)}</div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div style="font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--faint);margin-bottom:8px">Employee</div>
+      <div class="kv-grid" style="margin-bottom:16px">
+        <div class="k">name</div><div class="v">${esc(r.employee_full_name)}</div>
+        <div class="k">code</div><div class="v mono">${esc(r.employee_code)}</div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div style="font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--faint);margin-bottom:8px">Original violation</div>
+      <div class="kv-grid">
+        <div class="k">type</div><div class="v">${esc(r.violation_type_name)}${r.is_strike ? ' <span class="badge strike">strike</span>' : ""}</div>
+        <div class="k">points</div><div class="v">+${r.points}</div>
+        <div class="k">issued by</div><div class="v">${r.original_issued_by ? esc(r.original_issued_by) : '<span class="faint">—</span>'}</div>
+        <div class="k">issued at</div><div class="v">${esc(fmtDate(r.original_issued_at))}</div>
+        <div class="k">notes</div><div class="v" style="white-space:pre-wrap">${r.original_notes ? esc(r.original_notes) : '<span class="faint">—</span>'}</div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" data-close>Close</button>
+    </div>
+  `,
+    { wide: true },
+  );
+}
+
+/* ============================================================
    VIEW: ANALYTICS
    ============================================================ */
 async function renderAnalytics() {
   view.innerHTML = `
     <div class="page-head">
-      <div>
-        <h2>Analytics</h2>
-        <p class="sub">Six read-only endpoints. All return bare arrays, never envelopes.</p>
-      </div>
+      <div><h2>Analytics</h2><p class="sub">Six read-only endpoints. All return bare arrays, never envelopes.</p></div>
       <div class="actions"><button class="btn" id="anRefresh">↻ Refresh</button></div>
     </div>
     <div class="tabs" id="anTabs">
@@ -1846,7 +2070,6 @@ async function renderAnalytics() {
     </div>
     <div id="anBody"></div>
   `;
-
   document.getElementById("anTabs").addEventListener("click", (e) => {
     const t = e.target.closest(".tab");
     if (!t) return;
@@ -1856,7 +2079,6 @@ async function renderAnalytics() {
   document
     .getElementById("anRefresh")
     .addEventListener("click", renderAnalyticsTab);
-
   renderAnalyticsTab();
 }
 
@@ -1886,7 +2108,6 @@ async function anActivity() {
     const filled = fillActivity(rows, 30, "day");
     const totalCount = filled.reduce((s, r) => s + r.count, 0);
     const totalPoints = filled.reduce((s, r) => s + r.points, 0);
-
     el.innerHTML = `
       <div class="stat-grid" style="grid-template-columns:repeat(3,1fr)">
         <div class="stat"><div class="k">Events · 30d</div><div class="v">${totalCount}</div></div>
@@ -1894,27 +2115,14 @@ async function anActivity() {
         <div class="stat ok"><div class="k">Daily avg</div><div class="v">${(totalCount / 30).toFixed(1)}</div></div>
       </div>
       <div class="card">
-        <div class="card-head">
-          <h3>Daily activity</h3>
-          <span class="hint">GET /analytics/activity?days=30&amp;bucket=day</span>
-          <div class="right"><span class="badge warn">gaps zero-filled client-side</span></div>
-        </div>
+        <div class="card-head"><h3>Daily activity</h3><span class="hint">GET /analytics/activity?days=30&amp;bucket=day</span><div class="right"><span class="badge warn">gaps zero-filled client-side</span></div></div>
         <div class="chart-wrap">${renderBarChart(filled)}</div>
       </div>
       <div class="card">
         <div class="card-head"><h3>Raw buckets</h3><span class="hint">only ${rows.length} bucket(s) returned by the server</span></div>
         <div class="card-body tight">
-          <table>
-            <thead><tr><th>Bucket</th><th class="num">Count</th><th class="num">Points</th></tr></thead>
-            <tbody>${rows
-              .map(
-                (r) => `<tr>
-              <td class="mono">${esc(r.bucket)}</td>
-              <td class="num">${r.count}</td>
-              <td class="num">${r.points}</td>
-            </tr>`,
-              )
-              .join("")}</tbody>
+          <table><thead><tr><th>Bucket</th><th class="num">Count</th><th class="num">Points</th></tr></thead>
+            <tbody>${rows.map((r) => `<tr><td class="mono">${esc(r.bucket)}</td><td class="num">${r.count}</td><td class="num">${r.points}</td></tr>`).join("")}</tbody>
           </table>
         </div>
       </div>`;
@@ -1930,9 +2138,7 @@ async function anOffenders() {
       <div class="filters">
         <label class="chk">Rank by</label>
         <select id="offBy" style="width:150px">
-          <option value="points">Points</option>
-          <option value="strikes">Strikes</option>
-          <option value="records">Records</option>
+          <option value="points">Points</option><option value="strikes">Strikes</option><option value="records">Records</option>
         </select>
         <input type="number" id="offLimit" value="10" min="1" max="100" style="width:90px" title="Limit">
       </div>
@@ -1942,34 +2148,31 @@ async function anOffenders() {
     const body = document.getElementById("offBody");
     body.innerHTML = `<div class="loading"><span class="spinner"></span>Loading…</div>`;
     try {
-      const by = document.getElementById("offBy").value;
-      const limit = document.getElementById("offLimit").value;
       const rows = await call("GET", "/analytics/top-offenders", {
-        query: { by, limit },
+        query: {
+          by: document.getElementById("offBy").value,
+          limit: document.getElementById("offLimit").value,
+        },
       });
       if (!rows.length) {
         body.innerHTML = `<div class="empty">No data.</div>`;
         return;
       }
       body.innerHTML = `<table>
-        <thead><tr><th style="width:40px">#</th><th>Employee</th><th>Department</th>
-        <th class="num">Points</th><th class="num">Strikes</th></tr></thead>
+        <thead><tr><th style="width:40px">#</th><th>Employee</th><th>Department</th><th class="num">Points</th><th class="num">Strikes</th></tr></thead>
         <tbody>${rows
           .map(
             (r, i) => `
           <tr class="clickable" data-emp="${r.id}">
             <td class="mono faint">${i + 1}</td>
-            <td>
-              <div style="font-weight:550">${esc(r.full_name)}</div>
-              <div class="faint mono" style="font-size:11px">${esc(r.employee_code)}</div>
-            </td>
+            <td><div style="font-weight:550">${esc(r.full_name)}</div><div class="faint mono" style="font-size:11px">${esc(r.employee_code)}</div></td>
             <td>${r.department ? esc(r.department) : '<span class="faint">—</span>'}</td>
             <td class="num">${r.total_points}</td>
             <td class="num">${r.total_strikes > 0 ? `<span class="badge strike">${r.total_strikes}</span>` : '<span class="faint">0</span>'}</td>
           </tr>`,
           )
-          .join("")}
-        </tbody></table>`;
+          .join("")}</tbody>
+      </table>`;
       body
         .querySelectorAll("[data-emp]")
         .forEach((tr) =>
@@ -2014,17 +2217,14 @@ async function anWatchlist() {
           .map(
             (r) => `
           <tr class="clickable" data-emp="${r.id}">
-            <td>
-              <div style="font-weight:550">${esc(r.full_name)}</div>
-              <div class="faint mono" style="font-size:11px">${esc(r.employee_code)}</div>
-            </td>
+            <td><div style="font-weight:550">${esc(r.full_name)}</div><div class="faint mono" style="font-size:11px">${esc(r.employee_code)}</div></td>
             <td>${r.department ? esc(r.department) : '<span class="faint">—</span>'}</td>
             <td class="num"><span class="badge strike">${r.total_strikes}</span></td>
             <td class="num">${r.total_points}</td>
           </tr>`,
           )
-          .join("")}
-        </tbody></table>`;
+          .join("")}</tbody>
+      </table>`;
       body
         .querySelectorAll("[data-emp]")
         .forEach((tr) =>
@@ -2054,8 +2254,7 @@ async function anDepartments() {
       <div class="card-head"><h3>Per-department rollup</h3><span class="hint">GET /analytics/departments</span></div>
       <div class="card-body tight">
         <table>
-          <thead><tr><th>Department</th><th class="num">Employees</th><th class="num">Records</th>
-            <th class="num">Points</th><th class="num">Strikes</th><th style="width:140px"></th></tr></thead>
+          <thead><tr><th>Department</th><th class="num">Employees</th><th class="num">Records</th><th class="num">Points</th><th class="num">Strikes</th><th style="width:140px"></th></tr></thead>
           <tbody>${rows
             .map(
               (r) => `
@@ -2065,15 +2264,10 @@ async function anDepartments() {
               <td class="num">${r.total_records}</td>
               <td class="num">${r.total_points}</td>
               <td class="num">${r.total_strikes}</td>
-              <td>
-                <div style="height:6px;background:var(--surface-3);border-radius:4px;overflow:hidden">
-                  <div style="height:100%;width:${((r.total_points / max) * 100).toFixed(1)}%;background:linear-gradient(90deg,#6d8cff,#8b6dff);border-radius:4px"></div>
-                </div>
-              </td>
+              <td><div style="height:6px;background:var(--surface-3);border-radius:4px;overflow:hidden"><div style="height:100%;width:${((r.total_points / max) * 100).toFixed(1)}%;background:linear-gradient(90deg,#6d8cff,#8b6dff);border-radius:4px"></div></div></td>
             </tr>`,
             )
-            .join("")}
-          </tbody>
+            .join("")}</tbody>
         </table>
       </div>
     </div>`;
@@ -2098,8 +2292,7 @@ async function anTypes() {
       <div class="card-head"><h3>Rulebook usage</h3><span class="hint">GET /analytics/violation-types</span></div>
       <div class="card-body tight">
         <table>
-          <thead><tr><th>Type</th><th class="num">Default pts</th><th>Strike</th>
-            <th class="num">Issued</th><th class="num">Total pts</th><th style="width:120px"></th></tr></thead>
+          <thead><tr><th>Type</th><th class="num">Default pts</th><th>Strike</th><th class="num">Issued</th><th class="num">Total pts</th><th style="width:120px"></th></tr></thead>
           <tbody>${rows
             .map(
               (r) => `
@@ -2109,15 +2302,10 @@ async function anTypes() {
               <td>${r.is_strike ? '<span class="badge strike">strike</span>' : '<span class="faint">—</span>'}</td>
               <td class="num">${r.times_issued}</td>
               <td class="num">${r.total_points}</td>
-              <td>
-                <div style="height:6px;background:var(--surface-3);border-radius:4px;overflow:hidden">
-                  <div style="height:100%;width:${((r.times_issued / max) * 100).toFixed(1)}%;background:linear-gradient(90deg,#fbbf24,#f59e0b);border-radius:4px"></div>
-                </div>
-              </td>
+              <td><div style="height:6px;background:var(--surface-3);border-radius:4px;overflow:hidden"><div style="height:100%;width:${((r.times_issued / max) * 100).toFixed(1)}%;background:linear-gradient(90deg,#fbbf24,#f59e0b);border-radius:4px"></div></div></td>
             </tr>`,
             )
-            .join("")}
-          </tbody>
+            .join("")}</tbody>
         </table>
       </div>
     </div>`;
@@ -2134,7 +2322,7 @@ async function anClean() {
         <label class="chk">Clean since <span class="faint">(leave blank for "never, ever")</span></label>
         <input type="date" id="clSince" style="width:170px">
         <button class="btn" id="clGo">Apply</button>
-        <button class="btn ghost" id="clClear">Reset</button>
+        <button class="btn ghost" id="clClearBtn">Reset</button>
       </div>
       <div id="clBody"><div class="loading"><span class="spinner"></span>Loading…</div></div>
     </div>`;
@@ -2158,15 +2346,12 @@ async function anClean() {
           .map(
             (r) => `
           <tr class="clickable" data-emp="${r.id}">
-            <td>
-              <div style="font-weight:550">${esc(r.full_name)}</div>
-              <div class="faint mono" style="font-size:11px">${esc(r.employee_code)}</div>
-            </td>
+            <td><div style="font-weight:550">${esc(r.full_name)}</div><div class="faint mono" style="font-size:11px">${esc(r.employee_code)}</div></td>
             <td>${r.department ? esc(r.department) : '<span class="faint">—</span>'}</td>
           </tr>`,
           )
-          .join("")}
-        </tbody></table>`;
+          .join("")}</tbody>
+      </table>`;
       body
         .querySelectorAll("[data-emp]")
         .forEach((tr) =>
@@ -2179,7 +2364,7 @@ async function anClean() {
     }
   };
   document.getElementById("clGo").addEventListener("click", load);
-  document.getElementById("clClear").addEventListener("click", () => {
+  document.getElementById("clClearBtn").addEventListener("click", () => {
     document.getElementById("clSince").value = "";
     load();
   });
@@ -2244,7 +2429,7 @@ const ENDPOINTS = [
     group: "Employees",
     method: "POST",
     path: "/employees/bulk",
-    desc: "Create many. All-or-nothing — one duplicate fails the batch.",
+    desc: "Create many. All-or-nothing.",
     body: [
       {
         employee_code: "EMP-201",
@@ -2276,7 +2461,7 @@ const ENDPOINTS = [
     group: "Employees",
     method: "DELETE",
     path: "/employees/:employee_id",
-    desc: "Hard delete. Cascades to all violation records.",
+    desc: "Hard delete. Cascades. ⚠ bypasses the removal audit trail.",
   },
 
   {
@@ -2364,9 +2549,23 @@ const ENDPOINTS = [
   },
   {
     group: "Violation Records",
-    method: "DELETE",
-    path: "/employees/:employee_id/violations",
-    desc: "Amnesty — deletes every record for the employee.",
+    method: "POST",
+    path: "/violations/:violation_id/remove",
+    desc: "Remove a single violation. Both fields required. Writes an audit entry.",
+    body: {
+      removed_by: "Supervisor Kim",
+      reason: "Issued to wrong employee",
+    },
+  },
+  {
+    group: "Violation Records",
+    method: "POST",
+    path: "/employees/:employee_id/violations/clear",
+    desc: "Clear all violations for an employee. One audit entry per removal.",
+    body: {
+      removed_by: "Admin",
+      reason: "Employee transferred — clean slate",
+    },
   },
   {
     group: "Violation Records",
@@ -2389,11 +2588,28 @@ const ENDPOINTS = [
     desc: "Edit metadata only — not points or type.",
     body: { notes: "Updated note", issued_by: "Supervisor Kim" },
   },
+
   {
-    group: "Violation Records",
-    method: "DELETE",
-    path: "/violations/:violation_id",
-    desc: "Delete one record.",
+    group: "Violation Removals",
+    method: "GET",
+    path: "/violation-removals",
+    desc: "Paginated audit trail. Newest first.",
+    query: {
+      employee_id: "",
+      removed_by: "",
+      since: "",
+      until: "",
+      search: "",
+      limit: 50,
+      offset: 0,
+    },
+  },
+  {
+    group: "Violation Removals",
+    method: "GET",
+    path: "/violation-removals/:removal_id",
+    desc: "Single audit entry.",
+    query: {},
   },
 
   {
@@ -2451,13 +2667,8 @@ function renderExplorer() {
 
   view.innerHTML = `
     <div class="page-head">
-      <div>
-        <h2>API Explorer</h2>
-        <p class="sub">Every endpoint, live. Fill in the params and send.</p>
-      </div>
-      <div class="actions">
-        <span class="badge info">${ENDPOINTS.length} endpoints</span>
-      </div>
+      <div><h2>API Explorer</h2><p class="sub">Every endpoint, live. Fill in the params and send.</p></div>
+      <div class="actions"><span class="badge info">${ENDPOINTS.length} endpoints</span></div>
     </div>
     <div class="explorer">
       <div class="card ep-list" style="max-height:calc(100vh - 190px);overflow-y:auto">
@@ -2583,7 +2794,6 @@ function renderExplorerPanel(ep) {
       exState.query[i.dataset.query] = i.value;
     }),
   );
-
   panel
     .querySelector("#exSend")
     .addEventListener("click", () => sendExplorer(ep));
@@ -2599,15 +2809,13 @@ function buildExplorerPath(ep) {
 
 async function sendExplorer(ep) {
   const result = document.getElementById("exResult");
-  result.innerHTML = `<div class="card-body" style="border-top:1px solid var(--border)">
-    <div class="loading"><span class="spinner"></span>Sending…</div></div>`;
+  result.innerHTML = `<div class="card-body" style="border-top:1px solid var(--border)"><div class="loading"><span class="spinner"></span>Sending…</div></div>`;
 
   const pathParams = [...ep.path.matchAll(/:([a-z_]+)/gi)].map((m) => m[1]);
   const missing = pathParams.filter((p) => !exState.values[p]);
   if (missing.length) {
     result.innerHTML = `<div class="card-body" style="border-top:1px solid var(--border)">
-      <div class="callout err" style="margin:0"><div class="ic">✕</div>
-      <div>Missing path param(s): <code>${missing.map((m) => ":" + m).join("</code>, <code>")}</code></div></div></div>`;
+      <div class="callout err" style="margin:0"><div class="ic">✕</div><div>Missing path param(s): <code>${missing.map((m) => ":" + m).join("</code>, <code>")}</code></div></div></div>`;
     return;
   }
 
@@ -2645,20 +2853,14 @@ function renderExplorerResult(container, r) {
         : r.status < 500
           ? "s4"
           : "s5";
-
   let bodyHtml;
   if (r.status === 204) {
-    bodyHtml = `<div class="empty" style="padding:26px">
-      <div class="big">∅</div>
-      <strong>204 No Content</strong><br>
-      <span style="font-size:12px">Empty body — do not call <code>.json()</code> on this response.</span>
-    </div>`;
+    bodyHtml = `<div class="empty" style="padding:26px"><div class="big">∅</div><strong>204 No Content</strong><br><span style="font-size:12px">Empty body — do not call <code>.json()</code> on this response.</span></div>`;
   } else if (r.data === null) {
     bodyHtml = `<div class="empty" style="padding:26px">Empty response body.</div>`;
   } else {
     bodyHtml = `<div class="json">${highlightJSON(r.data)}</div>`;
   }
-
   const errDetail = !r.ok
     ? (() => {
         const d = describeError(r);
@@ -2714,7 +2916,6 @@ async function copyCurl(ep) {
 baseUrlInput.value = state.baseUrl;
 
 const baseModifiedEl = document.getElementById("baseModified");
-
 function refreshOverrideDot() {
   const overriding = state.baseUrl !== CONFIG.BASE_URL;
   baseModifiedEl.classList.toggle("on", overriding);
@@ -2729,7 +2930,6 @@ baseUrlInput.addEventListener("change", () => {
   localStorage.setItem(STORAGE_KEYS.baseUrl, state.baseUrl);
   refreshOverrideDot();
 });
-
 document.getElementById("resetConfig").addEventListener("click", () => {
   state.baseUrl = CONFIG.BASE_URL;
   localStorage.removeItem(STORAGE_KEYS.baseUrl);
@@ -2738,7 +2938,6 @@ document.getElementById("resetConfig").addEventListener("click", () => {
   setStatus("", "Reset to CONFIG.BASE_URL");
   toast("Reset to default", CONFIG.BASE_URL || "(same-origin)", "ok");
 });
-
 document.getElementById("pingBtn").addEventListener("click", ping);
 
 navigate("dashboard");
