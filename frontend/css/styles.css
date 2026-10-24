@@ -74,7 +74,6 @@ a {
   background: #3a465c;
 }
 
-/* ---------- layout ---------- */
 .app {
   display: grid;
   grid-template-rows: auto 1fr;
@@ -93,7 +92,6 @@ main {
   -webkit-overflow-scrolling: touch;
 }
 
-/* ---------- topbar ---------- */
 .topbar {
   display: flex;
   align-items: center;
@@ -124,7 +122,6 @@ main {
 .hamburger:active {
   transform: scale(0.96);
 }
-
 .brand {
   display: flex;
   align-items: center;
@@ -158,7 +155,6 @@ main {
   text-transform: uppercase;
   font-weight: 600;
 }
-
 .conn {
   display: flex;
   align-items: center;
@@ -206,7 +202,6 @@ main {
 .base-mod.on {
   display: inline;
 }
-
 .dot {
   width: 8px;
   height: 8px;
@@ -233,7 +228,6 @@ main {
   }
 }
 
-/* ---------- buttons ---------- */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -299,7 +293,6 @@ main {
   justify-content: center;
 }
 
-/* ---------- sidenav ---------- */
 .sidenav {
   background: var(--surface);
   border-right: 1px solid var(--border);
@@ -343,7 +336,6 @@ main {
   opacity: 0.85;
 }
 
-/* mobile nav overlay */
 .nav-overlay {
   position: fixed;
   inset: 0;
@@ -360,7 +352,6 @@ main {
   pointer-events: auto;
 }
 
-/* ---------- page ---------- */
 .page-head {
   display: flex;
   align-items: flex-start;
@@ -424,7 +415,6 @@ main {
   padding: 0;
 }
 
-/* ---------- stats ---------- */
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -476,7 +466,6 @@ main {
   background: linear-gradient(180deg, #34d399, #10b981);
 }
 
-/* ---------- grid helpers ---------- */
 .grid-2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -493,7 +482,6 @@ main {
   }
 }
 
-/* ---------- table ---------- */
 table {
   width: 100%;
   border-collapse: collapse;
@@ -539,7 +527,6 @@ th.num {
   font-size: 12.5px;
 }
 
-/* ---------- badges ---------- */
 .badge {
   display: inline-flex;
   align-items: center;
@@ -575,6 +562,10 @@ th.num {
   background: rgba(248, 113, 113, 0.15);
   color: #f87171;
 }
+.badge.audit {
+  background: rgba(139, 109, 255, 0.15);
+  color: #a891ff;
+}
 
 .method {
   display: inline-block;
@@ -603,7 +594,6 @@ th.num {
   color: #f87171;
 }
 
-/* ---------- forms ---------- */
 .filters {
   display: flex;
   gap: 9px;
@@ -684,6 +674,9 @@ textarea::placeholder {
   color: var(--faint);
   font-weight: 400;
 }
+.form-row label .req {
+  color: var(--danger);
+}
 .form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -693,7 +686,6 @@ textarea::placeholder {
   grid-column: 1/-1;
 }
 
-/* ---------- pager ---------- */
 .pager {
   display: flex;
   align-items: center;
@@ -711,7 +703,6 @@ textarea::placeholder {
   margin-left: auto;
 }
 
-/* ---------- chart ---------- */
 .chart-wrap {
   padding: 18px 16px 10px;
 }
@@ -766,7 +757,6 @@ textarea::placeholder {
   font-family: var(--mono);
 }
 
-/* ---------- feed ---------- */
 .feed-item {
   display: flex;
   gap: 13px;
@@ -816,7 +806,6 @@ textarea::placeholder {
   flex: 0 0 auto;
 }
 
-/* ---------- json viewer ---------- */
 .json {
   font-family: var(--mono);
   font-size: 12.5px;
@@ -846,7 +835,6 @@ textarea::placeholder {
   color: #f87171;
 }
 
-/* ---------- explorer ---------- */
 .explorer {
   display: grid;
   grid-template-columns: 320px 1fr;
@@ -927,7 +915,6 @@ textarea::placeholder {
   color: var(--muted);
 }
 
-/* ---------- modal ---------- */
 #modalRoot {
   position: fixed;
   inset: 0;
@@ -1015,7 +1002,6 @@ textarea::placeholder {
   flex: 0 0 auto;
 }
 
-/* ---------- toasts ---------- */
 #toasts {
   position: fixed;
   bottom: 22px;
@@ -1065,7 +1051,6 @@ textarea::placeholder {
   }
 }
 
-/* ---------- misc ---------- */
 .empty {
   padding: 38px 20px;
   text-align: center;
@@ -1115,6 +1100,11 @@ textarea::placeholder {
   background: rgba(248, 113, 113, 0.07);
   border-color: rgba(248, 113, 113, 0.25);
   color: #f5b8b8;
+}
+.callout.info {
+  background: rgba(109, 140, 255, 0.07);
+  border-color: rgba(109, 140, 255, 0.25);
+  color: #c3d0f5;
 }
 .callout .ic {
   font-size: 16px;
@@ -1193,18 +1183,27 @@ textarea::placeholder {
   margin-left: auto;
 }
 
-/* ============================================================
-     RESPONSIVE
-     ============================================================ */
+.kv-grid {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 8px 14px;
+  font-size: 13px;
+}
+.kv-grid .k {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  padding-top: 1px;
+}
+.kv-grid .v {
+  word-break: break-word;
+}
 
-/* Tablet */
 @media (max-width: 1024px) {
   main {
     padding: 22px 22px 55px;
   }
 }
-
-/* Mobile — sidenav becomes a drawer */
 @media (max-width: 900px) {
   .shell {
     grid-template-columns: 1fr;
@@ -1212,7 +1211,6 @@ textarea::placeholder {
   .hamburger {
     display: flex;
   }
-
   .sidenav {
     position: fixed;
     top: 0;
@@ -1232,7 +1230,6 @@ textarea::placeholder {
     transform: translateX(0);
     box-shadow: 8px 0 32px rgba(0, 0, 0, 0.55);
   }
-
   .topbar {
     padding: 10px 14px;
     gap: 12px;
@@ -1264,12 +1261,9 @@ textarea::placeholder {
   #pingBtn {
     flex: 0 0 auto;
   }
-
   main {
     padding: 18px 16px 60px;
   }
-
-  /* Horizontal scroll for tables, sticky headers off */
   .card-body,
   .card-body.tight {
     overflow-x: auto;
@@ -1280,14 +1274,14 @@ textarea::placeholder {
   thead th {
     position: static;
   }
-
-  /* Explorer: shrink endpoint list so the panel is reachable */
   .ep-list {
     max-height: 240px !important;
   }
+  .kv-grid {
+    grid-template-columns: 110px 1fr;
+    font-size: 12.5px;
+  }
 }
-
-/* Small mobile */
 @media (max-width: 640px) {
   .topbar {
     padding: 10px 12px;
@@ -1305,11 +1299,9 @@ textarea::placeholder {
   .field input {
     font-size: 12px;
   }
-
   main {
     padding: 14px 14px 70px;
   }
-
   .page-head {
     margin-bottom: 16px;
     gap: 10px;
@@ -1329,7 +1321,6 @@ textarea::placeholder {
     justify-content: center;
     min-width: 0;
   }
-
   .stat-grid {
     grid-template-columns: 1fr 1fr;
     gap: 10px;
@@ -1345,7 +1336,6 @@ textarea::placeholder {
   .stat .k {
     font-size: 10px;
   }
-
   .card-head {
     padding: 11px 12px;
     flex-wrap: wrap;
@@ -1361,7 +1351,6 @@ textarea::placeholder {
     margin-left: 0;
     width: 100%;
   }
-
   .card-body {
     padding: 12px;
   }
@@ -1376,7 +1365,6 @@ textarea::placeholder {
   tbody td {
     padding: 9px 10px;
   }
-
   .pager {
     padding: 10px 12px;
     gap: 6px;
@@ -1384,7 +1372,6 @@ textarea::placeholder {
   .pager .info {
     font-size: 11px;
   }
-
   .grid-2 {
     grid-template-columns: 1fr;
     gap: 14px;
@@ -1392,7 +1379,6 @@ textarea::placeholder {
   .grid-3 {
     grid-template-columns: 1fr;
   }
-
   .chart-wrap {
     padding: 14px 12px 8px;
   }
@@ -1400,7 +1386,6 @@ textarea::placeholder {
     height: 120px;
     gap: 2px;
   }
-
   .filters {
     padding: 12px;
     gap: 8px;
@@ -1417,7 +1402,6 @@ textarea::placeholder {
     flex: 1 1 auto;
     justify-content: center;
   }
-
   .feed-item {
     padding: 11px 12px;
     gap: 10px;
@@ -1433,7 +1417,6 @@ textarea::placeholder {
   .feed-body .line2 {
     font-size: 11px;
   }
-
   .modal-backdrop {
     padding: 0;
   }
@@ -1445,10 +1428,7 @@ textarea::placeholder {
     height: 100vh;
     height: 100dvh;
     border-radius: 0;
-    border-left: none;
-    border-right: none;
-    border-top: none;
-    border-bottom: none;
+    border: none;
   }
   .modal-head {
     padding: 12px 14px;
@@ -1468,7 +1448,6 @@ textarea::placeholder {
     width: 100%;
     justify-content: center;
   }
-
   .modal-actions .btn {
     flex: 1 1 100%;
     justify-content: center;
@@ -1476,14 +1455,12 @@ textarea::placeholder {
   .modal-actions .right {
     display: none;
   }
-
   .form-grid {
     grid-template-columns: 1fr;
   }
   .form-row {
     margin-bottom: 12px;
   }
-
   .tabs {
     margin-bottom: 14px;
   }
@@ -1491,7 +1468,6 @@ textarea::placeholder {
     padding: 10px 12px;
     font-size: 12px;
   }
-
   .res-status {
     gap: 8px;
   }
@@ -1499,13 +1475,11 @@ textarea::placeholder {
     font-size: 11px;
     padding: 2px 8px;
   }
-
   .json {
     font-size: 11.5px;
     padding: 12px;
     max-height: 340px;
   }
-
   #toasts {
     bottom: 14px;
     right: 14px;
@@ -1515,9 +1489,17 @@ textarea::placeholder {
   .toast {
     max-width: none;
   }
+  .kv-grid {
+    grid-template-columns: 1fr;
+    gap: 2px 0;
+  }
+  .kv-grid .k {
+    padding-top: 8px;
+  }
+  .kv-grid .k:first-child {
+    padding-top: 0;
+  }
 }
-
-/* Very small */
 @media (max-width: 420px) {
   .brand h1 {
     font-size: 12px;
@@ -1548,8 +1530,6 @@ textarea::placeholder {
     font-size: 20px;
   }
 }
-
-/* Reduce motion */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
