@@ -1,13 +1,17 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional, Sequence
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import String, delete, func, or_, select, update
+from sqlalchemy import String, case, delete, func, or_, select, update
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from models import Employee, EmployeeStatus, ViolationRecord, ViolationRemoval, ViolationType
+from models import ActivityEvent, Employee, EmployeeStatus, ViolationRecord, ViolationRemoval, ViolationType
 
+import os
+
+_LOG_TZ = ZoneInfo(os.getenv("LOG_TIMEZONE", "UTC"))
 
 # ============================================================================
 # ERRORS
@@ -57,10 +61,39 @@ class ViolationTypeInUse(Exception):
         )
         self.violation_type_id = violation_type_id
 
+# ---- HELPER FUNC ---------
+def log_event(
+    session: Session,
+    *,
+    actor: str,
+    action: str,
+    target_type: str,
+    target_id: Optional[int] = None,
+    employee_id: Optional[int] = None,
+    summary: str,
+    metadata: Optional[dict] = None,
+) -> ActivityEvent:
+    """Append an event to the audit log. Caller is responsible for commit."""
+    now_utc = datetime.now(timezone.utc)
+    event = ActivityEvent(
+        occurred_at=now_utc,
+        event_date=now_utc.astimezone(_LOG_TZ).date(),
+        actor=actor.strip() or "unknown",
+        action=action,
+        target_type=target_type,
+        target_id=target_id,
+        employee_id=employee_id,
+        summary=summary,
+        metadata_json=metadata,
+    )
+    session.add(event)
+    return event
 
 # ============================================================================
 # EMPLOYEE — WRITE (CRUD)
 # ============================================================================
+
+
 
 def create_employee(
     session: Session,
@@ -71,11 +104,9 @@ def create_employee(
     department: Optional[str] = None,
     position: Optional[str] = None,
     status: EmployeeStatus = EmployeeStatus.active,
+    actor: str,
     commit: bool = True,
 ) -> Employee:
-    """
-    Insert a new employee. Raises DuplicateEmployeeCode if the code is taken.
-    """
     exists = session.execute(
         select(Employee.id).where(Employee.employee_code == employee_code)
     ).scalar_one_or_none()
@@ -83,31 +114,25 @@ def create_employee(
         raise DuplicateEmployeeCode(employee_code)
 
     employee = Employee(
-        employee_code=employee_code,
-        first_name=first_name,
-        last_name=last_name,
-        department=department,
-        position=position,
-        status=status,
+        employee_code=employee_code, first_name=first_name, last_name=last_name,
+        department=department, position=position, status=status,
     )
     session.add(employee)
+    session.flush()
+    log_event(
+        session, actor=actor, action="employee.created",
+        target_type="employee", target_id=employee.id, employee_id=employee.id,
+        summary=f"Added employee {employee.employee_code} ({employee.full_name})",
+        metadata={"employee_code": employee.employee_code, "full_name": employee.full_name,
+                  "department": employee.department, "position": employee.position},
+    )
     if commit:
         session.commit()
-    else:
-        session.flush()
     return employee
 
-
 def create_employees_bulk(
-    session: Session,
-    rows: Sequence[dict],
-    *,
-    commit: bool = True,
+    session: Session, rows: Sequence[dict], *, actor: str, commit: bool = True,
 ) -> list[Employee]:
-    """
-    Insert many employees in one transaction. Each dict must contain the same
-    keys as create_employee's kwargs (minus commit).
-    """
     codes = [r["employee_code"] for r in rows]
     dupes = session.execute(
         select(Employee.employee_code).where(Employee.employee_code.in_(codes))
@@ -117,12 +142,16 @@ def create_employees_bulk(
 
     employees = [Employee(**r) for r in rows]
     session.add_all(employees)
+    session.flush()
+    log_event(
+        session, actor=actor, action="employees.bulk_created",
+        target_type="employee",
+        summary=f"Bulk-created {len(employees)} employees",
+        metadata={"count": len(employees), "codes": [e.employee_code for e in employees]},
+    )
     if commit:
         session.commit()
-    else:
-        session.flush()
     return employees
-
 
 def update_employee(
     session: Session,
@@ -133,81 +162,89 @@ def update_employee(
     department: Optional[str] = None,
     position: Optional[str] = None,
     employee_code: Optional[str] = None,
+    actor: str,
     commit: bool = True,
 ) -> Employee:
-    """Partial update. Only non-None fields are applied."""
     employee = session.get(Employee, employee_id)
     if employee is None:
         raise EmployeeNotFound(employee_id)
 
+    changes: dict = {}
     if employee_code is not None and employee_code != employee.employee_code:
         clash = session.execute(
             select(Employee.id).where(
-                Employee.employee_code == employee_code,
-                Employee.id != employee_id,
+                Employee.employee_code == employee_code, Employee.id != employee_id
             )
         ).scalar_one_or_none()
         if clash is not None:
             raise DuplicateEmployeeCode(employee_code)
+        changes["employee_code"] = employee_code
         employee.employee_code = employee_code
-
     if first_name is not None:
+        changes["first_name"] = first_name
         employee.first_name = first_name
     if last_name is not None:
+        changes["last_name"] = last_name
         employee.last_name = last_name
     if department is not None:
+        changes["department"] = department
         employee.department = department
     if position is not None:
+        changes["position"] = position
         employee.position = position
 
+    if changes:
+        log_event(
+            session, actor=actor, action="employee.updated",
+            target_type="employee", target_id=employee.id, employee_id=employee.id,
+            summary=f"Updated {employee.employee_code}: {', '.join(changes)}",
+            metadata={"changes": changes},
+        )
     if commit:
         session.commit()
-    else:
-        session.flush()
     return employee
 
-
 def set_employee_status(
-    session: Session,
-    employee_id: int,
-    status: EmployeeStatus,
-    *,
-    commit: bool = True,
+    session: Session, employee_id: int, status: EmployeeStatus, *, actor: str, commit: bool = True,
 ) -> Employee:
     employee = session.get(Employee, employee_id)
     if employee is None:
         raise EmployeeNotFound(employee_id)
     employee.status = status
+    action = "employee.activated" if status == EmployeeStatus.active else "employee.deactivated"
+    log_event(
+        session, actor=actor, action=action,
+        target_type="employee", target_id=employee.id, employee_id=employee.id,
+        summary=f"{'Reactivated' if status == EmployeeStatus.active else 'Deactivated'} "
+                f"{employee.employee_code} ({employee.full_name})",
+        metadata={"new_status": status.value},
+    )
     if commit:
         session.commit()
-    else:
-        session.flush()
     return employee
 
-
-def deactivate_employee(session: Session, employee_id: int, *, commit: bool = True) -> Employee:
+def deactivate_employee(session: Session, employee_id: int, *, actor: str, commit: bool = True) -> Employee:
     """Soft delete — hides from default search but preserves history."""
-    return set_employee_status(session, employee_id, EmployeeStatus.inactive, commit=commit)
+    return set_employee_status(session, employee_id, EmployeeStatus.inactive, actor=actor, commit=commit)
 
 
-def reactivate_employee(session: Session, employee_id: int, *, commit: bool = True) -> Employee:
-    return set_employee_status(session, employee_id, EmployeeStatus.active, commit=commit)
+def reactivate_employee(session: Session, employee_id: int, *, actor: str, commit: bool = True) -> Employee:
+    return set_employee_status(session, employee_id, EmployeeStatus.active, actor=actor, commit=commit)
 
-
-def delete_employee(session: Session, employee_id: int, *, commit: bool = True) -> None:
-    """
-    Hard delete. Cascades to violation_records (see ondelete=CASCADE on FK).
-    Prefer deactivate_employee for real HR use.
-    """
+def delete_employee(session: Session, employee_id: int, *, actor: str, commit: bool = True) -> None:
     employee = session.get(Employee, employee_id)
     if employee is None:
         raise EmployeeNotFound(employee_id)
+    log_event(
+        session, actor=actor, action="employee.deleted",
+        target_type="employee", target_id=employee.id, employee_id=employee.id,
+        summary=f"Hard-deleted {employee.employee_code} ({employee.full_name})",
+        metadata={"employee_code": employee.employee_code, "full_name": employee.full_name,
+                  "violation_count": len(employee.violation_records)},
+    )
     session.delete(employee)
     if commit:
         session.commit()
-    else:
-        session.flush()
-
 
 # ============================================================================
 # EMPLOYEE — READ
@@ -321,125 +358,105 @@ def get_employee_detail(session: Session, employee_id: int) -> Optional[Employee
 # ============================================================================
 
 def create_violation_type(
-    session: Session,
-    *,
-    name: str,
-    description: Optional[str] = None,
-    default_points: int = 0,
-    is_strike: bool = False,
-    is_active: bool = True,
-    commit: bool = True,
+    session: Session, *, name: str, description: Optional[str] = None,
+    default_points: int = 0, is_strike: bool = False, is_active: bool = True,
+    actor: str, commit: bool = True,
 ) -> ViolationType:
     if default_points < 0:
         raise ValueError("default_points must be >= 0")
-
-    exists = session.execute(
-        select(ViolationType.id).where(ViolationType.name == name)
-    ).scalar_one_or_none()
+    exists = session.execute(select(ViolationType.id).where(ViolationType.name == name)).scalar_one_or_none()
     if exists is not None:
         raise DuplicateViolationType(name)
-
-    vtype = ViolationType(
-        name=name,
-        description=description,
-        default_points=default_points,
-        is_strike=is_strike,
-        is_active=is_active,
-    )
+    vtype = ViolationType(name=name, description=description, default_points=default_points,
+                          is_strike=is_strike, is_active=is_active)
     session.add(vtype)
+    session.flush()
+    log_event(
+        session, actor=actor, action="violation_type.created",
+        target_type="violation_type", target_id=vtype.id,
+        summary=f"Added violation type '{vtype.name}' ({vtype.default_points} pts)",
+        metadata={"name": vtype.name, "default_points": vtype.default_points, "is_strike": vtype.is_strike},
+    )
     if commit:
         session.commit()
-    else:
-        session.flush()
     return vtype
 
-
 def update_violation_type(
-    session: Session,
-    violation_type_id: int,
-    *,
-    name: Optional[str] = None,
-    description: Optional[str] = None,
-    default_points: Optional[int] = None,
-    is_strike: Optional[bool] = None,
-    commit: bool = True,
+    session: Session, violation_type_id: int, *,
+    name: Optional[str] = None, description: Optional[str] = None,
+    default_points: Optional[int] = None, is_strike: Optional[bool] = None,
+    actor: str, commit: bool = True,
 ) -> ViolationType:
-    """
-    Partial update. NOTE: editing default_points/is_strike does NOT rewrite
-    historical records — they keep their snapshotted values (that's the point).
-    """
     vtype = session.get(ViolationType, violation_type_id)
     if vtype is None:
         raise ViolationTypeNotFound(violation_type_id)
-
+    changes: dict = {}
     if name is not None and name != vtype.name:
         clash = session.execute(
-            select(ViolationType.id).where(
-                ViolationType.name == name,
-                ViolationType.id != violation_type_id,
-            )
+            select(ViolationType.id).where(ViolationType.name == name, ViolationType.id != violation_type_id)
         ).scalar_one_or_none()
         if clash is not None:
             raise DuplicateViolationType(name)
+        changes["name"] = name
         vtype.name = name
-
     if description is not None:
+        changes["description"] = description
         vtype.description = description
     if default_points is not None:
         if default_points < 0:
             raise ValueError("default_points must be >= 0")
+        changes["default_points"] = default_points
         vtype.default_points = default_points
     if is_strike is not None:
+        changes["is_strike"] = is_strike
         vtype.is_strike = is_strike
-
+    if changes:
+        log_event(
+            session, actor=actor, action="violation_type.updated",
+            target_type="violation_type", target_id=vtype.id,
+            summary=f"Updated violation type '{vtype.name}': {', '.join(changes)}",
+            metadata={"changes": changes},
+        )
     if commit:
         session.commit()
-    else:
-        session.flush()
     return vtype
 
-
 def set_violation_type_active(
-    session: Session,
-    violation_type_id: int,
-    is_active: bool,
-    *,
-    commit: bool = True,
+    session: Session, violation_type_id: int, is_active: bool, *, actor: str, commit: bool = True,
 ) -> ViolationType:
     vtype = session.get(ViolationType, violation_type_id)
     if vtype is None:
         raise ViolationTypeNotFound(violation_type_id)
     vtype.is_active = is_active
+    log_event(
+        session, actor=actor,
+        action="violation_type.activated" if is_active else "violation_type.deactivated",
+        target_type="violation_type", target_id=vtype.id,
+        summary=f"{'Activated' if is_active else 'Deactivated'} violation type '{vtype.name}'",
+        metadata={"name": vtype.name},
+    )
     if commit:
         session.commit()
-    else:
-        session.flush()
     return vtype
 
-
-def delete_violation_type(session: Session, violation_type_id: int, *, commit: bool = True) -> None:
-    """
-    Hard delete only allowed when no violation_records reference it.
-    Otherwise raise ViolationTypeInUse (use set_violation_type_active(False)).
-    """
+def delete_violation_type(session: Session, violation_type_id: int, *, actor: str, commit: bool = True) -> None:
     vtype = session.get(ViolationType, violation_type_id)
     if vtype is None:
         raise ViolationTypeNotFound(violation_type_id)
-
     in_use = session.execute(
-        select(func.count(ViolationRecord.id)).where(
-            ViolationRecord.violation_type_id == violation_type_id
-        )
+        select(func.count(ViolationRecord.id)).where(ViolationRecord.violation_type_id == violation_type_id)
     ).scalar_one()
     if in_use:
         raise ViolationTypeInUse(violation_type_id)
-
+    log_event(
+        session, actor=actor, action="violation_type.deleted",
+        target_type="violation_type", target_id=vtype.id,
+        summary=f"Deleted violation type '{vtype.name}'",
+        metadata={"name": vtype.name},
+    )
     session.delete(vtype)
     if commit:
         session.commit()
-    else:
-        session.flush()
-
 
 # ============================================================================
 # VIOLATION TYPE — READ
@@ -486,23 +503,13 @@ def get_violation_type(session: Session, violation_type_id: int) -> Optional[Vio
 # ============================================================================
 
 def assign_violation(
-    session: Session,
-    *,
-    employee_id: int,
-    violation_type_id: int,
-    notes: Optional[str] = None,
-    issued_at: Optional[datetime] = None,
-    issued_by: Optional[str] = None,
-    commit: bool = True,
+    session: Session, *, employee_id: int, violation_type_id: int,
+    notes: Optional[str] = None, issued_at: Optional[datetime] = None,
+    issued_by: Optional[str] = None, actor: str, commit: bool = True,
 ) -> ViolationRecord:
-    """
-    Validates employee + violation type, inserts a record with
-    points/is_strike snapshotted from the type.
-    """
     employee = session.get(Employee, employee_id)
     if employee is None:
         raise EmployeeNotFound(employee_id)
-
     vtype = session.get(ViolationType, violation_type_id)
     if vtype is None:
         raise ViolationTypeNotFound(violation_type_id)
@@ -510,53 +517,55 @@ def assign_violation(
         raise ViolationTypeInactive(violation_type_id)
 
     record = ViolationRecord(
-        employee_id=employee.id,
-        violation_type_id=vtype.id,
-        issued_by=issued_by,
-        issued_at=issued_at or datetime.now(timezone.utc),
-        notes=notes,
-        points=vtype.default_points,
-        is_strike=vtype.is_strike,
+        employee_id=employee.id, violation_type_id=vtype.id,
+        issued_by=issued_by, issued_at=issued_at or datetime.now(timezone.utc),
+        notes=notes, points=vtype.default_points, is_strike=vtype.is_strike,
     )
     session.add(record)
+    session.flush()
+    log_event(
+        session, actor=actor, action="violation.assigned",
+        target_type="violation", target_id=record.id, employee_id=record.employee_id,
+        summary=f"Issued '{vtype.name}' ({record.points} pts"
+                f"{', strike' if record.is_strike else ''}) to "
+                f"{employee.employee_code} ({employee.full_name})",
+        metadata={"violation_type_name": vtype.name, "points": record.points,
+                  "is_strike": record.is_strike, "issued_by": issued_by,
+                  "employee_code": employee.employee_code, "employee_full_name": employee.full_name},
+    )
+
     if commit:
         session.commit()
-    else:
-        session.flush()
     return record
 
-
 def update_violation_record(
-    session: Session,
-    record_id: int,
-    *,
-    notes: Optional[str] = None,
-    issued_by: Optional[str] = None,
-    issued_at: Optional[datetime] = None,
-    commit: bool = True,
+    session: Session, record_id: int, *,
+    notes: Optional[str] = None, issued_by: Optional[str] = None,
+    issued_at: Optional[datetime] = None, actor: str, commit: bool = True,
 ) -> ViolationRecord:
-    """
-    Partial update of a record's metadata.
-    points / is_strike / violation_type_id are intentionally NOT editable —
-    they're the historical snapshot. To "fix" one, delete and re-issue.
-    """
     record = session.get(ViolationRecord, record_id)
     if record is None:
         raise ViolationRecordNotFound(record_id)
-
+    changes: dict = {}
     if notes is not None:
+        changes["notes"] = notes
         record.notes = notes
     if issued_by is not None:
+        changes["issued_by"] = issued_by
         record.issued_by = issued_by
     if issued_at is not None:
+        changes["issued_at"] = issued_at.isoformat()
         record.issued_at = issued_at
-
+    if changes:
+        log_event(
+            session, actor=actor, action="violation.updated",
+            target_type="violation", target_id=record.id, employee_id=record.employee_id,
+            summary=f"Updated violation #{record.id}: {', '.join(changes)}",
+            metadata={"changes": changes},
+        )
     if commit:
         session.commit()
-    else:
-        session.flush()
     return record
-
 
 def delete_violation_record(session: Session, record_id: int, *, commit: bool = True) -> None:
     record = session.get(ViolationRecord, record_id)
@@ -568,55 +577,45 @@ def delete_violation_record(session: Session, record_id: int, *, commit: bool = 
     else:
         session.flush()
 
-
 def clear_employee_violations(
-    session: Session,
-    employee_id: int,
-    *,
-    removed_by: str,
-    reason: str,
-    commit: bool = True,
+    session: Session, employee_id: int, *, removed_by: str, reason: str, commit: bool = True,
 ) -> int:
-    """Delete every violation for an employee, logging each to the audit table."""
     employee = session.get(Employee, employee_id)
     if employee is None:
         raise EmployeeNotFound(employee_id)
-
     records = session.execute(
         select(ViolationRecord)
-        .options(
-            joinedload(ViolationRecord.violation_type),
-            joinedload(ViolationRecord.employee),
-        )
+        .options(joinedload(ViolationRecord.violation_type), joinedload(ViolationRecord.employee))
         .where(ViolationRecord.employee_id == employee_id)
     ).scalars().all()
 
     now = datetime.now(timezone.utc)
     for record in records:
-        session.add(ViolationRemoval(
-            violation_record_id=record.id,
-            violation_type_id=record.violation_type_id,
+        removal = ViolationRemoval(
+            violation_record_id=record.id, violation_type_id=record.violation_type_id,
             violation_type_name=record.violation_type.name if record.violation_type else "",
-            points=record.points,
-            is_strike=record.is_strike,
-            original_notes=record.notes,
-            original_issued_by=record.issued_by,
+            points=record.points, is_strike=record.is_strike,
+            original_notes=record.notes, original_issued_by=record.issued_by,
             original_issued_at=record.issued_at,
             employee_id=record.employee_id,
-            employee_code=employee.employee_code,
-            employee_full_name=employee.full_name,
-            removed_by=removed_by,
-            reason=reason,
-            removed_at=now,
-        ))
+            employee_code=employee.employee_code, employee_full_name=employee.full_name,
+            removed_by=removed_by, reason=reason, removed_at=now,
+        )
+        session.add(removal)
         session.delete(record)
+        log_event(
+            session, actor=removed_by, action="violation.removed",
+            target_type="violation", target_id=record.id, employee_id=employee.id,
+            summary=f"Removed '{removal.violation_type_name}' from {employee.employee_code} "
+                    f"({employee.full_name}) — amnesty — reason: {reason}",
+            metadata={"violation_type_name": removal.violation_type_name, "points": removal.points,
+                      "is_strike": removal.is_strike, "reason": reason, "amnesty": True,
+                      "employee_code": employee.employee_code, "employee_full_name": employee.full_name},
+        )
 
     if commit:
         session.commit()
-    else:
-        session.flush()
     return len(records)
-
 
 # ============================================================================
 # VIOLATION RECORD — READ
@@ -903,50 +902,45 @@ def violation_free_employees(
 # VIOLATION REMOVAL — audit log
 # ============================================================================
 
+# use removed_by as the actor (no new param)
 def remove_violation_record(
-    session: Session,
-    record_id: int,
-    *,
-    removed_by: str,
-    reason: str,
-    commit: bool = True,
+    session: Session, record_id: int, *, removed_by: str, reason: str, commit: bool = True,
 ) -> ViolationRemoval:
-    """Delete one violation record and log the removal."""
     record = session.execute(
         select(ViolationRecord)
-        .options(
-            joinedload(ViolationRecord.violation_type),
-            joinedload(ViolationRecord.employee),
-        )
+        .options(joinedload(ViolationRecord.violation_type), joinedload(ViolationRecord.employee))
         .where(ViolationRecord.id == record_id)
     ).scalar_one_or_none()
     if record is None:
         raise ViolationRecordNotFound(record_id)
 
     removal = ViolationRemoval(
-        violation_record_id=record.id,
-        violation_type_id=record.violation_type_id,
+        violation_record_id=record.id, violation_type_id=record.violation_type_id,
         violation_type_name=record.violation_type.name if record.violation_type else "",
-        points=record.points,
-        is_strike=record.is_strike,
-        original_notes=record.notes,
-        original_issued_by=record.issued_by,
+        points=record.points, is_strike=record.is_strike,
+        original_notes=record.notes, original_issued_by=record.issued_by,
         original_issued_at=record.issued_at,
         employee_id=record.employee_id,
         employee_code=record.employee.employee_code if record.employee else "",
         employee_full_name=record.employee.full_name if record.employee else "",
-        removed_by=removed_by,
-        reason=reason,
-        removed_at=datetime.now(timezone.utc),
+        removed_by=removed_by, reason=reason, removed_at=datetime.now(timezone.utc),
     )
     session.add(removal)
     session.delete(record)
+    session.flush()
+    log_event(
+        session, actor=removed_by, action="violation.removed",
+        target_type="violation", target_id=record_id,
+        employee_id=removal.employee_id,
+        summary=f"Removed '{removal.violation_type_name}' from "
+                f"{removal.employee_code} ({removal.employee_full_name}) — reason: {reason}",
+        metadata={"violation_type_name": removal.violation_type_name, "points": removal.points,
+                  "is_strike": removal.is_strike, "reason": reason,
+                  "employee_code": removal.employee_code, "employee_full_name": removal.employee_full_name},
+    )
     if commit:
         session.commit()
-    else:
-        session.flush()
     return removal
-
 
 def list_violation_removals(
     session: Session,
@@ -1017,3 +1011,94 @@ def get_violation_removal(
     removal_id: int,
 ) -> Optional[ViolationRemoval]:
     return session.get(ViolationRemoval, removal_id)
+
+
+# ============================================================================
+# ACTIVITY — read side
+# ============================================================================
+
+def list_activity_events(
+    session: Session,
+    *,
+    day: Optional[date] = None,
+    start: Optional[date] = None,
+    end: Optional[date] = None,
+    actor: Optional[str] = None,
+    action: Optional[str] = None,
+    target_type: Optional[str] = None,
+    employee_id: Optional[int] = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> Sequence[ActivityEvent]:
+    stmt = select(ActivityEvent).order_by(ActivityEvent.occurred_at.desc(), ActivityEvent.id.desc())
+    if day is not None:
+        stmt = stmt.where(ActivityEvent.event_date == day)
+    if start is not None:
+        stmt = stmt.where(ActivityEvent.event_date >= start)
+    if end is not None:
+        stmt = stmt.where(ActivityEvent.event_date <= end)
+    if actor:
+        stmt = stmt.where(ActivityEvent.actor.ilike(f"%{actor}%"))
+    if action:
+        stmt = stmt.where(ActivityEvent.action == action)
+    if target_type:
+        stmt = stmt.where(ActivityEvent.target_type == target_type)
+    if employee_id is not None:
+        stmt = stmt.where(ActivityEvent.employee_id == employee_id)
+    return session.execute(stmt.limit(limit).offset(offset)).scalars().all()
+
+
+def count_activity_events(
+    session: Session,
+    *,
+    day: Optional[date] = None,
+    start: Optional[date] = None,
+    end: Optional[date] = None,
+    actor: Optional[str] = None,
+    action: Optional[str] = None,
+    target_type: Optional[str] = None,
+    employee_id: Optional[int] = None,
+) -> int:
+    stmt = select(func.count(ActivityEvent.id))
+    if day is not None:
+        stmt = stmt.where(ActivityEvent.event_date == day)
+    if start is not None:
+        stmt = stmt.where(ActivityEvent.event_date >= start)
+    if end is not None:
+        stmt = stmt.where(ActivityEvent.event_date <= end)
+    if actor:
+        stmt = stmt.where(ActivityEvent.actor.ilike(f"%{actor}%"))
+    if action:
+        stmt = stmt.where(ActivityEvent.action == action)
+    if target_type:
+        stmt = stmt.where(ActivityEvent.target_type == target_type)
+    if employee_id is not None:
+        stmt = stmt.where(ActivityEvent.employee_id == employee_id)
+    return session.execute(stmt).scalar_one()
+
+
+def get_activity_calendar(session: Session, *, start: date, end: date) -> Sequence:
+    """Per-day rollup for the calendar UI. Returns one row per day with events."""
+    total_stmt = (
+        select(
+            ActivityEvent.event_date,
+            func.count(ActivityEvent.id).label("total"),
+            func.sum(case((ActivityEvent.target_type == "employee", 1), else_=0)).label("employees"),
+            func.sum(case((ActivityEvent.target_type == "violation", 1), else_=0)).label("violations"),
+            func.sum(case((ActivityEvent.target_type == "violation_type", 1), else_=0)).label("violation_types"),
+            func.sum(case((ActivityEvent.action == "violation.removed", 1), else_=0)).label("removals"),
+        )
+        .where(ActivityEvent.event_date >= start, ActivityEvent.event_date <= end)
+        .group_by(ActivityEvent.event_date)
+        .order_by(ActivityEvent.event_date)
+    )
+    return session.execute(total_stmt).all()
+
+
+def get_daily_digest_events(session: Session, day: date) -> Sequence[ActivityEvent]:
+    stmt = (
+        select(ActivityEvent)
+        .where(ActivityEvent.event_date == day)
+        .order_by(ActivityEvent.occurred_at.asc(), ActivityEvent.id.asc())
+    )
+    return session.execute(stmt).scalars().all()
