@@ -2,7 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 
-from app.deps import DbSession
+from app.deps import ActorDep, DbSession
 from app.schemas.violation import (
     ViolationTypeCreate,
     ViolationTypeOption,
@@ -44,46 +44,23 @@ def get_one(db: DbSession, violation_type_id: Annotated[int, Path(ge=1)]):
     return vtype
 
 
-@router.post(
-    "",
-    response_model=ViolationTypeRead,
-    status_code=status.HTTP_201_CREATED,
-)
-def create(db: DbSession, payload: ViolationTypeCreate):
-    return create_violation_type(db, **payload.model_dump())
+@router.post("", response_model=ViolationTypeRead, status_code=status.HTTP_201_CREATED)
+def create(db: DbSession, payload: ViolationTypeCreate, actor: ActorDep):
+    return create_violation_type(db, **payload.model_dump(), actor=actor)
 
+@router.patch("/{violation_type_id}", response_model=ViolationTypeRead)
+def update(db: DbSession, violation_type_id: Annotated[int, Path(ge=1)],
+           payload: ViolationTypeUpdate, actor: ActorDep):
+    return update_violation_type(db, violation_type_id, **payload.model_dump(exclude_unset=True), actor=actor)
 
-@router.patch(
-    "/{violation_type_id}",
-    response_model=ViolationTypeRead,
-)
-def update(
-    db: DbSession,
-    violation_type_id: Annotated[int, Path(ge=1)],
-    payload: ViolationTypeUpdate,
-):
-    return update_violation_type(db, violation_type_id, **payload.model_dump(exclude_unset=True))
+@router.post("/{violation_type_id}/activate", response_model=ViolationTypeRead)
+def activate(db: DbSession, violation_type_id: Annotated[int, Path(ge=1)], actor: ActorDep):
+    return set_violation_type_active(db, violation_type_id, True, actor=actor)
 
+@router.post("/{violation_type_id}/deactivate", response_model=ViolationTypeRead)
+def deactivate(db: DbSession, violation_type_id: Annotated[int, Path(ge=1)], actor: ActorDep):
+    return set_violation_type_active(db, violation_type_id, False, actor=actor)
 
-@router.post(
-    "/{violation_type_id}/activate",
-    response_model=ViolationTypeRead,
-)
-def activate(db: DbSession, violation_type_id: Annotated[int, Path(ge=1)]):
-    return set_violation_type_active(db, violation_type_id, True)
-
-
-@router.post(
-    "/{violation_type_id}/deactivate",
-    response_model=ViolationTypeRead,
-)
-def deactivate(db: DbSession, violation_type_id: Annotated[int, Path(ge=1)]):
-    return set_violation_type_active(db, violation_type_id, False)
-
-
-@router.delete(
-    "/{violation_type_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-)
-def remove(db: DbSession, violation_type_id: Annotated[int, Path(ge=1)]):
-    delete_violation_type(db, violation_type_id)
+@router.delete("/{violation_type_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove(db: DbSession, violation_type_id: Annotated[int, Path(ge=1)], actor: ActorDep):
+    delete_violation_type(db, violation_type_id, actor=actor)

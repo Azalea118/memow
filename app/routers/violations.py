@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Path, Query, status
 from pydantic import BaseModel
 
-from app.deps import DbSession, PaginationDep
+from app.deps import DbSession, PaginationDep, ActorDep
 from app.schemas.violation import (
     ViolationAssign,
     ViolationRecordFeedRead,
@@ -31,19 +31,12 @@ class ClearResult(BaseModel):
 
 # ============ nested under an employee ============
 
-@router.post(
-    "/employees/{employee_id}/violations",
-    response_model=ViolationRecordRead,
-    status_code=status.HTTP_201_CREATED,
-    summary="Assign a violation (core action)",
-)
-def assign(
-    db: DbSession,
-    employee_id: Annotated[int, Path(ge=1)],
-    payload: ViolationAssign,
-):
-    return assign_violation(db, employee_id=employee_id, **payload.model_dump(exclude_unset=True))
-
+@router.post("/employees/{employee_id}/violations", response_model=ViolationRecordRead,
+             status_code=status.HTTP_201_CREATED)
+def assign(db: DbSession, employee_id: Annotated[int, Path(ge=1)],
+           payload: ViolationAssign, actor: ActorDep):
+    return assign_violation(db, employee_id=employee_id, actor=actor,
+                            **payload.model_dump(exclude_unset=True))
 
 @router.get(
     "/employees/{employee_id}/violations",
@@ -68,18 +61,11 @@ def list_for_employee(
     )
 
 
-@router.post(
-    "/employees/{employee_id}/violations/clear",
-    response_model=ClearResult,
-    summary="Amnesty — remove all records for this employee, with audit log",
-)
-def clear_all(
-    db: DbSession,
-    employee_id: Annotated[int, Path(ge=1)],
-    payload: ViolationRemovalCreate,
-):
+@router.post("/employees/{employee_id}/violations/clear", response_model=ClearResult)
+def clear_all(db: DbSession, employee_id: Annotated[int, Path(ge=1)],
+              payload: ViolationRemovalCreate):
     deleted = clear_employee_violations(
-        db, employee_id, removed_by=payload.removed_by, reason=payload.reason
+        db, employee_id, removed_by=payload.removed_by, reason=payload.reason,
     )
     return ClearResult(deleted=deleted)
 
@@ -109,25 +95,18 @@ def get_one(db: DbSession, violation_id: Annotated[int, Path(ge=1)]):
 
 
 @router.patch("/violations/{violation_id}", response_model=ViolationRecordRead)
-def update(
-    db: DbSession,
-    violation_id: Annotated[int, Path(ge=1)],
-    payload: ViolationRecordUpdate,
-):
-    return update_violation_record(db, violation_id, **payload.model_dump(exclude_unset=True))
+def update(db: DbSession, violation_id: Annotated[int, Path(ge=1)],
+           payload: ViolationRecordUpdate, actor: ActorDep):
+    return update_violation_record(
+        db, violation_id, **payload.model_dump(exclude_unset=True), actor=actor,
+    )
 
 
-@router.post(
-    "/violations/{violation_id}/remove",
-    response_model=ViolationRemovalRead,
-    status_code=status.HTTP_201_CREATED,
-    summary="Remove one violation record, with audit log",
-)
-def remove_record(
-    db: DbSession,
-    violation_id: Annotated[int, Path(ge=1)],
-    payload: ViolationRemovalCreate,
-):
+# doesn't take ActorDep, the actor is removed_by
+@router.post("/violations/{violation_id}/remove", response_model=ViolationRemovalRead,
+             status_code=status.HTTP_201_CREATED)
+def remove_record(db: DbSession, violation_id: Annotated[int, Path(ge=1)],
+                  payload: ViolationRemovalCreate):
     return remove_violation_record(
-        db, violation_id, removed_by=payload.removed_by, reason=payload.reason
+        db, violation_id, removed_by=payload.removed_by, reason=payload.reason,
     )
