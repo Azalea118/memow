@@ -2,7 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Path, Query, status
 
-from app.deps import DbSession, PaginationDep
+from app.deps import DbSession, PaginationDep, ActorDep
 from app.schemas.common import Page
 from app.schemas.employee import (
     BulkCreateResult,
@@ -79,38 +79,27 @@ def detail(db: DbSession, employee_id: Annotated[int, Path(ge=1)]):
 
 
 @router.post("", response_model=EmployeeRead, status_code=status.HTTP_201_CREATED)
-def create(db: DbSession, payload: EmployeeCreate):
-    return create_employee(db, **payload.model_dump())
-
+def create(db: DbSession, payload: EmployeeCreate, actor: ActorDep):
+    return create_employee(db, **payload.model_dump(), actor=actor)
 
 @router.post("/bulk", response_model=BulkCreateResult, status_code=status.HTTP_201_CREATED)
-def bulk_create(db: DbSession, payload: list[EmployeeCreate]):
-    created = create_employees_bulk(db, [e.model_dump() for e in payload])
+def bulk_create(db: DbSession, payload: list[EmployeeCreate], actor: ActorDep):
+    created = create_employees_bulk(db, [e.model_dump() for e in payload], actor=actor)
     return BulkCreateResult(created=len(created), employees=created)
 
-
 @router.patch("/{employee_id}", response_model=EmployeeRead)
-def update(
-    db: DbSession,
-    employee_id: Annotated[int, Path(ge=1)],
-    payload: EmployeeUpdate,
-):
-    return update_employee(db, employee_id, **payload.model_dump(exclude_unset=True))
-
+def update(db: DbSession, employee_id: Annotated[int, Path(ge=1)],
+           payload: EmployeeUpdate, actor: ActorDep):
+    return update_employee(db, employee_id, **payload.model_dump(exclude_unset=True), actor=actor)
 
 @router.post("/{employee_id}/deactivate", response_model=EmployeeRead)
-def deactivate(db: DbSession, employee_id: Annotated[int, Path(ge=1)]):
-    return deactivate_employee(db, employee_id)
-
+def deactivate(db: DbSession, employee_id: Annotated[int, Path(ge=1)], actor: ActorDep):
+    return deactivate_employee(db, employee_id, actor=actor)
 
 @router.post("/{employee_id}/reactivate", response_model=EmployeeRead)
-def reactivate(db: DbSession, employee_id: Annotated[int, Path(ge=1)]):
-    return reactivate_employee(db, employee_id)
+def reactivate(db: DbSession, employee_id: Annotated[int, Path(ge=1)], actor: ActorDep):
+    return reactivate_employee(db, employee_id, actor=actor)
 
-
-@router.delete(
-    "/{employee_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-)
-def hard_delete(db: DbSession, employee_id: Annotated[int, Path(ge=1)]):
-    delete_employee(db, employee_id)
+@router.delete("/{employee_id}", status_code=status.HTTP_204_NO_CONTENT)
+def hard_delete(db: DbSession, employee_id: Annotated[int, Path(ge=1)], actor: ActorDep):
+    delete_employee(db, employee_id, actor=actor)
