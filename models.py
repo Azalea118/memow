@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import enum
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
 from sqlalchemy import (
@@ -26,6 +26,7 @@ from sqlalchemy.orm import (
     mapped_column,
     relationship,
 )
+from sqlalchemy import JSON, Date
 
 
 class Base(DeclarativeBase):
@@ -234,4 +235,30 @@ class ViolationRemoval(Base):
 
     __table_args__ = (
         Index("ix_violation_removals_employee_removed_at", "employee_id", "removed_at"),
+    )
+
+class ActivityEvent(Base):
+    """Append-only audit log. No FKs by design — events survive hard deletes."""
+
+    __tablename__ = "activity_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True, server_default=func.now()
+    )
+    event_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+
+    actor: Mapped[str] = mapped_column(String(150), nullable=False, index=True)
+    action: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    target_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    target_id: Mapped[Optional[int]] = mapped_column(Integer)
+    employee_id: Mapped[Optional[int]] = mapped_column(Integer, index=True)
+
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    metadata_json: Mapped[Optional[dict]] = mapped_column(JSON)
+
+    __table_args__ = (
+        Index("ix_activity_events_date_action", "event_date", "action"),
+        Index("ix_activity_events_actor_date", "actor", "event_date"),
     )
