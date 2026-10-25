@@ -57,6 +57,25 @@
             >
           </div>
           <button
+            class="actor-chip unset"
+            id="actorChip"
+            title="Click to set your name (X-Actor header)"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+            >
+              <circle cx="12" cy="8" r="4" />
+              <path d="M4 20c0-4 4-6 8-6s8 2 8 6" />
+            </svg>
+            <span class="name" id="actorName">Set name</span>
+          </button>
+          <button
             class="btn"
             id="resetConfig"
             title="Reset Base URL to CONFIG default"
@@ -161,6 +180,21 @@
             Removal Log
           </button>
           <div class="nav-label">Insight</div>
+          <button class="nav-item" data-nav="activity">
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <polyline points="12 6 12 12 16 14" />
+            </svg>
+            Activity
+          </button>
           <button class="nav-item" data-nav="analytics">
             <svg
               width="15"
@@ -198,6 +232,10 @@
 
     <div class="nav-overlay" id="navOverlay" aria-hidden="true"></div>
     <div id="modalRoot"></div>
+    <div id="actorOverlay">
+      <div class="actor-backdrop"></div>
+      <div class="actor-card"></div>
+    </div>
     <div id="toasts"></div>
   </body>
 </html>
