@@ -1,13 +1,14 @@
 /* ============================================================
    ⚙️  CONFIG — EDIT THIS BEFORE SHIPPING
-   ──────────────────────────────────────────────────────────── */
+   ============================================================ */
 const CONFIG = {
-  BASE_URL: "/app1",
+  BASE_URL: "http://127.0.0.1:8000",
 };
 
 const STORAGE_KEYS = {
   baseUrl: "vt.baseUrl",
   configBase: "vt.configBase",
+  actor: "vt.actor", // sessionStorage — per browser tab session
 };
 if (localStorage.getItem(STORAGE_KEYS.configBase) !== CONFIG.BASE_URL) {
   localStorage.setItem(STORAGE_KEYS.configBase, CONFIG.BASE_URL);
@@ -17,15 +18,23 @@ if (localStorage.getItem(STORAGE_KEYS.configBase) !== CONFIG.BASE_URL) {
 const state = {
   view: "dashboard",
   baseUrl: localStorage.getItem(STORAGE_KEYS.baseUrl) || CONFIG.BASE_URL,
+  actor: sessionStorage.getItem(STORAGE_KEYS.actor) || "",
   connected: null,
   explorerEp: null,
   analyticsTab: "activity",
+  activityTab: "timeline",
+  calendarMonth: (() => {
+    const d = new Date();
+    return { year: d.getUTCFullYear(), month: d.getUTCMonth() };
+  })(),
 };
 
 const view = document.getElementById("view");
 const modalRoot = document.getElementById("modalRoot");
 const statusDot = document.getElementById("statusDot");
 const baseUrlInput = document.getElementById("baseUrl");
+const actorChip = document.getElementById("actorChip");
+const actorNameEl = document.getElementById("actorName");
 
 /* ============================================================
    HELPERS
@@ -67,6 +76,14 @@ function fmtDateShort(iso) {
   return d.toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
+  });
+}
+function fmtTimeOnly(iso) {
+  const d = parseUTC(iso);
+  if (!d) return "—";
+  return d.toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 function relTime(iso) {
@@ -117,6 +134,88 @@ function highlightJSON(data) {
     },
   );
 }
+function dayKey(d) {
+  return d.toISOString().slice(0, 10);
+}
+function todayKey() {
+  return dayKey(new Date());
+}
+
+/* ============================================================
+   ACTOR  (X-Actor header)
+   ============================================================ */
+function updateActorChip() {
+  if (state.actor) {
+    actorChip.classList.remove("unset");
+    actorNameEl.textContent = state.actor;
+    actorChip.title = `Acting as "${state.actor}". Click to change.`;
+  } else {
+    actorChip.classList.add("unset");
+    actorNameEl.textContent = "Set name";
+    actorChip.title = "Set your name — required for writes (X-Actor).";
+  }
+}
+
+function promptActor() {
+  return new Promise((resolve) => {
+    const overlay = document.getElementById("actorOverlay");
+    const card = overlay.querySelector(".actor-card");
+    card.innerHTML = `
+      <h3>Who's making this change?</h3>
+      <p class="desc">Your name is recorded on every create, update and delete — it appears in the activity log. Stored for this browser session only.</p>
+      <div class="form-row" style="margin-top:16px">
+        <label>Your name <span class="req">*</span> <span class="faint">(1–150 chars)</span></label>
+        <input type="text" id="actorInput" maxlength="150" value="${esc(state.actor)}" placeholder="e.g. Juan Dela Cruz" autocomplete="off">
+      </div>
+      <div class="row-flex" style="gap:8px;justify-content:flex-end">
+        <button class="btn" id="actorCancel">Cancel</button>
+        <button class="btn primary" id="actorSave">Save</button>
+      </div>
+    `;
+    overlay.classList.add("open");
+
+    const input = card.querySelector("#actorInput");
+    const finish = (name) => {
+      overlay.classList.remove("open");
+      card.innerHTML = "";
+      resolve(name);
+    };
+    const save = () => {
+      const name = input.value.trim();
+      if (!name) {
+        input.focus();
+        return;
+      }
+      state.actor = name;
+      sessionStorage.setItem(STORAGE_KEYS.actor, name);
+      updateActorChip();
+      finish(name);
+    };
+    const cancel = () => finish(null);
+
+    card.querySelector("#actorSave").addEventListener("click", save);
+    card.querySelector("#actorCancel").addEventListener("click", cancel);
+    overlay.querySelector(".actor-backdrop").onclick = cancel;
+
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        save();
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        cancel();
+      }
+    });
+    setTimeout(() => {
+      input.focus();
+      input.select();
+    }, 40);
+  });
+}
+
+actorChip.addEventListener("click", () => promptActor());
+updateActorChip();
 
 /* ============================================================
    HTTP LAYER
@@ -128,6 +227,18 @@ class ApiError extends Error {
     this.result = result;
   }
 }
+
+/* Determine if a write endpoint requires X-Actor.
+   Removals use removed_by in the body instead. */
+function pathNeedsActor(method, path) {
+  if (method === "GET") return false;
+  if (!/^\/(employees|violation-types|violations)(\/|$)/.test(path))
+    return false;
+  if (/\/remove$/.test(path)) return false;
+  if (/\/violations\/clear$/.test(path)) return false;
+  return true;
+}
+
 function buildQuery(query) {
   if (!query) return "";
   const usp = new URLSearchParams();
@@ -138,12 +249,23 @@ function buildQuery(query) {
   const s = usp.toString();
   return s ? "?" + s : "";
 }
+
 async function req(method, path, { query, body } = {}) {
+  // Auto-prompt for actor before writes
+  if (pathNeedsActor(method, path) && !state.actor) {
+    const name = await promptActor();
+    if (!name)
+      throw new ApiError("cancelled", "Cancelled — no actor set.", null);
+  }
+
   const base = state.baseUrl.replace(/\/+$/, "");
   const url = base + path + buildQuery(query);
+
   const headers = {};
   if (body !== undefined && body !== null)
     headers["Content-Type"] = "application/json";
+  if (pathNeedsActor(method, path)) headers["X-Actor"] = state.actor;
+
   const t0 = performance.now();
   let res;
   try {
@@ -161,6 +283,7 @@ async function req(method, path, { query, body } = {}) {
     );
   }
   const ms = Math.round(performance.now() - t0);
+
   const text = await res.text();
   let data = null;
   if (text) {
@@ -172,11 +295,13 @@ async function req(method, path, { query, body } = {}) {
   }
   return { ok: res.ok, status: res.status, data, ms, url, method };
 }
+
 async function call(method, path, opts) {
   const r = await req(method, path, opts);
   if (!r.ok) throw new ApiError("http", `HTTP ${r.status}`, r);
   return r.data;
 }
+
 function describeError(result) {
   if (!result) return { title: "Request failed", detail: "", fields: [] };
   const d = result.data;
@@ -202,7 +327,10 @@ function describeError(result) {
     fields: [],
   };
 }
+
 function errorBanner(err) {
+  if (!err) return "";
+  if (err.kind === "cancelled") return "";
   if (err.kind === "network") {
     return `<div class="callout err"><div class="ic">⚠</div><div><strong>Cannot reach the API.</strong> The server may be down, or CORS is blocking the browser.<br>Add this to <code>app/main.py</code> on the backend:
       <pre>from fastapi.middleware.cors import CORSMiddleware
@@ -227,6 +355,7 @@ app.add_middleware(
   html += "</div></div>";
   return html;
 }
+const isCancelled = (e) => e && e.kind === "cancelled";
 
 function setStatus(kind, title) {
   statusDot.className = "dot " + kind;
@@ -301,6 +430,8 @@ function confirmModal({
           btn.disabled = true;
           try {
             await onConfirm();
+          } catch (e) {
+            if (!isCancelled(e)) throw e;
           } finally {
             btn.disabled = false;
           }
@@ -311,7 +442,7 @@ function confirmModal({
 }
 
 /* ============================================================
-   NAV + drawer
+   NAV
    ============================================================ */
 const elHamburger = document.getElementById("hamburger");
 const elSidenav = document.getElementById("sidenav");
@@ -347,6 +478,7 @@ const ROUTES = {
   types: renderTypes,
   violations: renderViolations,
   removals: renderRemovals,
+  activity: renderActivity,
   analytics: renderAnalytics,
   explorer: renderExplorer,
 };
@@ -369,191 +501,12 @@ elSidenav.addEventListener("click", (e) => {
 });
 
 /* ============================================================
-   SHARED: removal form + clear-all form
-   ============================================================ */
-function removalFormModal(record, opts = {}) {
-  const { onDone } = opts;
-  const typeName =
-    record.violation_type_name ||
-    (record.violation_type && record.violation_type.name) ||
-    "Unknown";
-  const empName =
-    record.employee_full_name ||
-    (record.employee && record.employee.full_name) ||
-    "";
-  const empCode =
-    record.employee_code ||
-    (record.employee && record.employee.employee_code) ||
-    "";
-  const pts = record.points;
-  const at = record.issued_at;
-
-  openModal(
-    `
-    <div class="modal-head">
-      <h3>Remove violation</h3>
-      <span class="badge audit">audited</span>
-      <button class="close" data-close>✕</button>
-    </div>
-    <div class="modal-body">
-      <div id="rmErr"></div>
-
-      <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:16px">
-        <div style="font-weight:600;font-size:13px">${esc(typeName)}</div>
-        <div class="faint mono" style="font-size:11.5px;margin-top:3px">
-          ${esc(empName)}${empCode ? " · " + esc(empCode) : ""} · +${pts} pts${record.is_strike ? " · strike" : ""} · ${esc(fmtDate(at))}
-        </div>
-        ${record.notes ? `<div class="faint" style="font-size:12px;margin-top:8px;border-top:1px solid var(--border);padding-top:8px">${esc(record.notes)}</div>` : ""}
-      </div>
-
-      <div class="callout info" style="margin-bottom:16px">
-        <div class="ic">📝</div>
-        <div><strong>Removal is permanent and audited.</strong> Both fields are required and written to the removal log.</div>
-      </div>
-
-      <div class="form-row">
-        <label>Removed by <span class="req">*</span> <span class="faint">(1–150 chars)</span></label>
-        <input type="text" id="rmBy" maxlength="150" placeholder="Your name or ID" autocomplete="off">
-      </div>
-      <div class="form-row">
-        <label>Reason <span class="req">*</span> <span class="faint">(1–2000 chars)</span></label>
-        <textarea id="rmReason" rows="4" maxlength="2000" placeholder="Why is this being removed?"></textarea>
-        <div class="faint" style="font-size:11px;text-align:right" id="rmCount">0 / 2000</div>
-      </div>
-    </div>
-    <div class="modal-foot">
-      <button class="btn" data-close>Cancel</button>
-      <button class="btn danger" id="rmSubmit">Remove violation</button>
-    </div>
-  `,
-    {
-      onMount(m) {
-        const reasonEl = m.querySelector("#rmReason");
-        const countEl = m.querySelector("#rmCount");
-        reasonEl.addEventListener("input", () => {
-          countEl.textContent = `${reasonEl.value.length} / 2000`;
-        });
-
-        m.querySelector("#rmSubmit").addEventListener("click", async () => {
-          const errBox = m.querySelector("#rmErr");
-          errBox.innerHTML = "";
-          const removed_by = m.querySelector("#rmBy").value.trim();
-          const reason = reasonEl.value.trim();
-
-          if (!removed_by || !reason) {
-            errBox.innerHTML = `<div class="callout err"><div class="ic">✕</div><div>Both <code>removed_by</code> and <code>reason</code> are required. Empty strings return <code>422</code>.</div></div>`;
-            return;
-          }
-
-          const btn = m.querySelector("#rmSubmit");
-          btn.disabled = true;
-          try {
-            const res = await call("POST", `/violations/${record.id}/remove`, {
-              body: { removed_by, reason },
-            });
-            toast(
-              "Violation removed",
-              `${res.violation_type_name || typeName} · logged`,
-              "ok",
-            );
-            closeModal();
-            if (onDone) onDone(res);
-          } catch (e) {
-            errBox.innerHTML = errorBanner(e);
-            btn.disabled = false;
-          }
-        });
-      },
-    },
-  );
-}
-
-function clearAllFormModal(emp, opts = {}) {
-  const { count, onDone } = opts;
-  openModal(
-    `
-    <div class="modal-head">
-      <h3>Clear all violations</h3>
-      <span class="badge audit">audited</span>
-      <button class="close" data-close>✕</button>
-    </div>
-    <div class="modal-body">
-      <div id="clErr"></div>
-
-      <div class="callout err" style="margin-bottom:16px">
-        <div class="ic">⚠</div>
-        <div>This permanently removes <strong>${count} violation record${count === 1 ? "" : "s"}</strong> for <strong>${esc(emp.full_name)}</strong> and writes one audit entry per removal.</div>
-      </div>
-
-      <div class="form-row">
-        <label>Removed by <span class="req">*</span> <span class="faint">(1–150 chars)</span></label>
-        <input type="text" id="clBy" maxlength="150" placeholder="Your name or ID" autocomplete="off">
-      </div>
-      <div class="form-row">
-        <label>Reason <span class="req">*</span> <span class="faint">(1–2000 chars)</span></label>
-        <textarea id="clReason" rows="4" maxlength="2000" placeholder="Why are these being cleared?"></textarea>
-        <div class="faint" style="font-size:11px;text-align:right" id="clCount">0 / 2000</div>
-      </div>
-    </div>
-    <div class="modal-foot">
-      <button class="btn" data-close>Cancel</button>
-      <button class="btn danger" id="clSubmit">Clear all violations</button>
-    </div>
-  `,
-    {
-      onMount(m) {
-        const reasonEl = m.querySelector("#clReason");
-        const countEl = m.querySelector("#clCount");
-        reasonEl.addEventListener("input", () => {
-          countEl.textContent = `${reasonEl.value.length} / 2000`;
-        });
-
-        m.querySelector("#clSubmit").addEventListener("click", async () => {
-          const errBox = m.querySelector("#clErr");
-          errBox.innerHTML = "";
-          const removed_by = m.querySelector("#clBy").value.trim();
-          const reason = reasonEl.value.trim();
-
-          if (!removed_by || !reason) {
-            errBox.innerHTML = `<div class="callout err"><div class="ic">✕</div><div>Both <code>removed_by</code> and <code>reason</code> are required.</div></div>`;
-            return;
-          }
-
-          const btn = m.querySelector("#clSubmit");
-          btn.disabled = true;
-          try {
-            const res = await call(
-              "POST",
-              `/employees/${emp.id}/violations/clear`,
-              { body: { removed_by, reason } },
-            );
-            toast(
-              "Violations cleared",
-              `${res.deleted} removed · audited`,
-              "ok",
-            );
-            closeModal();
-            if (onDone) onDone(res);
-          } catch (e) {
-            errBox.innerHTML = errorBanner(e);
-            btn.disabled = false;
-          }
-        });
-      },
-    },
-  );
-}
-
-/* ============================================================
-   VIEW: DASHBOARD
+   DASHBOARD
    ============================================================ */
 async function renderDashboard() {
   view.innerHTML = `
     <div class="page-head">
-      <div>
-        <h2>Dashboard</h2>
-        <p class="sub">Live overview pulled from every corner of the API.</p>
-      </div>
+      <div><h2>Dashboard</h2><p class="sub">Live overview pulled from every corner of the API.</p></div>
       <div class="actions"><button class="btn" id="refreshDash">↻ Refresh</button></div>
     </div>
     <div id="dashContent"><div class="loading"><span class="spinner"></span>Loading dashboard…</div></div>
@@ -623,11 +576,7 @@ async function loadDashboard() {
   </div>`;
 
   html += `<div class="card">
-    <div class="card-head">
-      <h3>Violation Activity</h3>
-      <span class="hint">GET /analytics/activity?days=30&amp;bucket=day</span>
-      <div class="right"><span class="badge info">${filled.reduce((s, r) => s + r.count, 0)} events · 30d</span></div>
-    </div>
+    <div class="card-head"><h3>Violation Activity</h3><span class="hint">GET /analytics/activity?days=30&amp;bucket=day</span><div class="right"><span class="badge info">${filled.reduce((s, r) => s + r.count, 0)} events · 30d</span></div></div>
     <div class="chart-wrap">${renderBarChart(filled)}</div>
   </div>`;
 
@@ -643,10 +592,7 @@ async function loadDashboard() {
                 (o) => `
         <tr class="clickable" data-emp="${o.id}">
           <td style="width:36px"><div class="feed-avatar" style="width:28px;height:28px;font-size:10px">${esc(initials(o.full_name))}</div></td>
-          <td>
-            <div style="font-weight:550">${esc(o.full_name)}</div>
-            <div class="faint" style="font-size:11.5px">${esc(o.employee_code)}${o.department ? " · " + esc(o.department) : ""}</div>
-          </td>
+          <td><div style="font-weight:550">${esc(o.full_name)}</div><div class="faint" style="font-size:11.5px">${esc(o.employee_code)}${o.department ? " · " + esc(o.department) : ""}</div></td>
           <td class="num">${o.total_points}</td>
           <td class="num">${o.total_strikes > 0 ? `<span class="badge strike">${o.total_strikes}★</span>` : '<span class="faint">—</span>'}</td>
         </tr>`,
@@ -668,10 +614,7 @@ async function loadDashboard() {
         <div class="feed-item">
           <div class="feed-avatar">${esc(initials(f.employee ? f.employee.full_name : "?"))}</div>
           <div class="feed-body">
-            <div class="line1">
-              <span class="who">${esc(f.employee ? f.employee.full_name : "Unknown")}</span>
-              ${f.is_strike ? '<span class="badge strike">strike</span>' : ""}
-            </div>
+            <div class="line1"><span class="who">${esc(f.employee ? f.employee.full_name : "Unknown")}</span>${f.is_strike ? '<span class="badge strike">strike</span>' : ""}</div>
             <div class="line2">${esc(f.violation_type_name || "—")} · +${f.points} pts</div>
           </div>
           <div class="feed-meta"><div class="faint" style="font-size:11px">${esc(relTime(f.issued_at))}</div></div>
@@ -694,16 +637,9 @@ async function loadDashboard() {
           <tbody>${departments
             .map(
               (d) => `
-            <tr>
-              <td>${d.department ? esc(d.department) : '<span class="faint">— unassigned —</span>'}</td>
-              <td class="num">${d.employees}</td>
-              <td class="num">${d.total_records}</td>
-              <td class="num">${d.total_points}</td>
-              <td class="num">${d.total_strikes}</td>
-            </tr>`,
+            <tr><td>${d.department ? esc(d.department) : '<span class="faint">— unassigned —</span>'}</td><td class="num">${d.employees}</td><td class="num">${d.total_records}</td><td class="num">${d.total_points}</td><td class="num">${d.total_strikes}</td></tr>`,
             )
-            .join("")}
-          </tbody>
+            .join("")}</tbody>
         </table>
       </div>
     </div>`;
@@ -711,11 +647,7 @@ async function loadDashboard() {
 
   if (removals.items && removals.items.length) {
     html += `<div class="card" style="margin-top:18px">
-      <div class="card-head">
-        <h3>Recent Removals</h3>
-        <span class="hint">GET /violation-removals</span>
-        <div class="right"><button class="btn sm" id="dashViewRemovals">View all →</button></div>
-      </div>
+      <div class="card-head"><h3>Recent Removals</h3><span class="hint">GET /violation-removals</span><div class="right"><button class="btn sm" id="dashViewRemovals">View all →</button></div></div>
       <div class="card-body tight">
         ${removals.items
           .map(
@@ -723,10 +655,7 @@ async function loadDashboard() {
           <div class="feed-item">
             <div class="feed-avatar" style="background:rgba(139,109,255,.15);color:#a891ff;border-color:rgba(139,109,255,.3)">✕</div>
             <div class="feed-body">
-              <div class="line1">
-                <span class="who">${esc(r.employee_full_name)}</span>
-                <span class="badge audit">removed</span>
-              </div>
+              <div class="line1"><span class="who">${esc(r.employee_full_name)}</span><span class="badge audit">removed</span></div>
               <div class="line2">${esc(r.violation_type_name)} · +${r.points} pts · by ${esc(r.removed_by)}</div>
             </div>
             <div class="feed-meta"><div class="faint" style="font-size:11px">${esc(relTime(r.removed_at))}</div></div>
@@ -745,9 +674,6 @@ async function loadDashboard() {
   if (vr) vr.addEventListener("click", () => navigate("removals"));
 }
 
-function dayKey(d) {
-  return d.toISOString().slice(0, 10);
-}
 function monthKey(d) {
   return d.toISOString().slice(0, 7);
 }
@@ -818,9 +744,9 @@ function renderBarChart(rows) {
 }
 
 /* ============================================================
-   VIEW: EMPLOYEES
+   EMPLOYEES
    ============================================================ */
-const empState = { offset: 0, limit: 25, filters: {} };
+const empState = { offset: 0, limit: 25 };
 
 async function renderEmployees() {
   view.innerHTML = `
@@ -894,20 +820,15 @@ async function loadEmployees() {
   list.innerHTML = `<div class="loading"><span class="spinner"></span>Loading…</div>`;
   warn.innerHTML = "";
   pager.innerHTML = "";
-
   const f = readEmpFilters();
-  empState.filters = f;
-
   try {
     const data = await call("GET", "/employees", {
       query: { ...f, limit: empState.limit, offset: empState.offset },
     });
     const unreliable = f.search || f.position || f.min_points || f.min_strikes;
     if (unreliable) {
-      warn.innerHTML = `<div class="callout" style="margin:0;border-radius:0;border-left:none;border-right:none">
-        <div class="ic">⚠</div>
-        <div><strong>Heads up:</strong> with <code>search</code>, <code>position</code>, <code>min_points</code> or <code>min_strikes</code> active, the server's <code>total</code> is over-counted (rows are correct). Pagination is driven by row count instead.</div>
-      </div>`;
+      warn.innerHTML = `<div class="callout" style="margin:0;border-radius:0;border-left:none;border-right:none"><div class="ic">⚠</div>
+        <div><strong>Heads up:</strong> with <code>search</code>, <code>position</code>, <code>min_points</code> or <code>min_strikes</code> active, the server's <code>total</code> is over-counted (rows are correct).</div></div>`;
     }
     if (!data.items.length) {
       list.innerHTML = `<div class="empty"><div class="big">◌</div>No employees match those filters.</div>`;
@@ -915,10 +836,7 @@ async function loadEmployees() {
     }
 
     list.innerHTML = `<table>
-      <thead><tr>
-        <th>Code</th><th>Name</th><th>Department</th><th>Position</th>
-        <th>Status</th><th class="num">Points</th><th class="num">Strikes</th><th></th>
-      </tr></thead>
+      <thead><tr><th>Code</th><th>Name</th><th>Department</th><th>Position</th><th>Status</th><th class="num">Points</th><th class="num">Strikes</th><th></th></tr></thead>
       <tbody>${data.items
         .map(
           (e) => `
@@ -933,8 +851,7 @@ async function loadEmployees() {
           <td style="width:32px"><span class="faint">›</span></td>
         </tr>`,
         )
-        .join("")}
-      </tbody>
+        .join("")}</tbody>
     </table>`;
 
     list
@@ -1016,10 +933,7 @@ function renderEmployeeDetail(modal, emp) {
 
     <div class="divider"></div>
 
-    <div style="display:flex;align-items:center;margin-bottom:10px">
-      <strong style="font-size:13px">Violation history</strong>
-      <span class="right faint mono" style="font-size:11px">newest first</span>
-    </div>
+    <div style="display:flex;align-items:center;margin-bottom:10px"><strong style="font-size:13px">Violation history</strong><span class="right faint mono" style="font-size:11px">newest first</span></div>
 
     ${
       records.length
@@ -1034,14 +948,9 @@ function renderEmployeeDetail(modal, emp) {
               ${r.is_strike ? '<span class="badge strike">strike</span>' : ""}
               <span class="badge info">+${r.points}</span>
             </div>
-            <div class="line2">
-              ${esc(fmtDate(r.issued_at))}${r.issued_by ? " · by " + esc(r.issued_by) : ""}
-              ${r.notes ? "<br>" + esc(r.notes) : ""}
-            </div>
+            <div class="line2">${esc(fmtDate(r.issued_at))}${r.issued_by ? " · by " + esc(r.issued_by) : ""}${r.notes ? "<br>" + esc(r.notes) : ""}</div>
           </div>
-          <div class="feed-meta">
-            <button class="btn sm danger" data-remove-rec="${r.id}" title="Remove violation (audited)">Remove</button>
-          </div>
+          <div class="feed-meta"><button class="btn sm danger" data-remove-rec="${r.id}" title="Remove violation (audited)">Remove</button></div>
         </div>`,
         )
         .join("")}
@@ -1059,12 +968,11 @@ function renderEmployeeDetail(modal, emp) {
       <button class="btn danger" id="mDelete">Delete employee</button>
     </div>
     <div class="faint" style="font-size:11px;margin-top:10px">
-      Clearing and removing are audited (requires <code>removed_by</code> + <code>reason</code>). Deleting the employee <strong>bypasses the audit trail</strong> — prefer deactivate.
+      Clearing and removing are audited (<code>removed_by</code> + <code>reason</code>). Deleting the employee <strong>bypasses the audit trail</strong> — prefer deactivate.
     </div>
   `;
 
   const body = modal.querySelector(".modal-body");
-
   body
     .querySelector("#mIssue")
     .addEventListener("click", () => issueViolationModal(emp));
@@ -1115,7 +1023,7 @@ function renderEmployeeDetail(modal, emp) {
       body: `
         <div class="callout err" style="margin-bottom:14px">
           <div class="ic">⚠</div>
-          <div><strong>This bypasses the audit trail.</strong> All ${records.length} violation record${records.length === 1 ? "" : "s"} for this employee will be deleted <em>silently</em> — no <code>violation_removals</code> entries are written.</div>
+          <div><strong>This bypasses the audit trail.</strong> All ${records.length} violation record${records.length === 1 ? "" : "s"} will be deleted <em>silently</em> — no <code>violation_removals</code> entries are written.</div>
         </div>
         <p style="font-size:13px;color:var(--muted)">Hard-deletes <strong>${esc(emp.full_name)}</strong> and cascades. If you need every removal logged, use <em>deactivate</em> instead.</p>
       `,
@@ -1126,6 +1034,7 @@ function renderEmployeeDetail(modal, emp) {
           closeModal();
           if (state.view === "employees") loadEmployees();
         } catch (e) {
+          if (isCancelled(e)) return;
           toast("Delete failed", describeError(e.result).title, "err");
         }
       },
@@ -1158,6 +1067,7 @@ async function simpleAction(method, path, okMsg, after) {
     if (after) after();
     if (state.view === "employees") loadEmployees();
   } catch (e) {
+    if (isCancelled(e)) return;
     toast("Action failed", describeError(e.result).title, "err");
   }
 }
@@ -1177,10 +1087,7 @@ function newEmployeeModal() {
       </div>
       <div class="faint" style="font-size:11.5px">New employees are always created with status <code>active</code>.</div>
     </div>
-    <div class="modal-foot">
-      <button class="btn" data-close>Cancel</button>
-      <button class="btn primary" id="neSave">Create</button>
-    </div>
+    <div class="modal-foot"><button class="btn" data-close>Cancel</button><button class="btn primary" id="neSave">Create</button></div>
   `,
     {
       onMount(m) {
@@ -1207,6 +1114,7 @@ function newEmployeeModal() {
             empState.offset = 0;
             loadEmployees();
           } catch (e) {
+            if (isCancelled(e)) return;
             errBox.innerHTML = errorBanner(e);
           }
         });
@@ -1228,15 +1136,9 @@ function editEmployeeModal(emp, after) {
         <div class="form-row"><label>Last name</label><input type="text" id="eeLast" value="${esc(emp.last_name)}"></div>
         <div class="form-row full"><label>Position</label><input type="text" id="eePos" value="${esc(emp.position || "")}"></div>
       </div>
-      <div class="callout" style="margin:0">
-        <div class="ic">⚠</div>
-        <div><strong>Known limitation:</strong> sending <code>null</code> is a no-op — you cannot currently clear a field through the API.</div>
-      </div>
+      <div class="callout" style="margin:0"><div class="ic">⚠</div><div><strong>Known limitation:</strong> sending <code>null</code> is a no-op — you cannot currently clear a field through the API.</div></div>
     </div>
-    <div class="modal-foot">
-      <button class="btn" data-close>Cancel</button>
-      <button class="btn primary" id="eeSave">Save changes</button>
-    </div>
+    <div class="modal-foot"><button class="btn" data-close>Cancel</button><button class="btn primary" id="eeSave">Save changes</button></div>
   `,
     {
       onMount(m) {
@@ -1268,6 +1170,7 @@ function editEmployeeModal(emp, after) {
             if (after) after();
             if (state.view === "employees") loadEmployees();
           } catch (e) {
+            if (isCancelled(e)) return;
             errBox.innerHTML = errorBanner(e);
           }
         });
@@ -1301,19 +1204,10 @@ function bulkEmployeeModal() {
     <div class="modal-head"><h3>Bulk Import Employees</h3><button class="close" data-close>✕</button></div>
     <div class="modal-body">
       <div id="biErr"></div>
-      <div class="callout" style="margin-bottom:14px">
-        <div class="ic">⚠</div>
-        <div><strong>All-or-nothing.</strong> If any <code>employee_code</code> already exists, the entire batch fails with <code>409</code> and nothing is inserted.</div>
-      </div>
-      <div class="form-row">
-        <label>JSON array of EmployeeCreate</label>
-        <textarea id="biBody" rows="12" spellcheck="false">${esc(sample)}</textarea>
-      </div>
+      <div class="callout" style="margin-bottom:14px"><div class="ic">⚠</div><div><strong>All-or-nothing.</strong> If any <code>employee_code</code> already exists, the entire batch fails with <code>409</code> and nothing is inserted.</div></div>
+      <div class="form-row"><label>JSON array of EmployeeCreate</label><textarea id="biBody" rows="12" spellcheck="false">${esc(sample)}</textarea></div>
     </div>
-    <div class="modal-foot">
-      <button class="btn" data-close>Cancel</button>
-      <button class="btn primary" id="biSend">Import</button>
-    </div>
+    <div class="modal-foot"><button class="btn" data-close>Cancel</button><button class="btn primary" id="biSend">Import</button></div>
   `,
     {
       wide: true,
@@ -1341,6 +1235,7 @@ function bulkEmployeeModal() {
             empState.offset = 0;
             loadEmployees();
           } catch (e) {
+            if (isCancelled(e)) return;
             errBox.innerHTML = errorBanner(e);
           }
         });
@@ -1379,26 +1274,17 @@ async function issueViolationModal(emp) {
     </div>
     <div class="modal-body">
       <div id="ivErr"></div>
-      <div class="form-row">
-        <label>Violation type</label>
-        <select id="ivType">
-          ${types.map((t) => `<option value="${t.id}">${esc(t.name)} — ${t.default_points} pts${t.is_strike ? " · strike" : ""}</option>`).join("")}
-        </select>
+      <div class="form-row"><label>Violation type</label>
+        <select id="ivType">${types.map((t) => `<option value="${t.id}">${esc(t.name)} — ${t.default_points} pts${t.is_strike ? " · strike" : ""}</option>`).join("")}</select>
       </div>
-      <div class="callout" style="margin:0 0 14px">
-        <div class="ic">ℹ</div>
-        <div><code>points</code> and <code>is_strike</code> are snapshotted from the type — they are not sent in the request body and historical records never change if the type is later edited.</div>
-      </div>
+      <div class="callout" style="margin:0 0 14px"><div class="ic">ℹ</div><div><code>points</code> and <code>is_strike</code> are snapshotted from the type — historical records never change if the type is later edited.</div></div>
       <div class="form-grid">
         <div class="form-row"><label>Issued by <span class="opt">optional</span></label><input type="text" id="ivBy" placeholder="Supervisor name"></div>
         <div class="form-row"><label>Issued at <span class="opt">optional</span></label><input type="datetime-local" id="ivAt"></div>
         <div class="form-row full"><label>Notes <span class="opt">optional</span></label><textarea id="ivNotes" rows="3" placeholder="Context…"></textarea></div>
       </div>
     </div>
-    <div class="modal-foot">
-      <button class="btn" data-close>Cancel</button>
-      <button class="btn primary" id="ivSend">Issue violation</button>
-    </div>
+    <div class="modal-foot"><button class="btn" data-close>Cancel</button><button class="btn primary" id="ivSend">Issue violation</button></div>
   `,
     {
       onMount(m) {
@@ -1427,6 +1313,7 @@ async function issueViolationModal(emp) {
             if (state.view === "violations") loadRecentFeed();
             if (state.view === "employees") loadEmployees();
           } catch (e) {
+            if (isCancelled(e)) return;
             errBox.innerHTML = errorBanner(e);
           }
         });
@@ -1436,7 +1323,7 @@ async function issueViolationModal(emp) {
 }
 
 /* ============================================================
-   VIEW: VIOLATION TYPES
+   VIOLATION TYPES
    ============================================================ */
 async function renderTypes() {
   view.innerHTML = `
@@ -1448,9 +1335,7 @@ async function renderTypes() {
       <div class="filters">
         <label class="chk"><input type="checkbox" id="tInactive" checked> Include inactive</label>
         <select id="tStrikes" style="width:160px">
-          <option value="">All types</option>
-          <option value="true">Strikes only</option>
-          <option value="false">Non-strike only</option>
+          <option value="">All types</option><option value="true">Strikes only</option><option value="false">Non-strike only</option>
         </select>
         <button class="btn" id="tApply">Apply</button>
       </div>
@@ -1501,8 +1386,7 @@ async function loadTypes() {
           </td>
         </tr>`,
         )
-        .join("")}
-      </tbody>
+        .join("")}</tbody>
     </table>`;
 
     el.querySelectorAll("[data-edit]").forEach((b) =>
@@ -1545,6 +1429,7 @@ async function typeAction(path, okMsg) {
     toast(okMsg, "", "ok");
     loadTypes();
   } catch (e) {
+    if (isCancelled(e)) return;
     const d = describeError(e.result);
     toast("Action failed", d.title + (d.detail ? " — " + d.detail : ""), "err");
   }
@@ -1563,6 +1448,7 @@ function deleteTypeFlow(t) {
         closeModal();
         loadTypes();
       } catch (e) {
+        if (isCancelled(e)) return;
         const d = describeError(e.result);
         if (e.result && e.result.status === 409) {
           closeModal();
@@ -1578,6 +1464,7 @@ function deleteTypeFlow(t) {
                 closeModal();
                 loadTypes();
               } catch (e2) {
+                if (isCancelled(e2)) return;
                 toast("Failed", describeError(e2.result).title, "err");
               }
             },
@@ -1605,20 +1492,14 @@ function typeFormModal(existing, after) {
     <div class="modal-body">
       <div id="tpErr"></div>
       <div class="form-row"><label>Name</label><input type="text" id="tpName" value="${existing ? esc(existing.name) : ""}" placeholder="Late Arrival"></div>
-      <div class="form-row"><label>Description <span class="opt">optional</span></label><textarea id="tpDesc" rows="2" placeholder="Short explanation…">${existing && existing.description ? esc(existing.description) : ""}</textarea></div>
+      <div class="form-row"><label>Description <span class="opt">optional</span></label><textarea id="tpDesc" rows="2">${existing && existing.description ? esc(existing.description) : ""}</textarea></div>
       <div class="form-grid">
         <div class="form-row"><label>Default points</label><input type="number" id="tpPoints" min="0" value="${existing ? existing.default_points : 0}"></div>
-        <div class="form-row" style="justify-content:flex-end">
-          <label>&nbsp;</label>
-          <label class="chk" style="height:34px"><input type="checkbox" id="tpStrike" ${existing && existing.is_strike ? "checked" : ""}> Counts as a strike</label>
-        </div>
+        <div class="form-row" style="justify-content:flex-end"><label>&nbsp;</label><label class="chk" style="height:34px"><input type="checkbox" id="tpStrike" ${existing && existing.is_strike ? "checked" : ""}> Counts as a strike</label></div>
       </div>
-      ${isEdit ? `<div class="callout" style="margin:0"><div class="ic">⚠</div><div>Changing <code>default_points</code> or <code>is_strike</code> does <strong>not</strong> rewrite historical violation records — they keep their snapshotted values.</div></div>` : ""}
+      ${isEdit ? `<div class="callout" style="margin:0"><div class="ic">⚠</div><div>Changing <code>default_points</code> or <code>is_strike</code> does <strong>not</strong> rewrite historical records.</div></div>` : ""}
     </div>
-    <div class="modal-foot">
-      <button class="btn" data-close>Cancel</button>
-      <button class="btn primary" id="tpSave">${isEdit ? "Save changes" : "Create type"}</button>
-    </div>
+    <div class="modal-foot"><button class="btn" data-close>Cancel</button><button class="btn primary" id="tpSave">${isEdit ? "Save changes" : "Create type"}</button></div>
   `,
     {
       onMount(m) {
@@ -1664,6 +1545,7 @@ function typeFormModal(existing, after) {
             if (after) after();
             else loadTypes();
           } catch (e) {
+            if (isCancelled(e)) return;
             errBox.innerHTML = errorBanner(e);
           }
         });
@@ -1673,23 +1555,19 @@ function typeFormModal(existing, after) {
 }
 
 /* ============================================================
-   VIEW: VIOLATIONS
+   VIOLATIONS
    ============================================================ */
 async function renderViolations() {
   view.innerHTML = `
     <div class="page-head">
       <div><h2>Violations</h2><p class="sub">Company-wide activity feed — every record, newest first.</p></div>
-      <div class="actions">
-        <button class="btn" id="issueBtn">+ Issue violation</button>
-        <button class="btn" id="feedRefresh">↻ Refresh</button>
-      </div>
+      <div class="actions"><button class="btn" id="issueBtn">+ Issue violation</button><button class="btn" id="feedRefresh">↻ Refresh</button></div>
     </div>
     <div class="card">
       <div class="filters">
         <label class="chk">Look-back</label>
         <select id="feedDays" style="width:130px">
-          <option value="7">7 days</option><option value="30" selected>30 days</option>
-          <option value="90">90 days</option><option value="365">365 days</option>
+          <option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option><option value="365">365 days</option>
         </select>
         <label class="chk"><input type="checkbox" id="feedStrikes"> Strikes only</label>
         <input type="number" id="feedLimit" value="50" min="1" max="200" style="width:100px" title="Limit (1-200)">
@@ -1734,7 +1612,6 @@ async function loadRecentFeed() {
       el.innerHTML = `<div class="empty"><div class="big">◌</div>No violations in the last ${days} days.</div>`;
       return;
     }
-
     el.innerHTML = items
       .map(
         (f) => `
@@ -1746,10 +1623,7 @@ async function loadRecentFeed() {
             ${f.employee ? `<span class="faint mono" style="font-size:11px">${esc(f.employee.employee_code)}</span>` : ""}
             ${f.is_strike ? '<span class="badge strike">strike</span>' : ""}
           </div>
-          <div class="line2">
-            ${esc(f.violation_type_name || (f.violation_type ? f.violation_type.name : "—"))} · +${f.points} pts${f.issued_by ? " · " + esc(f.issued_by) : ""}
-            ${f.notes ? '<br><span style="color:var(--muted)">' + esc(f.notes) + "</span>" : ""}
-          </div>
+          <div class="line2">${esc(f.violation_type_name || (f.violation_type ? f.violation_type.name : "—"))} · +${f.points} pts${f.issued_by ? " · " + esc(f.issued_by) : ""}${f.notes ? '<br><span style="color:var(--muted)">' + esc(f.notes) + "</span>" : ""}</div>
         </div>
         <div class="feed-meta">
           <div style="font-size:11.5px" class="muted">${esc(fmtDateShort(f.issued_at))}</div>
@@ -1759,12 +1633,10 @@ async function loadRecentFeed() {
       </div>`,
       )
       .join("");
-
     el.querySelectorAll("[data-remove]").forEach((b) =>
       b.addEventListener("click", () => {
         const f = items.find((x) => x.id === Number(b.dataset.remove));
-        if (!f) return;
-        removalFormModal(f, { onDone: () => loadRecentFeed() });
+        if (f) removalFormModal(f, { onDone: () => loadRecentFeed() });
       }),
     );
   } catch (e) {
@@ -1780,10 +1652,7 @@ function issueByLookupModal() {
       <div id="lkErr"></div>
       <div class="form-row">
         <label>Employee code or search</label>
-        <div class="row-flex">
-          <input type="text" id="lkCode" placeholder="EMP-001">
-          <button class="btn" id="lkFind" style="flex:0 0 auto">Find</button>
-        </div>
+        <div class="row-flex"><input type="text" id="lkCode" placeholder="EMP-001"><button class="btn" id="lkFind" style="flex:0 0 auto">Find</button></div>
       </div>
       <div id="lkResults"></div>
     </div>
@@ -1858,24 +1727,171 @@ function issueByLookupModal() {
 }
 
 /* ============================================================
-   VIEW: REMOVAL LOG
+   REMOVAL FORMS (no X-Actor — uses removed_by in body)
+   ============================================================ */
+function removalFormModal(record, opts = {}) {
+  const typeName =
+    record.violation_type_name ||
+    (record.violation_type && record.violation_type.name) ||
+    "Unknown";
+  const empName =
+    record.employee_full_name ||
+    (record.employee && record.employee.full_name) ||
+    "";
+  const empCode =
+    record.employee_code ||
+    (record.employee && record.employee.employee_code) ||
+    "";
+  const pts = record.points;
+  const at = record.issued_at;
+  const defaultBy = state.actor || "";
+
+  openModal(
+    `
+    <div class="modal-head"><h3>Remove violation</h3><span class="badge audit">audited</span><button class="close" data-close>✕</button></div>
+    <div class="modal-body">
+      <div id="rmErr"></div>
+      <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:16px">
+        <div style="font-weight:600;font-size:13px">${esc(typeName)}</div>
+        <div class="faint mono" style="font-size:11.5px;margin-top:3px">${esc(empName)}${empCode ? " · " + esc(empCode) : ""} · +${pts} pts${record.is_strike ? " · strike" : ""} · ${esc(fmtDate(at))}</div>
+        ${record.notes ? `<div class="faint" style="font-size:12px;margin-top:8px;border-top:1px solid var(--border);padding-top:8px">${esc(record.notes)}</div>` : ""}
+      </div>
+      <div class="callout info" style="margin-bottom:16px"><div class="ic">📝</div><div><strong>Removal is permanent and audited.</strong> Both fields are required and written to the removal log.</div></div>
+      <div class="form-row">
+        <label>Removed by <span class="req">*</span> <span class="faint">(1–150 chars)</span></label>
+        <input type="text" id="rmBy" maxlength="150" value="${esc(defaultBy)}" placeholder="Your name or ID" autocomplete="off">
+      </div>
+      <div class="form-row">
+        <label>Reason <span class="req">*</span> <span class="faint">(1–2000 chars)</span></label>
+        <textarea id="rmReason" rows="4" maxlength="2000" placeholder="Why is this being removed?"></textarea>
+        <div class="faint" style="font-size:11px;text-align:right" id="rmCount">0 / 2000</div>
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn" data-close>Cancel</button><button class="btn danger" id="rmSubmit">Remove violation</button></div>
+  `,
+    {
+      onMount(m) {
+        const reasonEl = m.querySelector("#rmReason");
+        const countEl = m.querySelector("#rmCount");
+        reasonEl.addEventListener("input", () => {
+          countEl.textContent = `${reasonEl.value.length} / 2000`;
+        });
+        m.querySelector("#rmSubmit").addEventListener("click", async () => {
+          const errBox = m.querySelector("#rmErr");
+          errBox.innerHTML = "";
+          const removed_by = m.querySelector("#rmBy").value.trim();
+          const reason = reasonEl.value.trim();
+          if (!removed_by || !reason) {
+            errBox.innerHTML = `<div class="callout err"><div class="ic">✕</div><div>Both <code>removed_by</code> and <code>reason</code> are required.</div></div>`;
+            return;
+          }
+          const btn = m.querySelector("#rmSubmit");
+          btn.disabled = true;
+          try {
+            const res = await call("POST", `/violations/${record.id}/remove`, {
+              body: { removed_by, reason },
+            });
+            toast(
+              "Violation removed",
+              `${res.violation_type_name || typeName} · logged`,
+              "ok",
+            );
+            closeModal();
+            if (opts.onDone) opts.onDone(res);
+          } catch (e) {
+            if (isCancelled(e)) {
+              btn.disabled = false;
+              return;
+            }
+            errBox.innerHTML = errorBanner(e);
+            btn.disabled = false;
+          }
+        });
+      },
+    },
+  );
+}
+
+function clearAllFormModal(emp, opts = {}) {
+  const { count, onDone } = opts;
+  const defaultBy = state.actor || "";
+  openModal(
+    `
+    <div class="modal-head"><h3>Clear all violations</h3><span class="badge audit">audited</span><button class="close" data-close>✕</button></div>
+    <div class="modal-body">
+      <div id="clErr"></div>
+      <div class="callout err" style="margin-bottom:16px"><div class="ic">⚠</div><div>This permanently removes <strong>${count} violation record${count === 1 ? "" : "s"}</strong> for <strong>${esc(emp.full_name)}</strong> and writes one audit entry per removal.</div></div>
+      <div class="form-row">
+        <label>Removed by <span class="req">*</span> <span class="faint">(1–150 chars)</span></label>
+        <input type="text" id="clBy" maxlength="150" value="${esc(defaultBy)}" placeholder="Your name or ID" autocomplete="off">
+      </div>
+      <div class="form-row">
+        <label>Reason <span class="req">*</span> <span class="faint">(1–2000 chars)</span></label>
+        <textarea id="clReason" rows="4" maxlength="2000" placeholder="Why are these being cleared?"></textarea>
+        <div class="faint" style="font-size:11px;text-align:right" id="clCount">0 / 2000</div>
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn" data-close>Cancel</button><button class="btn danger" id="clSubmit">Clear all violations</button></div>
+  `,
+    {
+      onMount(m) {
+        const reasonEl = m.querySelector("#clReason");
+        const countEl = m.querySelector("#clCount");
+        reasonEl.addEventListener("input", () => {
+          countEl.textContent = `${reasonEl.value.length} / 2000`;
+        });
+        m.querySelector("#clSubmit").addEventListener("click", async () => {
+          const errBox = m.querySelector("#clErr");
+          errBox.innerHTML = "";
+          const removed_by = m.querySelector("#clBy").value.trim();
+          const reason = reasonEl.value.trim();
+          if (!removed_by || !reason) {
+            errBox.innerHTML = `<div class="callout err"><div class="ic">✕</div><div>Both <code>removed_by</code> and <code>reason</code> are required.</div></div>`;
+            return;
+          }
+          const btn = m.querySelector("#clSubmit");
+          btn.disabled = true;
+          try {
+            const res = await call(
+              "POST",
+              `/employees/${emp.id}/violations/clear`,
+              { body: { removed_by, reason } },
+            );
+            toast(
+              "Violations cleared",
+              `${res.deleted} removed · audited`,
+              "ok",
+            );
+            closeModal();
+            if (onDone) onDone(res);
+          } catch (e) {
+            if (isCancelled(e)) {
+              btn.disabled = false;
+              return;
+            }
+            errBox.innerHTML = errorBanner(e);
+            btn.disabled = false;
+          }
+        });
+      },
+    },
+  );
+}
+
+/* ============================================================
+   REMOVAL LOG
    ============================================================ */
 const remState = { offset: 0, limit: 25 };
 
 async function renderRemovals() {
   view.innerHTML = `
     <div class="page-head">
-      <div>
-        <h2>Removal Log</h2>
-        <p class="sub">Immutable audit trail for every violation removal. Newest first.</p>
-      </div>
+      <div><h2>Removal Log</h2><p class="sub">Immutable audit trail for every violation removal. Newest first.</p></div>
       <div class="actions"><button class="btn" id="remRefresh">↻ Refresh</button></div>
     </div>
     <div class="callout info">
       <div class="ic">ℹ</div>
-      <div>
-        <strong>One entry per removal.</strong> Hard-deleting an employee bypasses this log entirely — prefer <em>deactivate</em> when the audit trail must stay complete.
-      </div>
+      <div><strong>One entry per removal.</strong> Hard-deleting an employee bypasses this log entirely — prefer <em>deactivate</em> when the audit trail must stay complete.</div>
     </div>
     <div class="card">
       <div class="filters">
@@ -1919,7 +1935,6 @@ async function loadRemovals() {
   const pager = document.getElementById("remPager");
   list.innerHTML = `<div class="loading"><span class="spinner"></span>Loading…</div>`;
   pager.innerHTML = "";
-
   const since = document.getElementById("remSince").value;
   const until = document.getElementById("remUntil").value;
   const query = {
@@ -1930,44 +1945,29 @@ async function loadRemovals() {
     limit: remState.limit,
     offset: remState.offset,
   };
-
   try {
     const data = await call("GET", "/violation-removals", { query });
-
     if (!data.items || !data.items.length) {
       list.innerHTML = `<div class="empty"><div class="big">◌</div>No removals match those filters.</div>`;
       return;
     }
 
     list.innerHTML = `<table>
-      <thead><tr>
-        <th>Removed</th><th>Employee</th><th>Violation</th>
-        <th class="num">Pts</th><th>Removed by</th><th>Reason</th><th></th>
-      </tr></thead>
+      <thead><tr><th>Removed</th><th>Employee</th><th>Violation</th><th class="num">Pts</th><th>Removed by</th><th>Reason</th><th></th></tr></thead>
       <tbody>${data.items
         .map(
           (r) => `
         <tr class="clickable" data-rem="${r.id}">
-          <td>
-            <div style="font-size:12.5px">${esc(fmtDateShort(r.removed_at))}</div>
-            <div class="faint" style="font-size:11px">${esc(relTime(r.removed_at))}</div>
-          </td>
-          <td>
-            <div style="font-weight:550">${esc(r.employee_full_name)}</div>
-            <div class="faint mono" style="font-size:11px">${esc(r.employee_code)}</div>
-          </td>
-          <td>
-            <div>${esc(r.violation_type_name)}</div>
-            ${r.is_strike ? '<span class="badge strike">strike</span>' : ""}
-          </td>
+          <td><div style="font-size:12.5px">${esc(fmtDateShort(r.removed_at))}</div><div class="faint" style="font-size:11px">${esc(relTime(r.removed_at))}</div></td>
+          <td><div style="font-weight:550">${esc(r.employee_full_name)}</div><div class="faint mono" style="font-size:11px">${esc(r.employee_code)}</div></td>
+          <td><div>${esc(r.violation_type_name)}</div>${r.is_strike ? '<span class="badge strike">strike</span>' : ""}</td>
           <td class="num">${r.points}</td>
           <td>${esc(r.removed_by)}</td>
           <td class="faint trunc" title="${esc(r.reason)}">${esc(r.reason)}</td>
           <td style="width:32px"><span class="faint">›</span></td>
         </tr>`,
         )
-        .join("")}
-      </tbody>
+        .join("")}</tbody>
     </table>`;
 
     list.querySelectorAll("tr[data-rem]").forEach((tr) => {
@@ -2005,36 +2005,27 @@ async function loadRemovals() {
 function openRemoval(r) {
   openModal(
     `
-    <div class="modal-head">
-      <h3>Removal #${r.id}</h3>
-      <span class="badge audit">audit entry</span>
-      <button class="close" data-close>✕</button>
-    </div>
+    <div class="modal-head"><h3>Removal #${r.id}</h3><span class="badge audit">audit entry</span><button class="close" data-close>✕</button></div>
     <div class="modal-body">
       <div class="stat-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:18px">
         <div class="stat" style="padding:12px 14px"><div class="k">Points removed</div><div class="v" style="font-size:22px">${r.points}</div></div>
         <div class="stat ${r.is_strike ? "danger" : ""}" style="padding:12px 14px"><div class="k">Strike</div><div class="v" style="font-size:22px">${r.is_strike ? "Yes" : "No"}</div></div>
         <div class="stat warn" style="padding:12px 14px"><div class="k">When</div><div class="v" style="font-size:14px;letter-spacing:0;font-weight:600">${esc(fmtDateShort(r.removed_at))}</div></div>
       </div>
-
-      <div style="font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--faint);margin-bottom:8px">Removed</div>
+      <div class="digest-section-title">Removed</div>
       <div class="kv-grid" style="margin-bottom:16px">
         <div class="k">by</div><div class="v">${esc(r.removed_by)}</div>
         <div class="k">at</div><div class="v">${esc(fmtDate(r.removed_at))}</div>
         <div class="k">reason</div><div class="v" style="white-space:pre-wrap">${esc(r.reason)}</div>
       </div>
-
       <div class="divider"></div>
-
-      <div style="font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--faint);margin-bottom:8px">Employee</div>
+      <div class="digest-section-title">Employee</div>
       <div class="kv-grid" style="margin-bottom:16px">
         <div class="k">name</div><div class="v">${esc(r.employee_full_name)}</div>
         <div class="k">code</div><div class="v mono">${esc(r.employee_code)}</div>
       </div>
-
       <div class="divider"></div>
-
-      <div style="font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--faint);margin-bottom:8px">Original violation</div>
+      <div class="digest-section-title">Original violation</div>
       <div class="kv-grid">
         <div class="k">type</div><div class="v">${esc(r.violation_type_name)}${r.is_strike ? ' <span class="badge strike">strike</span>' : ""}</div>
         <div class="k">points</div><div class="v">+${r.points}</div>
@@ -2043,16 +2034,445 @@ function openRemoval(r) {
         <div class="k">notes</div><div class="v" style="white-space:pre-wrap">${r.original_notes ? esc(r.original_notes) : '<span class="faint">—</span>'}</div>
       </div>
     </div>
-    <div class="modal-foot">
-      <button class="btn" data-close>Close</button>
-    </div>
+    <div class="modal-foot"><button class="btn" data-close>Close</button></div>
   `,
     { wide: true },
   );
 }
 
 /* ============================================================
-   VIEW: ANALYTICS
+   ACTIVITY (Timeline + Calendar + Digest)
+   ============================================================ */
+const ACTION_LABELS = {
+  "employee.created": "Employee created",
+  "employees.bulk_created": "Employees bulk-created",
+  "employee.updated": "Employee updated",
+  "employee.activated": "Employee reactivated",
+  "employee.deactivated": "Employee deactivated",
+  "employee.deleted": "Employee deleted",
+  "violation_type.created": "Violation type created",
+  "violation_type.updated": "Violation type updated",
+  "violation_type.activated": "Violation type activated",
+  "violation_type.deactivated": "Violation type deactivated",
+  "violation_type.deleted": "Violation type deleted",
+  "violation.assigned": "Violation assigned",
+  "violation.updated": "Violation updated",
+  "violation.removed": "Violation removed",
+};
+
+function renderActivity() {
+  view.innerHTML = `
+    <div class="page-head">
+      <div><h2>Activity</h2><p class="sub">Every change made in the system, with actor and target. Read-only audit trail.</p></div>
+    </div>
+    <div class="tabs" id="actTabs">
+      <button class="tab ${state.activityTab === "timeline" ? "active" : ""}" data-tab="timeline">Timeline</button>
+      <button class="tab ${state.activityTab === "calendar" ? "active" : ""}" data-tab="calendar">Calendar</button>
+    </div>
+    <div id="actBody"></div>
+  `;
+  document.getElementById("actTabs").addEventListener("click", (e) => {
+    const t = e.target.closest(".tab");
+    if (!t) return;
+    state.activityTab = t.dataset.tab;
+    document
+      .querySelectorAll("#actTabs .tab")
+      .forEach((x) =>
+        x.classList.toggle("active", x.dataset.tab === state.activityTab),
+      );
+    renderActivityTab();
+  });
+  renderActivityTab();
+}
+
+function renderActivityTab() {
+  if (state.activityTab === "timeline") renderTimeline();
+  else renderCalendar();
+}
+
+/* ---------- Timeline ---------- */
+const timelineState = { offset: 0, limit: 50 };
+
+async function renderTimeline() {
+  const body = document.getElementById("actBody");
+  body.innerHTML = `
+    <div class="card">
+      <div class="filters">
+        <input type="date" id="tlDay" style="width:140px" title="Single day">
+        <input type="date" id="tlStart" style="width:140px" title="Range start">
+        <input type="date" id="tlEnd" style="width:140px" title="Range end">
+        <input type="text" id="tlActor" placeholder="Actor">
+        <select id="tlAction" style="width:180px">
+          <option value="">Any action</option>
+          ${Object.entries(ACTION_LABELS)
+            .map(([k, v]) => `<option value="${k}">${v}</option>`)
+            .join("")}
+        </select>
+        <select id="tlTarget" style="width:150px">
+          <option value="">Any target</option>
+          <option value="employee">Employee</option>
+          <option value="violation_type">Violation type</option>
+          <option value="violation">Violation</option>
+        </select>
+        <input type="number" id="tlEmpId" placeholder="Employee ID" min="1" style="width:120px">
+        <button class="btn" id="tlApply">Search</button>
+        <button class="btn ghost" id="tlClearBtn">Clear</button>
+      </div>
+      <div id="tlList"><div class="loading"><span class="spinner"></span>Loading…</div></div>
+      <div class="pager" id="tlPager"></div>
+    </div>
+  `;
+  document.getElementById("tlApply").addEventListener("click", () => {
+    timelineState.offset = 0;
+    loadTimeline();
+  });
+  document.getElementById("tlClearBtn").addEventListener("click", () => {
+    ["tlDay", "tlStart", "tlEnd", "tlActor", "tlEmpId"].forEach(
+      (id) => (document.getElementById(id).value = ""),
+    );
+    document.getElementById("tlAction").value = "";
+    document.getElementById("tlTarget").value = "";
+    timelineState.offset = 0;
+    loadTimeline();
+  });
+  document.getElementById("tlActor").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      timelineState.offset = 0;
+      loadTimeline();
+    }
+  });
+  loadTimeline();
+}
+
+async function loadTimeline() {
+  const list = document.getElementById("tlList");
+  const pager = document.getElementById("tlPager");
+  list.innerHTML = `<div class="loading"><span class="spinner"></span>Loading…</div>`;
+  pager.innerHTML = "";
+
+  const day = document.getElementById("tlDay").value;
+  const start = document.getElementById("tlStart").value;
+  const end = document.getElementById("tlEnd").value;
+  const query = {
+    day: day || "",
+    start: start && !day ? new Date(start + "T00:00:00Z").toISOString() : "",
+    end: end && !day ? new Date(end + "T23:59:59Z").toISOString() : "",
+    actor: document.getElementById("tlActor").value.trim(),
+    action: document.getElementById("tlAction").value,
+    target_type: document.getElementById("tlTarget").value,
+    employee_id: document.getElementById("tlEmpId").value.trim(),
+    limit: timelineState.limit,
+    offset: timelineState.offset,
+  };
+
+  try {
+    const data = await call("GET", "/activity/timeline", { query });
+    if (!data.items || !data.items.length) {
+      list.innerHTML = `<div class="empty"><div class="big">◌</div>No activity matches those filters.</div>`;
+      return;
+    }
+
+    list.innerHTML = data.items
+      .map((ev) => {
+        const meta = ev.metadata_json || {};
+        return `<div class="ev-row" data-ev='${esc(JSON.stringify(ev))}'>
+        <div class="ev-dot ${ev.target_type}"></div>
+        <div class="ev-body">
+          <div class="ev-summary">${esc(ev.summary)}</div>
+          <div class="ev-meta">
+            <span class="actor">👤 ${esc(ev.actor)}</span>
+            <span>${esc(ev.action)}</span>
+            ${ev.target_id !== null ? `<span>#${ev.target_id}</span>` : ""}
+            ${ev.employee_id !== null ? `<span>emp:${ev.employee_id}</span>` : ""}
+          </div>
+        </div>
+        <div class="ev-time">${esc(fmtTimeOnly(ev.occurred_at))}<br><span style="opacity:.65">${esc(relTime(ev.occurred_at))}</span></div>
+      </div>`;
+      })
+      .join("");
+
+    list.querySelectorAll(".ev-row").forEach((row) => {
+      row.style.cursor = "pointer";
+      row.addEventListener("click", () => {
+        try {
+          openEventDetail(JSON.parse(row.dataset.ev));
+        } catch {}
+      });
+    });
+
+    const shownEnd = timelineState.offset + data.items.length;
+    const hasNext = data.items.length === timelineState.limit;
+    pager.innerHTML = `
+      <span class="info">${timelineState.offset + 1}–${shownEnd}${typeof data.total === "number" ? " of " + data.total : ""}</span>
+      <span class="spacer"></span>
+      <button class="btn sm" id="tlPrev" ${timelineState.offset === 0 ? "disabled" : ""}>← Prev</button>
+      <button class="btn sm" id="tlNext" ${!hasNext ? "disabled" : ""}>Next →</button>
+    `;
+    const prev = pager.querySelector("#tlPrev");
+    const next = pager.querySelector("#tlNext");
+    if (prev)
+      prev.addEventListener("click", () => {
+        timelineState.offset = Math.max(
+          0,
+          timelineState.offset - timelineState.limit,
+        );
+        loadTimeline();
+      });
+    if (next)
+      next.addEventListener("click", () => {
+        timelineState.offset += timelineState.limit;
+        loadTimeline();
+      });
+  } catch (e) {
+    list.innerHTML = errorBanner(e);
+  }
+}
+
+function openEventDetail(ev) {
+  openModal(
+    `
+    <div class="modal-head">
+      <h3>Event #${ev.id}</h3>
+      <span class="badge ${ev.target_type === "violation" ? "danger" : ev.target_type === "employee" ? "info" : "warn"}">${esc(ev.target_type)}</span>
+      <button class="close" data-close>✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="kv-grid" style="margin-bottom:16px">
+        <div class="k">summary</div><div class="v">${esc(ev.summary)}</div>
+        <div class="k">actor</div><div class="v"><span class="badge actor">${esc(ev.actor)}</span></div>
+        <div class="k">action</div><div class="v mono">${esc(ev.action)}</div>
+        <div class="k">occurred</div><div class="v">${esc(fmtDate(ev.occurred_at))}</div>
+        <div class="k">event_date</div><div class="v mono">${esc(ev.event_date)}</div>
+        <div class="k">target</div><div class="v mono">${esc(ev.target_type)}${ev.target_id !== null ? " #" + ev.target_id : ""}</div>
+        ${ev.employee_id !== null ? `<div class="k">employee</div><div class="v mono">#${ev.employee_id}</div>` : ""}
+      </div>
+      ${
+        ev.metadata_json
+          ? `
+        <div class="digest-section-title">metadata_json</div>
+        <div class="json">${highlightJSON(ev.metadata_json)}</div>
+      `
+          : '<div class="faint" style="font-size:12px">No metadata attached.</div>'
+      }
+    </div>
+    <div class="modal-foot"><button class="btn" data-close>Close</button></div>
+  `,
+    { wide: true },
+  );
+}
+
+/* ---------- Calendar ---------- */
+async function renderCalendar() {
+  const body = document.getElementById("actBody");
+  body.innerHTML = `
+    <div class="card">
+      <div class="cal-header">
+        <button class="btn icon" id="calPrev" title="Previous month">‹</button>
+        <div class="cal-title" id="calTitle"></div>
+        <button class="btn icon" id="calNext" title="Next month">›</button>
+        <button class="btn sm" id="calToday">Today</button>
+        <span class="right faint mono" style="font-size:11px">click a day to view digest</span>
+      </div>
+      <div id="calBody"><div class="loading"><span class="spinner"></span>Loading…</div></div>
+    </div>
+  `;
+  document.getElementById("calPrev").addEventListener("click", () => {
+    const m = state.calendarMonth;
+    const d = new Date(Date.UTC(m.year, m.month - 1, 1));
+    state.calendarMonth = {
+      year: d.getUTCFullYear(),
+      month: d.getUTCMonth(),
+    };
+    loadCalendar();
+  });
+  document.getElementById("calNext").addEventListener("click", () => {
+    const m = state.calendarMonth;
+    const d = new Date(Date.UTC(m.year, m.month + 1, 1));
+    state.calendarMonth = {
+      year: d.getUTCFullYear(),
+      month: d.getUTCMonth(),
+    };
+    loadCalendar();
+  });
+  document.getElementById("calToday").addEventListener("click", () => {
+    const d = new Date();
+    state.calendarMonth = {
+      year: d.getUTCFullYear(),
+      month: d.getUTCMonth(),
+    };
+    loadCalendar();
+  });
+  loadCalendar();
+}
+
+async function loadCalendar() {
+  const body = document.getElementById("calBody");
+  const title = document.getElementById("calTitle");
+  body.innerHTML = `<div class="loading"><span class="spinner"></span>Loading…</div>`;
+
+  const m = state.calendarMonth;
+  const first = new Date(Date.UTC(m.year, m.month, 1));
+  const last = new Date(Date.UTC(m.year, m.month + 1, 0));
+  const startStr = dayKey(first);
+  const endStr = dayKey(last);
+
+  const monthName = first.toLocaleDateString(undefined, {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+  title.textContent = monthName;
+
+  try {
+    const rows = await call("GET", "/activity/calendar", {
+      query: { start: startStr, end: endStr },
+    });
+    const countMap = new Map(rows.map((r) => [r.date, r]));
+
+    const startDow = first.getUTCDay();
+    const daysInMonth = last.getUTCDate();
+    const today = todayKey();
+
+    let html = '<div class="cal-grid">';
+    for (const dow of ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]) {
+      html += `<div class="cal-head">${dow}</div>`;
+    }
+    for (let i = 0; i < startDow; i++)
+      html += '<div class="cal-cell empty"></div>';
+
+    let totalMonth = 0;
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateStr = `${m.year}-${String(m.month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      const row = countMap.get(dateStr);
+      const total = row ? row.total : 0;
+      totalMonth += total;
+      const intensity =
+        total === 0 ? "zero" : total <= 2 ? "low" : total <= 5 ? "med" : "high";
+      const isToday = dateStr === today;
+      html += `<div class="cal-cell ${intensity} ${isToday ? "today" : ""}" data-date="${dateStr}" title="${total} event${total === 1 ? "" : "s"}">
+        <div class="cal-day">${d}</div>
+        ${total > 0 ? `<div class="cal-count">${total}</div>` : ""}
+      </div>`;
+    }
+    html += "</div>";
+    html += `<div class="cal-legend">
+      <span><span class="swatch"></span>0 events</span>
+      <span><span class="swatch low"></span>1–2</span>
+      <span><span class="swatch med"></span>3–5</span>
+      <span><span class="swatch high"></span>6+</span>
+      <span class="right">${totalMonth} total event${totalMonth === 1 ? "" : "s"} this month</span>
+    </div>`;
+
+    body.innerHTML = html;
+    body.querySelectorAll(".cal-cell[data-date]").forEach((cell) => {
+      cell.addEventListener("click", () => openDigest(cell.dataset.date));
+    });
+  } catch (e) {
+    body.innerHTML = errorBanner(e);
+  }
+}
+
+async function openDigest(dateStr) {
+  openModal(
+    `
+    <div class="modal-head">
+      <h3>Digest · ${esc(dateStr)}</h3>
+      <button class="close" data-close>✕</button>
+    </div>
+    <div class="modal-body"><div class="loading"><span class="spinner"></span>Loading digest…</div></div>
+  `,
+    { wide: true },
+  );
+
+  try {
+    const d = await call("GET", `/activity/digest/${dateStr}`);
+    const m = modalRoot.querySelector(".modal");
+    renderDigestModal(m, d);
+  } catch (e) {
+    modalRoot.querySelector(".modal-body").innerHTML = errorBanner(e);
+  }
+}
+
+function renderDigestModal(modal, d) {
+  const actions = d.by_action || {};
+  const actors = d.by_actor || {};
+  const highlights = d.highlights || [];
+  const events = d.events || [];
+
+  modal.querySelector(".modal-body").innerHTML = `
+    <div class="stat-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:18px">
+      <div class="stat" style="padding:12px 14px"><div class="k">Total events</div><div class="v" style="font-size:22px">${d.total}</div></div>
+      <div class="stat ok" style="padding:12px 14px"><div class="k">Actors</div><div class="v" style="font-size:22px">${Object.keys(actors).length}</div></div>
+      <div class="stat warn" style="padding:12px 14px"><div class="k">Action types</div><div class="v" style="font-size:22px">${Object.keys(actions).length}</div></div>
+    </div>
+
+    ${
+      highlights.length
+        ? `
+      <div class="digest-highlights">
+        <div class="digest-section-title" style="margin-bottom:8px">Highlights</div>
+        <ul>${highlights.map((h) => `<li>${esc(h)}</li>`).join("")}</ul>
+      </div>
+    `
+        : ""
+    }
+
+    <div class="digest-stats">
+      <div>
+        <div class="digest-section-title">By action</div>
+        <div class="digest-chips">
+          ${
+            Object.entries(actions)
+              .map(
+                ([k, v]) =>
+                  `<span class="digest-chip"><span class="n">${v}</span><span class="l">${esc(k)}</span></span>`,
+              )
+              .join("") || '<span class="faint">—</span>'
+          }
+        </div>
+      </div>
+      <div>
+        <div class="digest-section-title">By actor</div>
+        <div class="digest-chips">
+          ${
+            Object.entries(actors)
+              .map(
+                ([k, v]) =>
+                  `<span class="digest-chip"><span class="n">${v}</span><span class="l">${esc(k)}</span></span>`,
+              )
+              .join("") || '<span class="faint">—</span>'
+          }
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="digest-section-title">Events (${events.length})</div>
+    ${
+      events.length
+        ? `<div style="border:1px solid var(--border);border-radius:9px;overflow:hidden">
+      ${events
+        .map(
+          (ev) => `
+        <div class="ev-row">
+          <div class="ev-dot ${ev.target_type}"></div>
+          <div class="ev-body">
+            <div class="ev-summary">${esc(ev.summary)}</div>
+            <div class="ev-meta"><span class="actor">👤 ${esc(ev.actor)}</span><span>${esc(ev.action)}</span></div>
+          </div>
+          <div class="ev-time">${esc(fmtTimeOnly(ev.occurred_at))}</div>
+        </div>`,
+        )
+        .join("")}
+    </div>`
+        : '<div class="empty" style="padding:20px">No events recorded for this day.</div>'
+    }
+  `;
+}
+
+/* ============================================================
+   ANALYTICS
    ============================================================ */
 async function renderAnalytics() {
   view.innerHTML = `
@@ -2137,9 +2557,7 @@ async function anOffenders() {
     <div class="card">
       <div class="filters">
         <label class="chk">Rank by</label>
-        <select id="offBy" style="width:150px">
-          <option value="points">Points</option><option value="strikes">Strikes</option><option value="records">Records</option>
-        </select>
+        <select id="offBy" style="width:150px"><option value="points">Points</option><option value="strikes">Strikes</option><option value="records">Records</option></select>
         <input type="number" id="offLimit" value="10" min="1" max="100" style="width:90px" title="Limit">
       </div>
       <div id="offBody"><div class="loading"><span class="spinner"></span>Loading…</div></div>
@@ -2372,7 +2790,7 @@ async function anClean() {
 }
 
 /* ============================================================
-   VIEW: API EXPLORER
+   API EXPLORER
    ============================================================ */
 const ENDPOINTS = [
   {
@@ -2416,7 +2834,7 @@ const ENDPOINTS = [
     group: "Employees",
     method: "POST",
     path: "/employees",
-    desc: "Create an employee. Status is always active.",
+    desc: "Create an employee. Requires X-Actor header.",
     body: {
       employee_code: "EMP-001",
       first_name: "Jane",
@@ -2429,7 +2847,7 @@ const ENDPOINTS = [
     group: "Employees",
     method: "POST",
     path: "/employees/bulk",
-    desc: "Create many. All-or-nothing.",
+    desc: "Create many. All-or-nothing. Requires X-Actor header.",
     body: [
       {
         employee_code: "EMP-201",
@@ -2442,26 +2860,26 @@ const ENDPOINTS = [
     group: "Employees",
     method: "PATCH",
     path: "/employees/:employee_id",
-    desc: "Partial update. null is a no-op.",
+    desc: "Partial update. Requires X-Actor header.",
     body: { department: "Operations" },
   },
   {
     group: "Employees",
     method: "POST",
     path: "/employees/:employee_id/deactivate",
-    desc: "Soft delete — status becomes inactive.",
+    desc: "Soft delete — status becomes inactive. Requires X-Actor header.",
   },
   {
     group: "Employees",
     method: "POST",
     path: "/employees/:employee_id/reactivate",
-    desc: "Undo a soft delete.",
+    desc: "Undo a soft delete. Requires X-Actor header.",
   },
   {
     group: "Employees",
     method: "DELETE",
     path: "/employees/:employee_id",
-    desc: "Hard delete. Cascades. ⚠ bypasses the removal audit trail.",
+    desc: "Hard delete. Cascades. ⚠ bypasses the removal audit trail. Requires X-Actor header.",
   },
 
   {
@@ -2489,7 +2907,7 @@ const ENDPOINTS = [
     group: "Violation Types",
     method: "POST",
     path: "/violation-types",
-    desc: "Create a violation type.",
+    desc: "Create a violation type. Requires X-Actor header.",
     body: {
       name: "Late Arrival",
       description: "Arriving after shift start",
@@ -2501,33 +2919,33 @@ const ENDPOINTS = [
     group: "Violation Types",
     method: "PATCH",
     path: "/violation-types/:violation_type_id",
-    desc: "Update a type. Does not rewrite history.",
+    desc: "Update a type. Requires X-Actor header.",
     body: { default_points: 10 },
   },
   {
     group: "Violation Types",
     method: "POST",
     path: "/violation-types/:violation_type_id/activate",
-    desc: "Activate a type.",
+    desc: "Activate a type. Requires X-Actor header.",
   },
   {
     group: "Violation Types",
     method: "POST",
     path: "/violation-types/:violation_type_id/deactivate",
-    desc: "Deactivate a type.",
+    desc: "Deactivate a type. Requires X-Actor header.",
   },
   {
     group: "Violation Types",
     method: "DELETE",
     path: "/violation-types/:violation_type_id",
-    desc: "Delete. 409 if referenced by records.",
+    desc: "Delete. 409 if referenced. Requires X-Actor header.",
   },
 
   {
     group: "Violation Records",
     method: "POST",
     path: "/employees/:employee_id/violations",
-    desc: "Issue a violation. points/is_strike are snapshotted.",
+    desc: "Issue a violation. Requires X-Actor header.",
     body: {
       violation_type_id: 1,
       notes: "Third time this week",
@@ -2551,7 +2969,7 @@ const ENDPOINTS = [
     group: "Violation Records",
     method: "POST",
     path: "/violations/:violation_id/remove",
-    desc: "Remove a single violation. Both fields required. Writes an audit entry.",
+    desc: "Remove a single violation. Uses removed_by in body — no X-Actor.",
     body: {
       removed_by: "Supervisor Kim",
       reason: "Issued to wrong employee",
@@ -2561,7 +2979,7 @@ const ENDPOINTS = [
     group: "Violation Records",
     method: "POST",
     path: "/employees/:employee_id/violations/clear",
-    desc: "Clear all violations for an employee. One audit entry per removal.",
+    desc: "Clear all violations for an employee. Uses removed_by in body — no X-Actor.",
     body: {
       removed_by: "Admin",
       reason: "Employee transferred — clean slate",
@@ -2585,7 +3003,7 @@ const ENDPOINTS = [
     group: "Violation Records",
     method: "PATCH",
     path: "/violations/:violation_id",
-    desc: "Edit metadata only — not points or type.",
+    desc: "Edit metadata. Requires X-Actor header.",
     body: { notes: "Updated note", issued_by: "Supervisor Kim" },
   },
 
@@ -2609,6 +3027,38 @@ const ENDPOINTS = [
     method: "GET",
     path: "/violation-removals/:removal_id",
     desc: "Single audit entry.",
+    query: {},
+  },
+
+  {
+    group: "Activity",
+    method: "GET",
+    path: "/activity/timeline",
+    desc: "Paginated activity events with filters.",
+    query: {
+      day: "",
+      start: "",
+      end: "",
+      actor: "",
+      action: "",
+      target_type: "",
+      employee_id: "",
+      limit: 50,
+      offset: 0,
+    },
+  },
+  {
+    group: "Activity",
+    method: "GET",
+    path: "/activity/calendar",
+    desc: "Daily rollup for a date range. Days with zero events omitted.",
+    query: { start: "", end: "" },
+  },
+  {
+    group: "Activity",
+    method: "GET",
+    path: "/activity/digest/:date",
+    desc: "Per-day digest with highlights, by_action, by_actor and events.",
     query: {},
   },
 
@@ -2714,6 +3164,7 @@ function renderExplorerPanel(ep) {
   const panel = document.getElementById("exPanel");
   const pathParams = [...ep.path.matchAll(/:([a-z_]+)/gi)].map((m) => m[1]);
   const queryKeys = Object.keys(ep.query || {});
+  const needsActor = pathNeedsActor(ep.method, ep.path);
 
   exState.values = {};
   exState.query = { ...(ep.query || {}) };
@@ -2721,9 +3172,10 @@ function renderExplorerPanel(ep) {
 
   panel.innerHTML = `
     <div class="card">
-      <div class="card-head">
+      <div class="card-head" style="flex-wrap:wrap">
         <span class="method ${ep.method}">${ep.method}</span>
         <h3 class="mono" style="font-size:13px;word-break:break-all">${esc(ep.path)}</h3>
+        ${needsActor ? `<span class="badge actor" title="X-Actor sent from your actor chip">X-Actor</span>` : ""}
       </div>
       <div class="card-body">
         <p class="muted" style="font-size:13px;margin-bottom:16px">${esc(ep.desc)}</p>
@@ -2731,14 +3183,14 @@ function renderExplorerPanel(ep) {
         ${
           pathParams.length
             ? `
-          <div style="font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--faint);margin-bottom:8px">Path params</div>
+          <div class="digest-section-title">Path params</div>
           <div class="form-grid" style="margin-bottom:16px">
             ${pathParams
               .map(
                 (p) => `
               <div class="form-row">
                 <label class="mono">:${p}</label>
-                <input type="text" data-path="${p}" placeholder="${p === "code" ? "EMP-001" : "1"}">
+                <input type="text" data-path="${p}" placeholder="${p === "code" ? "EMP-001" : p === "date" ? "2026-10-23" : "1"}">
               </div>`,
               )
               .join("")}
@@ -2749,7 +3201,7 @@ function renderExplorerPanel(ep) {
         ${
           queryKeys.length
             ? `
-          <div style="font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--faint);margin-bottom:8px">Query params</div>
+          <div class="digest-section-title">Query params</div>
           <div class="form-grid" style="margin-bottom:16px">
             ${queryKeys
               .map(
@@ -2767,10 +3219,9 @@ function renderExplorerPanel(ep) {
         ${
           ep.body !== undefined
             ? `
-          <div style="font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--faint);margin-bottom:8px">Request body</div>
-          <div class="form-row">
-            <textarea id="exBody" rows="8" spellcheck="false">${esc(exState.body)}</textarea>
-          </div>`
+          <div class="digest-section-title">Request body</div>
+          <div class="form-row"><textarea id="exBody" rows="8" spellcheck="false">${esc(exState.body)}</textarea></div>
+        `
             : ""
         }
 
@@ -2779,6 +3230,7 @@ function renderExplorerPanel(ep) {
           <button class="btn" id="exCopy">Copy as cURL</button>
           <span class="right faint mono" style="font-size:11px;word-break:break-all;min-width:0">${esc(state.baseUrl)}${esc(ep.path)}</span>
         </div>
+        ${needsActor ? `<div class="faint" style="font-size:11px;margin-top:8px">⚠ This endpoint sends <code>X-Actor: ${esc(state.actor || "<not set>")}</code>. If not set, you'll be prompted to name yourself.</div>` : ""}
       </div>
       <div id="exResult"></div>
     </div>
@@ -2814,8 +3266,7 @@ async function sendExplorer(ep) {
   const pathParams = [...ep.path.matchAll(/:([a-z_]+)/gi)].map((m) => m[1]);
   const missing = pathParams.filter((p) => !exState.values[p]);
   if (missing.length) {
-    result.innerHTML = `<div class="card-body" style="border-top:1px solid var(--border)">
-      <div class="callout err" style="margin:0"><div class="ic">✕</div><div>Missing path param(s): <code>${missing.map((m) => ":" + m).join("</code>, <code>")}</code></div></div></div>`;
+    result.innerHTML = `<div class="card-body" style="border-top:1px solid var(--border)"><div class="callout err" style="margin:0"><div class="ic">✕</div><div>Missing path param(s): <code>${missing.map((m) => ":" + m).join("</code>, <code>")}</code></div></div></div>`;
     return;
   }
 
@@ -2826,8 +3277,7 @@ async function sendExplorer(ep) {
       try {
         body = JSON.parse(raw);
       } catch (e) {
-        result.innerHTML = `<div class="card-body" style="border-top:1px solid var(--border)">
-          <div class="callout err" style="margin:0"><div class="ic">✕</div><div>Body is not valid JSON: ${esc(e.message)}</div></div></div>`;
+        result.innerHTML = `<div class="card-body" style="border-top:1px solid var(--border)"><div class="callout err" style="margin:0"><div class="ic">✕</div><div>Body is not valid JSON: ${esc(e.message)}</div></div></div>`;
         return;
       }
     }
@@ -2840,6 +3290,10 @@ async function sendExplorer(ep) {
     });
     renderExplorerResult(result, r);
   } catch (e) {
+    if (isCancelled(e)) {
+      result.innerHTML = `<div class="card-body" style="border-top:1px solid var(--border)"><div class="empty" style="padding:20px">Cancelled — no actor set.</div></div>`;
+      return;
+    }
     result.innerHTML = `<div class="card-body" style="border-top:1px solid var(--border)">${errorBanner(e)}</div>`;
   }
 }
@@ -2894,6 +3348,9 @@ async function copyCurl(ep) {
   const base = state.baseUrl.replace(/\/+$/, "");
   const url = base + buildExplorerPath(ep) + buildQuery(exState.query);
   const lines = [`curl -X ${ep.method} '${url}'`];
+  if (pathNeedsActor(ep.method, ep.path) && state.actor) {
+    lines.push(`  -H 'X-Actor: ${state.actor}'`);
+  }
   if (ep.body !== undefined) {
     const raw = document.getElementById("exBody").value.trim();
     if (raw) {
