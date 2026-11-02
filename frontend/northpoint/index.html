@@ -2112,7 +2112,7 @@ function renderDashboard(ctx) {
     {label:'Map Tracking',icon:'map',action:'navigate',page:'tracking',disabled:false}
   ];
   return `<div class="dashboard-simple">
-    <section class="metrics-grid" aria-label="Workplace overview"><h2 class="dashboard-summary-heading">Workplace overview</h2>${cards.map(card => `<article class="metric-card"><div class="metric-top"><span class="metric-title">${card[0]}</span><span class="metric-icon ${card[3]}">${icon(card[2], 20)}</span></div><div class="metric-number">${card[1]}</div>${ctx.renderYesterdayChange?ctx.renderYesterdayChange(ctx.comparison?.[card[5]==='employees'?'employees':card[5]==='violations'?'violations':card[5]],icon,ctx.comparison?.reason):''}<div class="metric-bottom">${card[4]}</div><button class="metric-card-link" data-action="dashboard-card" data-target="${card[5]}" aria-label="View ${card[0].toLowerCase()}"></button></article>`).join('')}</section>
+    <section class="metrics-grid" aria-label="Workplace overview"><h2 class="dashboard-summary-heading">Workplace overview</h2>${cards.map(card => `<article class="metric-card"><div class="metric-top"><span class="metric-title">${card[0]}</span><span class="metric-icon ${card[3]}">${icon(card[2], 20)}</span></div><div class="metric-number">${card[1]}</div>${ctx.renderTodayChange?ctx.renderTodayChange(ctx.dailyChanges?.[card[5]==='employees'?'employees':card[5]==='violations'?'violations':card[5]],icon,ctx.dailyChanges?.reason):''}<div class="metric-bottom">${card[4]}</div><button class="metric-card-link" data-action="dashboard-card" data-target="${card[5]}" aria-label="View ${card[0].toLowerCase()}"></button></article>`).join('')}</section>
     <section class="dashboard-quick-actions" aria-labelledby="dashboard-quick-title"><h2 id="dashboard-quick-title">What would you like to do?</h2><div class="dashboard-action-grid">${quickActions.map(item=>`<button class="dashboard-action-tile" data-action="${item.action}" ${item.page?'data-page="'+item.page+'"':''} ${item.disabled?'disabled title="'+item.hint+'"':''}><span class="dashboard-action-icon">${icon(item.icon,25)}</span><span>${item.label}</span></button>`).join('')}</div></section>
     <div class="dashboard-main-row">
       <section class="panel weekly-panel"><div class="panel-header"><div><h2>Violation Trends</h2><p>${monthly?'Monthly totals':'Weekly totals · Monday to Sunday'} · Last 6 ${period}s</p></div><div class="trend-period-toggle" role="group" aria-label="Violation trends period">${[['week','Weekly'],['month','Monthly']].map(([id,label])=>`<button type="button" data-action="dashboard-trend" data-period="${id}" aria-pressed="${period===id}">${label}</button>`).join('')}</div></div><div class="weekly-chart-body">${trendChart(weeks, esc,monthly)}</div><div class="weekly-chart-footer"><span><i class="legend-dot light"></i> ${monthly?'Monthly':'Weekly'} violations</span><span><i class="legend-dot"></i> Current ${period} (last bar)</span></div></section>
@@ -2460,13 +2460,13 @@ function loadSession(){
 function displayActor(value){return sessionState.status==='ready'&&value===sessionState.username?sessionState.fullName:value;}
 
 return {sessionState,loadSession,signOut,displayActor};})();
-const {businessDate,yesterdayComparison,renderYesterdayChange}=(()=>{
+const {businessDate,todayChanges,renderTodayChange,yesterdayComparison,renderYesterdayChange}=(()=>{
 
 function businessDate(value=new Date()){const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(value));return ['year','month','day'].map(type=>parts.find(p=>p.type===type).value).join('-');}
 const shift=(date,days)=>{const d=new Date(date+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+days);return d.toISOString().slice(0,10);};
 const issuedDay=value=>businessDate(/(?:Z|[+-]\d{2}:?\d{2})$/i.test(value)?value:value+'Z');
 const safe=value=>Number.isSafeInteger(value)&&value>=0;
-function yesterdayComparison({employees,records,events,removals=[],days=30,today=businessDate(),scoped=false}){
+function midnightActivity({employees,records,events,removals=[],today=businessDate(),scoped=false}){
  const current=dashboardSummary(employees,records,[]),models=new Map(),rows=new Map(records.map(v=>[String(v.id),{employee:String(v.employeeApiId||v.employeeId),date:v.date}]));
  for(const employee of employees){const own=records.filter(r=>String(r.employeeApiId||r.employeeId)===String(employee.apiId||employee.id));models.set(String(employee.apiId||employee.id),{code:employee.id,department:employee.department,count:own.length,points:employee.totalPoints??own.reduce((s,r)=>s+r.points,0),strikes:employee.totalStrikes??own.filter(r=>r.strike).length});}
  let incomplete=false,averageUnknown=false;
@@ -2496,21 +2496,32 @@ function yesterdayComparison({employees,records,events,removals=[],days=30,today
  const values=[...models.values()],sum=key=>values.some(e=>e[key]===null||e[key]<0)?null:values.reduce((s,e)=>s+e[key],0);
  const baseline={employees:models.size,violations:sum('count'),points:sum('points'),watchlist:values.some(e=>e.strikes===null||e.strikes<0)?null:values.filter(e=>e.strikes>=2).length};
  const result={};for(const key of ['employees','violations','points','watchlist'])result[key]=incomplete||baseline[key]===null?null:(key==='watchlist'?current.watchlist.length:current[key])-baseline[key];
+ return {result,models,rows,incomplete,averageUnknown};
+}
+// Dashboard counters describe net activity since 00:00 in Asia/Manila.
+function todayChanges(options){
+ const {result}=midnightActivity(options);
+ return {...result,reason:'The audit history does not contain enough information to determine the change since midnight today.'};
+}
+function yesterdayComparison({employees,records,events,removals=[],days=30,today=businessDate(),scoped=false}){
+ const {result,models,rows,incomplete,averageUnknown}=midnightActivity({employees,records,events,removals,today,scoped});
  const previous=shift(today,-1),from=shift(today,-days+1),previousFrom=shift(previous,-days+1);
  const currentCount=records.filter(r=>r.date>=from&&r.date<=today).length,previousCount=[...rows.values()].filter(r=>models.has(r.employee)&&r.date>=previousFrom&&r.date<=previous).length;
  result.dailyAverage=incomplete||averageUnknown?null:(currentCount-previousCount)/days;
  result.reason='The audit history does not contain enough information to reconstruct yesterday’s total.';
  return result;
 }
-function renderYesterdayChange(value,icon,reason='',decimals=0){
- if(value===undefined)return '<div class="metric-change neutral"><span>Loading comparison…</span></div>';
+function renderMetricChange(value,icon,reason,decimals,label,loading,fallback){
+ if(value===undefined)return '<div class="metric-change neutral"><span>'+loading+'</span></div>';
  reason=String(reason).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
- if(value===null)return `<div class="metric-change neutral" title="${reason||'Yesterday’s data is unavailable.'}"><strong>—</strong><span>vs yesterday</span></div>`;
- const rounded=Number(value.toFixed(decimals)),label=(rounded>=0?'+':'')+rounded.toFixed(decimals);
- return `<div class="metric-change ${rounded>0?'increase':rounded<0?'decrease':'neutral'}">${icon(rounded<0?'arrow-down':'arrow-up',15)}<strong>${label}</strong><span>vs yesterday</span></div>`;
+ if(value===null)return `<div class="metric-change neutral" title="${reason||fallback}"><strong>—</strong><span>${label}</span></div>`;
+ const rounded=Number(value.toFixed(decimals)),text=(rounded>=0?'+':'')+rounded.toFixed(decimals);
+ return `<div class="metric-change ${rounded>0?'increase':rounded<0?'decrease':'neutral'}">${icon(rounded<0?'arrow-down':'arrow-up',15)}<strong>${text}</strong><span>${label}</span></div>`;
 }
+function renderYesterdayChange(value,icon,reason='',decimals=0){return renderMetricChange(value,icon,reason,decimals,'vs yesterday','Loading comparison…','Yesterday’s data is unavailable.');}
+function renderTodayChange(value,icon,reason=''){return renderMetricChange(value,icon,reason,0,'today','Loading today’s activity…','Today’s activity is unavailable.');}
 
-return {businessDate,yesterdayComparison,renderYesterdayChange};})();
+return {businessDate,todayChanges,renderTodayChange,yesterdayComparison,renderYesterdayChange};})();
 const {photoData,photoUpload,watchPhotos,notifyPhotos,photoFileUrl,photoRequest,loadPhotos,uploadPhoto,allowPhotoRetry}=(()=>{
 
 
@@ -2951,7 +2962,7 @@ return {enhanceSearchSuggestions};})();
 
 const app = document.querySelector('#app');
 const dialog = document.querySelector('#modal');
-let displayedWeek = startOfWeek(localDate()),displayedMonth=localDate().slice(0,7);
+let displayedWeek = startOfWeek(localDate()),displayedMonth=localDate().slice(0,7),displayedDay=businessDate();
 const filters = {};
 let savedSnapshot = JSON.stringify(store.settings);
 let page = 'dashboard';
@@ -3042,7 +3053,8 @@ function canRecord(){return true;}
 function canManage(){return true;}
 function restoreSnapshot(){Object.assign(store.settings,JSON.parse(savedSnapshot));}
 function commitStore(){try{saveStore();savedSnapshot=JSON.stringify(store.settings);}catch(error){restoreSnapshot();throw error;}}
-function ctx(){return {store,resources,resourceState,employeeDirectory,sessionState,renderYesterdayChange,comparison:comparison(),icon,esc,formatDate,badge,violationBadge,violationStatusOptions,person,employeeSummary,visibleEmployees,visibleViolations,navigate,toast,saveStore:commitStore,openModal,closeModal,downloadCSV,render,pagination,getFilters:p=>filters[p]||{},setFilters:(p,f)=>{filters[p]=f;},barChart};}
+function ctx(){return {store,resources,resourceState,employeeDirectory,sessionState,renderYesterdayChange,renderTodayChange,comparison:page==='reports'?comparison():{},dailyChanges:page==='dashboard'?dashboardChanges():{},icon,esc,formatDate,badge,violationBadge,violationStatusOptions,person,employeeSummary,visibleEmployees,visibleViolations,navigate,toast,saveStore:commitStore,openModal,closeModal,downloadCSV,render,pagination,getFilters:p=>filters[p]||{},setFilters:(p,f)=>{filters[p]=f;},barChart};}
+function dashboardChanges(){if(resources.timeline.status==='error')return {employees:null,violations:null,points:null,watchlist:null,reason:resources.timeline.error};if(resources.timeline.status!=='ready')return {};return todayChanges({employees:visibleEmployees(),records:visibleViolations(),events:resources.timeline.items,removals:resources.removals.items});}
 function comparison(){if(resources.timeline.status==='error')return {employees:null,violations:null,points:null,watchlist:null,dailyAverage:null,reason:resources.timeline.error};if(resources.timeline.status!=='ready')return {};return yesterdayComparison({employees:visibleEmployees(),records:visibleViolations(),events:resources.timeline.items,removals:resources.removals.items,days:Number(filters.reports?.days)||30,scoped:false});}
 function persist(message){try{commitStore();if(message)toast(message);return true;}catch(e){toast(e.message||'Unable to save changes in this browser.','alert');return false;}}
 function toast(message,type='check-circle'){const r=document.querySelector('#toast-region');r.innerHTML=`<div class="toast">${icon(type,22)}<span>${esc(message)}</span><button class="icon-button" data-action="dismiss-toast" aria-label="Dismiss notification">${icon('close',16)}</button></div>`;clearTimeout(window.toastTimer);window.toastTimer=setTimeout(()=>r.innerHTML='',6500);}
@@ -3114,7 +3126,7 @@ function profile(){
   <section class="panel"><div class="panel-header"><div><h2>Violation history</h2><p>${vs.length} records · Most recent first</p></div></div>${shown.length?`<div class="table-wrap"><table><thead><tr><th>Violation / Description</th><th>Incident date</th><th>Demerit Points</th><th>Strike</th><th>Recorded by</th><th>Action</th></tr></thead><tbody>${shown.map(v=>`<tr><td style="max-width:330px"><strong>${esc(v.typeName)}</strong><p class="muted" style="font-size:13px;margin-top:6px">${esc(v.description)}</p></td><td>${formatDate(v.date)}</td><td>${v.points}</td><td>${v.strike?badge('Strike Violation'):'No'}</td><td>${esc(displayActor(v.recordedBy))}</td><td><button class="button ghost small" data-action="case-details" data-id="${esc(v.id)}">View Case</button></td></tr>`).join('')}</tbody></table></div>`:empty('No violations on record','There are no records in this view.')}${pagination(vs.length,current,6,'profile')}</section>`;
 }
 
-function render(){document.body.classList.toggle('larger-text',store.settings.textSize==='larger');document.documentElement.dataset.textSize=store.settings.textSize;let html=page==='tracking'?renderMapTracking(ctx()):page==='camera'?renderPhotoCamera(ctx()):page==='photos'?renderPhotoLibrary(ctx()):page==='dashboard'?dashboard():page==='employees'?employeeList():page==='violations'?violationsList():page==='types'?typesList():page==='profile'?profile():page==='reports'?(dataGate(['employees','records',...(filters.reports?.tab==='rulebook'?['types']:[])])||renderSecondary(page,ctx())):page==='history'?renderSecondary(page,ctx()):renderSecondary(page,ctx());if(page==='dashboard'){displayedWeek=startOfWeek(localDate());displayedMonth=localDate().slice(0,7);}app.innerHTML=shell(html);enhanceSearchSuggestions(ctx());enhancePhoneLayout({icon});syncNavigation();if(page==='tracking')mountMapTracking(ctx());else stopMapTracking();document.title=`${pageInfo[page][0]} · Northpoint`;}
+function render(){document.body.classList.toggle('larger-text',store.settings.textSize==='larger');document.documentElement.dataset.textSize=store.settings.textSize;let html=page==='tracking'?renderMapTracking(ctx()):page==='camera'?renderPhotoCamera(ctx()):page==='photos'?renderPhotoLibrary(ctx()):page==='dashboard'?dashboard():page==='employees'?employeeList():page==='violations'?violationsList():page==='types'?typesList():page==='profile'?profile():page==='reports'?(dataGate(['employees','records',...(filters.reports?.tab==='rulebook'?['types']:[])])||renderSecondary(page,ctx())):page==='history'?renderSecondary(page,ctx()):renderSecondary(page,ctx());if(page==='dashboard'){displayedWeek=startOfWeek(localDate());displayedMonth=localDate().slice(0,7);displayedDay=businessDate();}app.innerHTML=shell(html);enhanceSearchSuggestions(ctx());enhancePhoneLayout({icon});syncNavigation();if(page==='tracking')mountMapTracking(ctx());else stopMapTracking();document.title=`${pageInfo[page][0]} · Northpoint`;}
 function navigate(target,id=''){document.body.classList.remove('nav-open');const hash=target==='profile'?`employee/${id}`:target;if(location.hash.slice(1)===hash){route();}else location.hash=hash;}
 function route(){let hash=location.hash.slice(1)||'dashboard';if(hash==='removals'){filters.history={tab:'removals'};location.hash='history';return;}if(hash.startsWith('employee/')){profileId=decodeURIComponent(hash.slice(9));page='profile';}else page=pageInfo[hash]?hash:'dashboard';render();window.scrollTo({top:0,behavior:'instant'});document.querySelector('#main')?.focus({preventScroll:true});if(!['photos','camera','tracking'].includes(page)&&employeeDirectory.status==='idle')void refreshApiEmployees();ensurePageData(page);if(['photos','camera'].includes(page))void loadPhotos();void ensureCurrentProfile();}
 
@@ -3328,7 +3340,7 @@ dialog.addEventListener('cancel',event=>{if(photoUpload.busy||employeeCreateInFl
 dialog.addEventListener('click',event=>{if(event.target===dialog){const r=dialog.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)closeModal();}});
 function syncNavigation(){const sidebar=document.querySelector('.sidebar');const open=document.body.classList.contains('nav-open');if(sidebar){sidebar.inert=matchMedia('(max-width:900px)').matches&&!open;sidebar.setAttribute('aria-hidden',String(sidebar.inert));}const workspace=document.querySelector('.workspace');if(workspace)workspace.inert=matchMedia('(max-width:900px)').matches&&open;document.querySelector('.mobile-toggle')?.setAttribute('aria-expanded',String(open));}
 window.addEventListener('resize',()=>{syncNavigation();syncPhoneFilters();});
-function refreshWeeklyDashboard(){if(page==='dashboard'&&!dialog.open&&(startOfWeek(localDate())!==displayedWeek||localDate().slice(0,7)!==displayedMonth))void (invalidateHistoryCalendar(),refreshWorkspace());}
+function refreshWeeklyDashboard(){if(page==='dashboard'&&!dialog.open&&(startOfWeek(localDate())!==displayedWeek||localDate().slice(0,7)!==displayedMonth||businessDate()!==displayedDay))void (invalidateHistoryCalendar(),refreshWorkspace());}
 window.addEventListener('focus',refreshWeeklyDashboard);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshWeeklyDashboard();});
 setInterval(refreshWeeklyDashboard,60000);

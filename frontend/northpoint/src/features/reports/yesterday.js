@@ -3,7 +3,7 @@ export function businessDate(value=new Date()){const parts=new Intl.DateTimeForm
 const shift=(date,days)=>{const d=new Date(date+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+days);return d.toISOString().slice(0,10);};
 const issuedDay=value=>businessDate(/(?:Z|[+-]\d{2}:?\d{2})$/i.test(value)?value:value+'Z');
 const safe=value=>Number.isSafeInteger(value)&&value>=0;
-export function yesterdayComparison({employees,records,events,removals=[],days=30,today=businessDate(),scoped=false}){
+function midnightActivity({employees,records,events,removals=[],today=businessDate(),scoped=false}){
  const current=dashboardSummary(employees,records,[]),models=new Map(),rows=new Map(records.map(v=>[String(v.id),{employee:String(v.employeeApiId||v.employeeId),date:v.date}]));
  for(const employee of employees){const own=records.filter(r=>String(r.employeeApiId||r.employeeId)===String(employee.apiId||employee.id));models.set(String(employee.apiId||employee.id),{code:employee.id,department:employee.department,count:own.length,points:employee.totalPoints??own.reduce((s,r)=>s+r.points,0),strikes:employee.totalStrikes??own.filter(r=>r.strike).length});}
  let incomplete=false,averageUnknown=false;
@@ -33,16 +33,27 @@ export function yesterdayComparison({employees,records,events,removals=[],days=3
  const values=[...models.values()],sum=key=>values.some(e=>e[key]===null||e[key]<0)?null:values.reduce((s,e)=>s+e[key],0);
  const baseline={employees:models.size,violations:sum('count'),points:sum('points'),watchlist:values.some(e=>e.strikes===null||e.strikes<0)?null:values.filter(e=>e.strikes>=2).length};
  const result={};for(const key of ['employees','violations','points','watchlist'])result[key]=incomplete||baseline[key]===null?null:(key==='watchlist'?current.watchlist.length:current[key])-baseline[key];
+ return {result,models,rows,incomplete,averageUnknown};
+}
+// Dashboard counters describe net activity since 00:00 in Asia/Manila.
+export function todayChanges(options){
+ const {result}=midnightActivity(options);
+ return {...result,reason:'The audit history does not contain enough information to determine the change since midnight today.'};
+}
+export function yesterdayComparison({employees,records,events,removals=[],days=30,today=businessDate(),scoped=false}){
+ const {result,models,rows,incomplete,averageUnknown}=midnightActivity({employees,records,events,removals,today,scoped});
  const previous=shift(today,-1),from=shift(today,-days+1),previousFrom=shift(previous,-days+1);
  const currentCount=records.filter(r=>r.date>=from&&r.date<=today).length,previousCount=[...rows.values()].filter(r=>models.has(r.employee)&&r.date>=previousFrom&&r.date<=previous).length;
  result.dailyAverage=incomplete||averageUnknown?null:(currentCount-previousCount)/days;
  result.reason='The audit history does not contain enough information to reconstruct yesterday’s total.';
  return result;
 }
-export function renderYesterdayChange(value,icon,reason='',decimals=0){
- if(value===undefined)return '<div class="metric-change neutral"><span>Loading comparison…</span></div>';
+function renderMetricChange(value,icon,reason,decimals,label,loading,fallback){
+ if(value===undefined)return '<div class="metric-change neutral"><span>'+loading+'</span></div>';
  reason=String(reason).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
- if(value===null)return `<div class="metric-change neutral" title="${reason||'Yesterday’s data is unavailable.'}"><strong>—</strong><span>vs yesterday</span></div>`;
- const rounded=Number(value.toFixed(decimals)),label=(rounded>=0?'+':'')+rounded.toFixed(decimals);
- return `<div class="metric-change ${rounded>0?'increase':rounded<0?'decrease':'neutral'}">${icon(rounded<0?'arrow-down':'arrow-up',15)}<strong>${label}</strong><span>vs yesterday</span></div>`;
+ if(value===null)return `<div class="metric-change neutral" title="${reason||fallback}"><strong>—</strong><span>${label}</span></div>`;
+ const rounded=Number(value.toFixed(decimals)),text=(rounded>=0?'+':'')+rounded.toFixed(decimals);
+ return `<div class="metric-change ${rounded>0?'increase':rounded<0?'decrease':'neutral'}">${icon(rounded<0?'arrow-down':'arrow-up',15)}<strong>${text}</strong><span>${label}</span></div>`;
 }
+export function renderYesterdayChange(value,icon,reason='',decimals=0){return renderMetricChange(value,icon,reason,decimals,'vs yesterday','Loading comparison…','Yesterday’s data is unavailable.');}
+export function renderTodayChange(value,icon,reason=''){return renderMetricChange(value,icon,reason,0,'today','Loading today’s activity…','Today’s activity is unavailable.');}
