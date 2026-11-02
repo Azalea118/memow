@@ -7,6 +7,7 @@ const port=Number(process.env.PORT||4173),host=process.env.HOST||'127.0.0.1';
 http.createServer((request,response)=>{
  const pathname=new URL(request.url,'http://localhost').pathname;
  if(['/config.js','/northpoint/config.js'].includes(pathname)){response.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-store'});response.end(fs.readFileSync(new URL('./config.js',import.meta.url)));}
+ else if(['/login.html','/northpoint/login.html'].includes(pathname)){response.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'});response.end(fs.readFileSync(new URL('./login.html',import.meta.url)));}
  else if(['/camera.html','/northpoint/camera.html'].includes(pathname)){response.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'});response.end(fs.readFileSync(new URL('./camera.html',import.meta.url)));}
  else if(['/','/index.html','/northpoint/'].includes(pathname)){response.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'});response.end(html);}
  else{response.writeHead(404);response.end('Not found');}

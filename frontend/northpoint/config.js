@@ -19,7 +19,7 @@
   if (typeof document !== 'undefined') {
     const meta = document.createElement('meta');
     meta.httpEquiv = 'Content-Security-Policy';
-    meta.content = `default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: ${new URL('/app2/photos/',url).href}; font-src 'self' data:; connect-src 'self' ${url.href} ${new URL('/app2/',url).href} ${new URL('/auth/me',url).href}; object-src 'none'; base-uri 'none'; form-action 'none'`;
+    meta.content = `default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tile.openstreetmap.org ${new URL('/app2/photos/',url).href}; font-src 'self' data:; connect-src 'self' ${url.href} ${new URL('/app2/',url).href} ${new URL('/app3/',url).href} ${new URL('/auth/me',url).href}; object-src 'none'; base-uri 'none'; form-action 'none'`;
     document.head.appendChild(meta);
   }
 })();

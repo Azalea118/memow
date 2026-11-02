@@ -14,7 +14,7 @@ export function createHostedApiProvider({fetchImpl=(...args)=>globalThis.fetch(.
   if(rule.actor)headers['X-Actor']=validateActor(actor);
   const multipart=typeof FormData!=='undefined'&&body instanceof FormData;
   if(body!==undefined&&!multipart)headers['Content-Type']='application/json';
-  const base=service==='hr'?API_BASE_URL:new URL(service==='photos'?'/app2':'/auth',API_BASE_URL).href;
+  const base=service==='hr'?API_BASE_URL:new URL(service==='photos'?'/app2':service==='tracking'?'/app3':'/auth',API_BASE_URL).href;
   const url=new URL(base+path);
   for(const [key,value] of Object.entries(query))if(value!==undefined&&value!==null){if(!['string','number','boolean'].includes(typeof value))throw failure('Invalid API query.');url.searchParams.set(key,String(value));}
   if(signal?.aborted)throw failure('Request cancelled.',{name:'AbortError',code:'cancelled'});

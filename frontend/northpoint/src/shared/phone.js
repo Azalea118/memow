@@ -8,9 +8,27 @@ function positionDashboardActions(phone){
   if(phone)metrics.before(quick);else metrics.after(quick);
 }
 
+
+function positionTrackingMap(phone){
+ const page=document.querySelector('.tracking-page'),layout=page?.querySelector('.tracking-layout'),panel=page?.querySelector('.tracking-map-panel');
+ if(!page||!layout||!panel)return;
+ const toolbar=page.querySelector('#tracking-filters'),headingActions=document.querySelector('.page-heading .heading-actions'),refresh=document.querySelector('[data-action="tracking-refresh"]');
+ if(phone){
+  if(page.firstElementChild!==panel)page.prepend(panel);
+  let actions=page.querySelector('.tracking-mobile-actions');
+  if(refresh&&!actions){actions=document.createElement('div');actions.className='tracking-mobile-actions';toolbar.before(actions);}
+  if(refresh&&refresh.parentElement!==actions)actions.append(refresh);
+ }else{
+  if(panel.parentElement!==layout)layout.append(panel);
+  if(refresh&&headingActions&&refresh.parentElement!==headingActions)headingActions.append(refresh);
+  page.querySelector('.tracking-mobile-actions')?.remove();
+ }
+}
+
 export function enhancePhoneLayout({icon}) {
   const phone=matchMedia(PHONE_QUERY).matches;
   positionDashboardActions(phone);
+  positionTrackingMap(phone);
   document.querySelectorAll('main table').forEach(table=>{
     if(table.dataset.phoneLayout==='table'||table.closest('.desktop-records'))return;
     table.classList.add('phone-table');
@@ -50,6 +68,7 @@ export function enhancePhoneLayout({icon}) {
 export function syncPhoneFilters() {
   const phone=matchMedia(PHONE_QUERY).matches;
   positionDashboardActions(phone);
+  positionTrackingMap(phone);
   if(phone!==previousPhoneMode){
     document.querySelectorAll('.phone-filters').forEach(details=>details.open=!phone);
     previousPhoneMode=phone;

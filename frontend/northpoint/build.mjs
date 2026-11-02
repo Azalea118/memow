@@ -7,7 +7,8 @@ const source = path.join(project, 'src');
 const read = name => fs.readFileSync(path.join(source, name), 'utf8');
 const withoutExports = content => content.replace(/^import .*?;\s*$/gm, '').replace(/\bexport\s+(?=(?:async\s+)?(?:function|const|let)\b)/g, '');
 const favicon = 'data:image/png;base64,' + fs.readFileSync(path.join(source,'assets/company-logo.png')).toString('base64');
-let styles = read('styles/styles.css')+'\n'+read('styles/photos.css')+'\n'+read('styles/compact-records.css');
+let leafletStyles=read('assets/vendor/leaflet/leaflet.css').replace(/url\(images\/([^)]+)\)/g,(_,name)=>'url(data:image/png;base64,'+fs.readFileSync(path.join(source,'assets/vendor/leaflet/images',name)).toString('base64')+')');
+let styles = leafletStyles+'\n'+read('styles/map-tracking.css')+'\n'+read('styles/styles.css')+'\n'+read('styles/photos.css')+'\n'+read('styles/compact-records.css');
 for (const name of ['dm-sans-latin-ext.woff2', 'dm-sans-latin.woff2']) {
   const encoded = fs.readFileSync(path.join(source, 'assets/fonts', name)).toString('base64');
   styles = styles.replaceAll(`../assets/fonts/${name}`, `data:font/woff2;base64,${encoded}`);
@@ -56,16 +57,22 @@ script += `const {createPhotoActivity,photoActivityService,fetchPhotoHistory,fet
 script += `const {renderPhotoActivity,handlePhotoActivityAction}=(()=>{\n${withoutExports(read('features/photos/photo-activity-view.js'))}\nreturn {renderPhotoActivity,handlePhotoActivityAction};})();\n`;
 script += `const {renderPhotoCamera,stampedPhoto,handleCameraAction,handleCameraChange}=(()=>{\n${withoutExports(read('features/photos/photo-camera.js'))}\nreturn {renderPhotoCamera,stampedPhoto,handleCameraAction,handleCameraChange};})();\n`;
 script += `const {renderPhotoLibrary,handlePhotoAction,handlePhotoSubmit,handlePhotoChange,clearPhotoDraft}=(()=>{\n${withoutExports(read('features/photos/photo-library.js'))}\nreturn {renderPhotoLibrary,handlePhotoAction,handlePhotoSubmit,handlePhotoChange,clearPhotoDraft};})();\n`;
+script += `const {readTrackingDevices,readTrackingLocation,readTrackingRoute}=(()=>{\n${withoutExports(read('features/tracking/tracking-service.js'))}\nreturn {readTrackingDevices,readTrackingLocation,readTrackingRoute};})();\n`;
+script += `const {renderMapTracking,mountMapTracking,stopMapTracking,handleTrackingAction,handleTrackingSubmit,handleTrackingChange}=(()=>{\n${withoutExports(read('features/tracking/map-tracking.js'))}\nreturn {renderMapTracking,mountMapTracking,stopMapTracking,handleTrackingAction,handleTrackingSubmit,handleTrackingChange};})();\n`;
+script = read('assets/vendor/leaflet/leaflet.js').replace(/\/\/# sourceMappingURL=.*$/m,'')+'\n'+script;
 script += read('app.js').replace(/^import .*?;\s*$/gm, '').replaceAll('./favicon.svg', favicon).replaceAll('./assets/company-logo.png', favicon);
 script = script.replace(/<\/script/gi, '<\\/script');
 const html = read('index.html')
+  .replace('<link rel="stylesheet" href="./assets/vendor/leaflet/leaflet.css">','')
+  .replace('<link rel="stylesheet" href="./styles/map-tracking.css">','')
+  .replace('<script src="./assets/vendor/leaflet/leaflet.js"></script>','')
   .replace('<meta charset="utf-8">', `<meta charset="utf-8">\n  <script src="./config.js"></script>\n  <!-- DM Sans is bundled under the SIL Open Font License. See src/assets/fonts/OFL.txt. -->`)
   .replace('<link rel="icon" type="image/png" href="./assets/company-logo.png">', `<link rel="icon" type="image/png" href="${favicon}">`)
   .replace(/^[ \t]*<link rel="stylesheet" href="\.\/styles\/(?:photos|compact-records)\.css">\r?\n/gm, '')
   .replace('<link rel="stylesheet" href="./styles/styles.css">', `<style>\n${styles}\n</style>`)
   .replace('<script type="module" src="./app.js"></script>', `<script>\n${script}\n</script>`)
-  .replace('</body>', `<script type="text/plain" id="dm-sans-font-license">\n${read('assets/fonts/OFL.txt').replace(/<\/script/gi, '<\\/script')}\n</script>\n</body>`);
-if (/@import\s|(?:src|href)=["']https?:\/\//i.test(html)) throw new Error('The frontend must not depend on remote assets.');
+  .replace('</body>', `<script type="text/plain" id="dm-sans-font-license">\n${read('assets/fonts/OFL.txt').replace(/<\/script/gi, '<\\/script')}\n</script>\n</body>`).replace(/^[ \t]+$/gm,'');
+if (/@import\s|(?:src|href)=["']https?:\/\//i.test(html.replace(/<script(?![^>]*\bsrc=)[^>]*>[\s\S]*?<\/script>/gi,''))) throw new Error('The frontend must not depend on remote assets.');
 fs.writeFileSync(path.join(project, 'index.html'), html);
 if (process.argv[2]) {
   const output = path.resolve(process.argv[2]);
@@ -77,3 +84,10 @@ console.log('Northpoint rebuilt: API settings load from config.js');
 
 // Compatibility entrypoint: Camera now lives inside the main Northpoint shell.
 fs.writeFileSync(path.join(project,'camera.html'),'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="0;url=./index.html#camera"><title>Camera · Northpoint</title></head><body><a href="./index.html#camera">Open Camera in Northpoint</a></body></html>');
+
+// A standalone sign-in page: its public GET route can be served by Nginx.
+let loginStyles=read('styles/login.css');
+for(const name of ['dm-sans-latin-ext.woff2','dm-sans-latin.woff2'])loginStyles=loginStyles.replaceAll('../assets/fonts/'+name,'data:font/woff2;base64,'+fs.readFileSync(path.join(source,'assets/fonts',name)).toString('base64'));
+const wordmark='data:image/jpeg;base64,'+fs.readFileSync(path.join(source,'assets/northpoint-wordmark.jpg')).toString('base64');
+const loginHtml=read('auth/login.html').replace('../assets/company-logo.png',favicon).replace('../assets/northpoint-wordmark.jpg',wordmark).replace('<link rel="stylesheet" href="../styles/login.css">','<style>\n'+loginStyles+'\n</style>').replace('<script src="./login.js"></script>','<script>\n'+read('auth/login.js').replace(/<\/script/gi,'<\\/script')+'\n</script>');
+fs.writeFileSync(path.join(project,'login.html'),loginHtml);

@@ -118,3 +118,27 @@ Account controls: the top-right account name opens a Sign out dropdown. Settings
 Photo Library, Photo Activity, History and report periods use the same compact dropdown filter components as the record lists.
 
 Violation removal reasons are optional in the form. The backend currently requires a non-empty reason, so a blank field sends the explicit text `No reason provided.`. Existing removal confirmation and error handling remain in place.
+
+## Sign-in page
+
+The centered sign-in UI is generated at `login.html`. Its source is `src/auth/login.html`, `src/auth/login.js` and `src/styles/login.css`; the supplied wordmark is `src/assets/northpoint-wordmark.jpg`. Rebuild with `node build.mjs`. The page bundles its logo, fonts, styles and script; it uses username/password and has no external sign-in providers.
+
+The form submits the existing backend fields `username`, `password` and `next` via a normal POST to `/auth/login` on the page's server. The backend continues to create the HttpOnly session cookie and return the success redirect. The frontend stores no credentials. A Show/Hide password button, required-field validation, duplicate-submit guard and optional sign-in error messages are included.
+
+The existing backend still renders `GET /auth/login`, and the existing static Nginx location requires authentication. Creating this frontend page alone does not replace that route or make it public. For backend adoption, `deployment/signin-nginx.example.conf` shows the public page location, GET routing, unchanged POST forwarding, and invalid-credential/rate-limit error redirects. It is a reference only, not automatically installed. No backend, Nginx or Docker files outside frontend were changed.
+
+While signed in, preview the page at `http://localhost:8081/login.html`. For a UI-only local preview, `node serve.mjs` also serves `/login.html`; actual sign-in must use the server hosting `/auth/login`. Error messages can be previewed with `?error=credentials`, `?error=rate_limited` or `?error=session`. The `next` value is restricted to local absolute paths; invalid redirect targets fall back to `/`.
+
+## Map Tracking (app3)
+
+Open Map Tracking in the main navigation or use `/#tracking` while signed in. The page uses the existing app3 services: `GET /app3/devices?include_offline=true`, `GET /app3/live/{device_id}` and `GET /app3/route/{device_id}`. The service address follows the existing `config.js` server automatically, including localhost and ngrok. No separate tracking server URL is configured in the frontend.
+
+Select a device from the list to show its current/last reported location, accuracy and today’s segmented route. Fit route shows the available route; Keep device centered follows incoming locations. The shared compact toolbar searches tracker names/device IDs and filters online/offline devices. An exact ID can also be looked up from an empty search result. Backend failures and invalid responses are shown as errors; no sample devices or locations are inserted. The initial map view uses the same Cagayan de Oro area as app3’s original map and is not a device position.
+
+Device and selected-location reads update every five seconds while the page is open and visible; selected route reads update every fifteen seconds. Refresh also reloads the route. Requests stop when leaving the page or hiding it, and aborted/outdated replies cannot replace a newer selection. Tracking starts and stops in the phone app, not from this management page. The backend considers a device online when it reported within fifteen seconds; its live device list is held in backend memory. An empty list means no devices are currently known to the running tracking service.
+
+The frontend bundles Leaflet 1.9.4 locally with its BSD license under `src/assets/vendor/leaflet/`. JavaScript and CSS integrity hashes match the official Leaflet distribution. OpenStreetMap tiles load over HTTPS with visible map attribution and normal browser caching. Internet access is needed for base-map tiles. The original backend map, GPS upload flow, authentication, Docker and Nginx files were not changed.
+
+Source: `src/features/tracking/` and `src/styles/map-tracking.css`. Rebuild the bundled page using `node build.mjs`. The frontend version remains `v.FE-0.2a`.
+
+On phones, Map Tracking places the map immediately under the compact page title. Refresh, search/filter controls, device summary and the device list follow below. Desktop retains the existing toolbar and side-by-side device/map panels. The responsive helper moves the existing controls without duplicating the map or starting another polling loop.
