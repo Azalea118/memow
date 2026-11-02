@@ -139,6 +139,20 @@ Device and selected-location reads update every five seconds while the page is o
 
 The frontend bundles Leaflet 1.9.4 locally with its BSD license under `src/assets/vendor/leaflet/`. JavaScript and CSS integrity hashes match the official Leaflet distribution. OpenStreetMap tiles load over HTTPS with visible map attribution and normal browser caching. Internet access is needed for base-map tiles. The original backend map, GPS upload flow, authentication, Docker and Nginx files were not changed.
 
-Source: `src/features/tracking/` and `src/styles/map-tracking.css`. Rebuild the bundled page using `node build.mjs`. The frontend version remains `v.FE-0.2a`.
+Source: `src/features/tracking/` and `src/styles/map-tracking.css`. Rebuild the bundled page using `node build.mjs`. The frontend version remains `v.FE-0.3a`.
 
 On phones, Map Tracking places the map immediately under the compact page title. Refresh, search/filter controls, device summary and the device list follow below. Desktop retains the existing toolbar and side-by-side device/map panels. The responsive helper moves the existing controls without duplicating the map or starting another polling loop.
+
+## Frontend v.FE-0.3a refinements
+
+The account display truncates long names with an ellipsis while retaining the complete name for attribution. Search fields offer up to five compact suggestions from already loaded backend data; suggestions support mouse, touch and arrow/Enter selection and never push the page layout down. The issue-violation employee picker retains its existing combobox.
+
+Dashboard trends switch between six weekly or six monthly buckets, including the current period. Quick actions include Map Tracking, and recent activity reads “was issued” without demerit values. Map Tracking is under Employee Management; History and Reports & Analytics share Monitoring.
+
+Employees show Total Violations from retained records, with eight employees per page. New labels retain their 24-hour creation-time rule. New and Strike use the compact tinted bordered badge style. Reports use compact horizontally scrollable directory tables, with totals added to Top Offenders and strikes shown in Watchlist.
+
+The desktop photo grid fits four cards per row with eight per page; smaller screens use two columns. Photo metadata shows a short date, uploader and file size on one line; the full date and uploader remain available in the title attributes. Photo Activity uses All Users. A captured/selected camera photo shows an optional description below its buttons. Blank descriptions submit the literal value None through the existing photo upload API. Draft descriptions persist through view refreshes and clear after a successful upload.
+
+Help includes Photo Library, photo activity, Timestamp Camera and Map Tracking tutorials plus expanded common questions. The keyboard-friendly promotional callout is removed, and Settings uses a red Sign out button.
+
+Help is simplified to four violation-recording steps (Find an Employee → Issue a Violation → Select a Violation → Record), a separate Photo Library guide, and six common questions: demerit points, strikes, Watchlist, accidentally removed users, text size, and signing out. The removal answer distinguishes reactivating an inactive employee from permanent deletion; it does not promise a restore operation.

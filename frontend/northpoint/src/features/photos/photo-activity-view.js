@@ -14,7 +14,7 @@ export function renderPhotoActivity({icon,esc,formatDate}){
  }
  const pages=Math.max(1,Math.ceil(a.total/8)),selected=days.find(d=>d.date===a.day);
  const options=[...new Set([a.actor,...a.actors.map(x=>x.actor)].filter(Boolean))];
- const controls=recordChoice('actor','Changed by',[['','All team members'],...options.map(name=>[name,displayActor(name)])],a.actor,esc,icon)+recordChoice('action','Action',[['','All actions'],['upload','Uploads'],['edit','Edits'],['rename','Renames'],['delete','Deletions']],a.action,esc,icon);
+ const controls=recordChoice('actor','Changed by',[['','All Users'],...options.map(name=>[name,displayActor(name)])],a.actor,esc,icon)+recordChoice('action','Action',[['','All actions'],['upload','Uploads'],['edit','Edits'],['rename','Renames'],['delete','Deletions']],a.action,esc,icon);
  const filters=recordToolbar('photo-activity-filters','photo-activity',a.q,'Search photo name or details',controls,esc,icon,{queryName:'q',clearAction:'photo-activity-clear',label:'Photo activity'});
  let content;
  if(a.status==='error')content=`<div class="empty-state" role="alert"><h3>Couldn’t load photo activity</h3><p>${esc(a.error)}</p><button class="button primary" data-action="photo-activity-retry">Try Again</button></div>`;

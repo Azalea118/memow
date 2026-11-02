@@ -30,7 +30,7 @@ script += `const {dataSource,sourceLabel,sourceNotice}=(()=>{
 ${withoutExports(read('state/data-source.js'))}
 return {dataSource,sourceLabel,sourceNotice};})();
 `;
-script += `const {VIOLATION_STATUSES,normalizeViolationStatus,violationStatusLabel,localDate,startOfWeek,weeklyTotals,dashboardSummary,recentViolationActivity}=(()=>{\n${withoutExports(read('shared/domain.js'))}\nreturn {VIOLATION_STATUSES,normalizeViolationStatus,violationStatusLabel,localDate,startOfWeek,weeklyTotals,dashboardSummary,recentViolationActivity};})();\n`;
+script += `const {VIOLATION_STATUSES,normalizeViolationStatus,violationStatusLabel,localDate,startOfWeek,weeklyTotals,monthlyTotals,dashboardSummary,recentViolationActivity}=(()=>{\n${withoutExports(read('shared/domain.js'))}\nreturn {VIOLATION_STATUSES,normalizeViolationStatus,violationStatusLabel,localDate,startOfWeek,weeklyTotals,monthlyTotals,dashboardSummary,recentViolationActivity};})();\n`;
 script += `const {loadingSkeleton}=(()=>{\n${withoutExports(read('shared/loading.js'))}\nreturn {loadingSkeleton};})();\n`;
 script += `const {apiId,apiActor,apiRequest,paginatedApi}=(()=>{\n${withoutExports(read('api/api-client.js'))}\nreturn {apiId,apiActor,apiRequest,paginatedApi};})();\n`;
 script += `const {normalizeApiEmployee,employeeDirectory,loadEmployeeDirectory,suspendEmployeeDirectory,apiEmployeeSummary,nextApiEmployeeCode,employeeCodeKey,fetchEmployeeDirectorySnapshot,employeeCreatePayload,employeeMatchesCreation,createApiEmployee}=(()=>{\n${withoutExports(read('features/employees/employee-api.js'))}\nreturn {normalizeApiEmployee,employeeDirectory,loadEmployeeDirectory,suspendEmployeeDirectory,apiEmployeeSummary,nextApiEmployeeCode,employeeCodeKey,fetchEmployeeDirectorySnapshot,employeeCreatePayload,employeeMatchesCreation,createApiEmployee};})();\n`;
@@ -60,6 +60,7 @@ script += `const {renderPhotoLibrary,handlePhotoAction,handlePhotoSubmit,handleP
 script += `const {readTrackingDevices,readTrackingLocation,readTrackingRoute}=(()=>{\n${withoutExports(read('features/tracking/tracking-service.js'))}\nreturn {readTrackingDevices,readTrackingLocation,readTrackingRoute};})();\n`;
 script += `const {renderMapTracking,mountMapTracking,stopMapTracking,handleTrackingAction,handleTrackingSubmit,handleTrackingChange}=(()=>{\n${withoutExports(read('features/tracking/map-tracking.js'))}\nreturn {renderMapTracking,mountMapTracking,stopMapTracking,handleTrackingAction,handleTrackingSubmit,handleTrackingChange};})();\n`;
 script = read('assets/vendor/leaflet/leaflet.js').replace(/\/\/# sourceMappingURL=.*$/m,'')+'\n'+script;
+script += `const {enhanceSearchSuggestions}=(()=>{\n${withoutExports(read('shared/search-suggestions.js'))}\nreturn {enhanceSearchSuggestions};})();\n`;
 script += read('app.js').replace(/^import .*?;\s*$/gm, '').replaceAll('./favicon.svg', favicon).replaceAll('./assets/company-logo.png', favicon);
 script = script.replace(/<\/script/gi, '<\\/script');
 const html = read('index.html')

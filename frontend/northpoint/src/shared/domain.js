@@ -81,3 +81,8 @@ export function dashboardSummary(employees, violations, removals) {
     recentRemovals: removals.filter(removal => employeeIds.has(removal.employeeId)).slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 3)
   };
 }
+
+export function monthlyTotals(violations,today=localDate(),months=6){
+ const base=dateAtUTC(today);base.setUTCDate(1);
+ return Array.from({length:months},(_,index)=>{const startDate=new Date(base);startDate.setUTCMonth(startDate.getUTCMonth()+index-months+1);const endDate=new Date(startDate);endDate.setUTCMonth(endDate.getUTCMonth()+1);endDate.setUTCDate(0);const start=startDate.toISOString().slice(0,10),end=endDate.toISOString().slice(0,10);return {start,end,current:start.slice(0,7)===today.slice(0,7),count:violations.filter(v=>{const date=String(v.date).slice(0,10);return retained(v)&&date>=start&&date<=end&&date<=today;}).length};});
+}

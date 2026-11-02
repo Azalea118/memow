@@ -21,27 +21,31 @@ function settings(ctx) {
       <div class="field"><span>Signed-in name</span><strong>${esc(ctx.sessionState?.fullName||s.name||'Sign in required')}</strong>${ctx.sessionState?.status==='error'?`<p class="muted">${esc(ctx.sessionState.error)}</p><button class="button secondary" type="button" data-action="session-retry">Retry Sign-in Check</button>`:''}</div>
       ${field('Text size', `<select name="textSize"><option value="standard"${s.textSize !== 'larger' ? ' selected' : ''}>Standard — comfortable reading</option><option value="larger"${s.textSize === 'larger' ? ' selected' : ''}>Larger — extra reading comfort</option></select>`)}
       <p class="muted" style="margin:0">Larger text increases the size of navigation, forms, and body text throughout the workspace.</p>
-      <div class="settings-actions"><button type="submit" class="button primary">${icon('check')} Save Changes</button><button type="button" class="button secondary" data-action="sign-out">Sign out</button></div>
+      <div class="settings-actions"><button type="submit" class="button primary">${icon('check')} Save Changes</button><button type="button" class="button danger" data-action="sign-out">Sign out</button></div>
     </form></section><div>
       <section class="panel"><div class="panel-header"><h2>About This Workspace</h2></div><div class="panel-body"><p><strong>Northpoint</strong><br>Violation Management System</p><p class="muted">A dedicated space for employee records, disciplinary cases, and clear reporting.</p><div class="callout" style="margin-top:20px"><div><strong>About this build</strong><p>Employee records, violations and history are connected to the hosted backend. Your signed-in full name is used automatically. Preferences reset when you reload.</p></div></div></div></section>
     </div></div>`;
 }
 
-function help(ctx) {
-  const { icon } = ctx;
-  return `<section class="panel"><div class="panel-header"><div><h2>How Can We Help?</h2><p class="muted">A short guide to your daily HR tasks</p></div></div><div class="panel-body"><div class="two-column">
-    <article><span class="help-number">01</span><h3>Find an employee</h3><p>Open Employees, enter a name or employee ID, and select Search. Use department, employment status, or strike filters to narrow your results.</p><button class="button secondary" data-action="sec-help-nav" data-page="employees">${icon('users')} Go to Employees</button></article>
-    <article><span class="help-number">02</span><h3>Record a violation</h3><p>Choose Record New Violation. Select the employee and violation type, enter the incident details, then review the summary before confirming.</p><button class="button secondary" data-action="sec-help-nav" data-page="violations">${icon('file-text')} Go to Violations</button></article>
-    <article><span class="help-number">03</span><h3>Review an employee’s history</h3><p>Select View Profile beside an employee. Their profile brings together employee details, demerit points, strikes, and previous violations.</p><button class="button secondary" data-action="sec-help-nav" data-page="history">${icon('clock')} View History</button></article>
-    <article><span class="help-number">04</span><h3>Prepare a report</h3><p>Open Reports &amp; Analytics and select a tab. Activity shows a choice of periods; the other tabs show totals across the full recorded history.</p><button class="button secondary" data-action="sec-help-nav" data-page="reports">${icon('download')} Go to Reports</button></article>
-  </div></div></section>
-  <section class="panel"><div class="panel-header"><h2>Common Questions</h2></div><div class="panel-body">
-    <details open><summary><strong>What is a demerit point?</strong></summary><p>Demerit points are the penalty value assigned to a violation type. An employee’s total adds the points from their recorded violations. Removed records are excluded.</p></details>
-    <details><summary><strong>What is a strike?</strong></summary><p>A strike marks a violation that counts toward disciplinary follow-up. Employees with two or more strikes appear in the repeat-offender watchlist. Your organization’s policies determine the appropriate action.</p></details>
-    <details><summary><strong>Can I make the text larger?</strong></summary><p>Yes. Open Settings, choose Larger under Text size, and select Save Changes. Your preference applies to this tab and resets on reload.</p></details>
-    <details><summary><strong>Is this connected to the company’s employee system?</strong></summary><p>Yes. Records are read from and saved to the hosted backend. If the connection fails, you will see an error. No record changes are saved locally.</p></details>
-  </div></section>
-  <div class="callout">${icon('info')}<div><strong>Keyboard-friendly by design</strong><p>Use Tab to move between controls and Enter or Space to select a button. Press Escape to close a dialog. Every field has a visible label.</p></div></div>`;
+function help(ctx){
+ const {icon,esc}=ctx;
+ const steps=[
+  ['Find an Employee','Open Employees, search for a name or employee ID, then select View Profile.'],
+  ['Issue a Violation','On the employee’s profile, choose Record violation to open the form.'],
+  ['Select a Violation','Choose the violation type. Points and strike settings fill automatically. Add optional incident details.'],
+  ['Record','Review the summary, tick the confirmation checkbox, then confirm the record.']
+ ];
+ const questions=[
+  ['What is a demerit point?','Each violation type has a points value. An employee’s total adds the points from their retained violations. Removed violations are excluded.'],
+  ['What is a strike?','A strike marks a violation that counts toward follow-up. Whether a violation is a strike comes from its violation type.'],
+  ['What is Watchlist?','Watchlist shows employees with 2 or more retained strikes. Open Reports & Analytics, then select Watchlist to view them. Select a name to open the employee’s profile.'],
+  ['Accidentally removed a user?','If an employee was deactivated, filter Employees by Inactive, open their profile, choose Edit Employee, then Reactivate. A permanently deleted employee cannot be restored through this website. Contact your administrator for assistance.'],
+  ['Can I make the text larger?','Open Settings, choose Larger under Text size and select Save Changes. This preference applies to the current tab and resets on reload.'],
+  ['How do I sign out?','Select your account name or avatar at the top right, then choose Sign out. You can also use the red Sign out button in Settings.']
+ ];
+ return `<section class="panel help-start"><div class="panel-header"><div><h2>How Can We Help?</h2><p class="muted">Record a violation in four simple steps.</p></div></div><div class="panel-body"><ol class="help-steps">${steps.map(([title,text],i)=>`<li><span class="help-number" aria-hidden="true">${String(i+1).padStart(2,'0')}</span><div><h3>${esc(title)}</h3><p>${esc(text)}</p></div></li>`).join('')}</ol><div class="help-section-action"><button class="button secondary" data-action="sec-help-nav" data-page="employees">${icon('users',17)} Go to Employees</button></div></div></section>
+ <section class="panel help-photo-guide"><div class="panel-header"><div><h2>How to use Photo Library?</h2><p class="muted">Upload, view, and review your team’s photos.</p></div></div><div class="panel-body"><ol class="help-photo-list"><li><strong>Upload a photo</strong><p>Choose Upload Photo, select an image up to 15 MB, add any optional details, then upload.</p></li><li><strong>Find and view photos</strong><p>Use search and filters to find a photo. Select its thumbnail or title to open it and review its details.</p></li><li><strong>Review activity</strong><p>Open Activity Log and filter by user, action, or date. Photos on this page shows the related photos; select one to enlarge it. View History shows its recorded changes.</p></li></ol><div class="help-section-action"><button class="button secondary" data-action="sec-help-nav" data-page="photos">${icon('image',17)} Open Photo Library</button></div></div></section>
+ <section class="panel help-questions"><div class="panel-header"><h2>Common Questions</h2></div><div class="panel-body">${questions.map(([title,text],i)=>`<details ${i===0?'open':''}><summary><strong>${esc(title)}</strong></summary><p>${esc(text)}</p></details>`).join('')}</div></section>`;
 }
 
 export function renderSecondary(page, ctx) {
