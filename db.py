@@ -2,13 +2,15 @@ from pathlib import Path
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker, Session
+import os
 
 # --- locate data/app.db relative to the project root -----------------------
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-DB_PATH = DATA_DIR / "app.db"
+DB_PATH = Path(os.getenv("APP1_DB_PATH") or DATA_DIR / "app.db")
+DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 DATABASE_URL = f"sqlite:///{DB_PATH}"
 
 engine = create_engine(
