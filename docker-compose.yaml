@@ -1,31 +1,27 @@
 x-app: &app
-  build: .
-  image: backend
+  image: ghcr.io/jooecoodes/cs317-swe:${TAG:-latest}
+  build:
+    context: .
+    target: prod
   working_dir: /app
   restart: unless-stopped
   environment:
     - TZ=Asia/Manila
   volumes:
-    - .:/app
+    - app_data:/app/data
 
 services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
+    ports: ["80:80", "443:443"]
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
     depends_on: [nginx]
 
   nginx:
-    image: nginx:alpine
-    restart: unless-stopped
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./frontend:/usr/share/nginx/html:ro
+    <<: *app
+    command: nginx -g "daemon off;"
     depends_on: [app1, app2, app3, auth]
 
   auth:
@@ -33,19 +29,24 @@ services:
     environment:
       - TZ=Asia/Manila
       - AUTH_COOKIE_SECURE=${AUTH_COOKIE_SECURE:-1}
+      - AUTH_DB_PATH=/app/data/auth/auth.db
     command: uv run --no-sync uvicorn auth.main:auth_app --host 0.0.0.0 --port 8000 --proxy-headers --root-path /auth
 
   app1:
     <<: *app
-    command: uv run --no-sync uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers 
+    environment: [TZ=Asia/Manila, APP1_DB_PATH=/app/data/app1/app.db]
+    command: uv run --no-sync uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers
 
   app2:
     <<: *app
-    command: uv run --no-sync uvicorn pt_service.main:pt_app --host 0.0.0.0 --port 8000 --proxy-headers 
+    environment: [TZ=Asia/Manila, PT_DB_PATH=/app/data/app2/photos.db, PT_UPLOAD_DIR=/app/data/app2/uploads]
+    command: uv run --no-sync uvicorn pt_service.main:pt_app --host 0.0.0.0 --port 8000 --proxy-headers
 
   app3:
     <<: *app
-    command: uv run --no-sync uvicorn gps_service.main:gps_service --host 0.0.0.0 --port 8000 --proxy-headers 
+    environment: [TZ=Asia/Manila, GPS_DB_PATH=/app/data/app3/tracking.db]
+    command: uv run --no-sync uvicorn gps_service.main:gps_service --host 0.0.0.0 --port 8000 --proxy-headers
 
 volumes:
   caddy_data:
+  app_data:
