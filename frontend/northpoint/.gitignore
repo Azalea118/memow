@@ -3,3 +3,9 @@
 node_modules/
 .DS_Store
 Thumbs.db
+
+# Supplied sign-in company wordmark.
+!src/assets/northpoint-wordmark.jpg
+
+# Bundled Leaflet marker/control assets.
+!src/assets/vendor/leaflet/images/*.png
