@@ -25,8 +25,10 @@ from sqlalchemy.orm import declarative_base, sessionmaker, Session
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".heic"}
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024  # 15 MB
 BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / "photos.db"
-UPLOAD_DIR = BASE_DIR / "uploads"
+DB_PATH = Path(os.getenv("PT_DB_PATH") or BASE_DIR / "photos.db")
+UPLOAD_DIR = Path(os.getenv("PT_UPLOAD_DIR") or BASE_DIR / "uploads")
+DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 # Set REQUIRE_ACTOR=0 only for standalone dev without nginx.
 REQUIRE_ACTOR = os.getenv("REQUIRE_ACTOR", "1") == "1"

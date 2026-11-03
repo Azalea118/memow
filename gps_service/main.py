@@ -1,5 +1,6 @@
 import math, time, datetime, statistics
 import threading
+import os
 
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -29,7 +30,8 @@ MAX_REJECTS = 5
 ONLINE_SECONDS = 15   # a ping newer than this counts as online
 
 BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / "tracking.db"
+DB_PATH = Path(os.getenv("GPS_DB_PATH") or BASE_DIR / "tracking.db")
+DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 # ---------- DB ----------
 engine = create_engine(f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False})
