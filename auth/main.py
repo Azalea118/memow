@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = Path(os.getenv("AUTH_DB_PATH", BASE_DIR / "auth.db"))
+DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 PREFIX = "/auth"
 COOKIE = "auth_session"
 COOKIE_SECURE = os.getenv("AUTH_COOKIE_SECURE", "1") == "1"
