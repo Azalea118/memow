@@ -235,12 +235,20 @@ def delete_employee(session: Session, employee_id: int, *, actor: str, commit: b
     employee = session.get(Employee, employee_id)
     if employee is None:
         raise EmployeeNotFound(employee_id)
+
+    violation_records = employee.violation_records  # load once, reuse
     log_event(
         session, actor=actor, action="employee.deleted",
         target_type="employee", target_id=employee.id, employee_id=employee.id,
         summary=f"Hard-deleted {employee.employee_code} ({employee.full_name})",
-        metadata={"employee_code": employee.employee_code, "full_name": employee.full_name,
-                  "violation_count": len(employee.violation_records)},
+        metadata={
+            "employee_code": employee.employee_code,
+            "full_name": employee.full_name,
+            "department": employee.department,
+            "violation_count": len(violation_records),
+            "total_points": sum(r.points for r in violation_records),
+            "total_strikes": sum(1 for r in violation_records if r.is_strike),
+        },
     )
     session.delete(employee)
     if commit:
