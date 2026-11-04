@@ -1,5 +1,6 @@
 import hashlib, hmac, html, os, secrets, sqlite3, time
 import unicodedata
+import re
 from contextlib import closing
 from pathlib import Path
 
@@ -18,6 +19,10 @@ SESSION_TTL = 7 * 24 * 3600
 DEVICE_ALLOWED_PREFIX = "/app3/"
 DEVICE_ALLOWED_METHOD = "POST"
 DEVICE_ALLOWED = {(DEVICE_ALLOWED_METHOD, DEVICE_ALLOWED_PREFIX)}
+LOGIN_HTML_PATH = Path(os.getenv(
+    "LOGIN_HTML",
+    BASE_DIR.parent / "frontend" / "northpoint" / "login.html",
+))
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users(
@@ -33,6 +38,7 @@ CREATE TABLE IF NOT EXISTS devices(
   created_at INTEGER NOT NULL);
 """
 
+_login_cache: dict = {"mtime": None, "html": None}
 
 def db():
     conn = sqlite3.connect(DB_PATH)
@@ -105,33 +111,29 @@ def safe_next(n: str) -> str:
         return n
     return "/"
 
+def load_login_html() -> str:
+    """Read login.html, cached but refreshed when the file changes."""
+    m = LOGIN_HTML_PATH.stat().st_mtime          # raises if missing
+    if _login_cache["mtime"] != m:
+        _login_cache.update(mtime=m,
+                            html=LOGIN_HTML_PATH.read_text(encoding="utf-8"))
+    return _login_cache["html"]
+
+_SIGNIN_ERROR_RE = re.compile(r'<p\b[^>]*\bid="signin-error"[^>]*>.*?</p>', re.S)
+_SIGNIN_NEXT_RE  = re.compile(r'(<input\b[^>]*\bid="signin-next"[^>]*\bvalue=")[^"]*(")')
 
 def render_login(next_url: str, error: str = "") -> str:
-    err = f'<p class="err">{html.escape(error)}</p>' if error else ""
-    return f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Sign in</title>
-<style>
-  body{{margin:0;min-height:100vh;display:grid;place-items:center;background:#0f1115;
-       color:#f2f4f8;font-family:system-ui,sans-serif}}
-  form{{width:min(340px,90vw);display:flex;flex-direction:column;gap:12px;padding:24px;
-       background:#181b22;border:1px solid #262c37;border-radius:16px}}
-  h1{{margin:0 0 4px;font-size:1.2rem}}
-  input,button{{font:inherit;padding:11px 12px;border-radius:10px;border:1px solid #262c37;
-       background:#0f1115;color:inherit}}
-  button{{background:#4f8cff;border-color:#4f8cff;color:#fff;font-weight:600;cursor:pointer}}
-  .err{{color:#ff6b6b;margin:0;font-size:.85rem}}
-</style></head><body>
-<form method="post" action="{PREFIX}/login">
-  <h1>Sign in</h1>{err}
-  <input type="hidden" name="next" value="{html.escape(next_url)}">
-  <input name="username" placeholder="Username" autocomplete="username" required autofocus>
-  <input name="password" type="password" placeholder="Password"
-         autocomplete="current-password" required>
-  <button type="submit">Sign in</button>
-</form></body></html>"""
-
+    page = load_login_html()
+    if error:
+        # swap the empty hidden <p id="signin-error"> for a visible one
+        err = (f'<p id="signin-error" class="signin-error" role="alert" '
+               f'tabindex="-1">{html.escape(error)}</p>')
+        page = _SIGNIN_ERROR_RE.sub(err, page, count=1)
+    # keep the originally requested destination in the hidden field
+    page = _SIGNIN_NEXT_RE.sub(
+        lambda m: m.group(1) + html.escape(next_url, quote=True) + m.group(2),
+        page, count=1)
+    return page
 
 # ---------- app ----------
 auth_app = FastAPI(title="Auth", docs_url=None, redoc_url=None, openapi_url=None)
