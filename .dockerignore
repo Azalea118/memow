@@ -1,12 +1,26 @@
+# .dockerignore
 .git
-**/__pycache__
+.gitignore
+.DS_Store
+
+# Python
+**/__pycache__/
 **/*.pyc
-**/.venv
+**/*.pyo
+**/.venv/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+
 **/*.db
 **/*.db-wal
 **/*.db-shm
-**/*.sqlite*
-**/.pytest_cache
-tests/
-**/tests/
+**/*.sqlite
+**/*.sqlite3
 data/
+**/uploads/
+**/*.log
+
+# Tests
+**/tests/
+**/test_*.py
