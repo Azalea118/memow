@@ -8,7 +8,7 @@ x-app: &app
   environment:
     - TZ=Asia/Manila
   volumes:
-    - app_data:/app/data
+    - ./data:/app/data
 
 services:
   caddy:
@@ -16,6 +16,7 @@ services:
     restart: unless-stopped
     ports: ["80:80", "443:443"]
     volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
     depends_on: [nginx]
 
@@ -49,4 +50,3 @@ services:
 
 volumes:
   caddy_data:
-  app_data:
