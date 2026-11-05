@@ -1,7 +1,7 @@
 Gathering test list...
 Running 252 tests to get statuses...
 
-# Automated Test Case Matrix
+# Test Case Matrix
 
 **Total Tests:** 252
 
