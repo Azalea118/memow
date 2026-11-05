@@ -79,7 +79,7 @@ def main():
         module_groups[mod_name].append((desc, status))
 
     # Print Markdown Table
-    print("\n# Automated Test Case Matrix\n")
+    print("\n# Test Case Matrix\n")
     print(f"**Total Tests:** {len(tests)}\n")
     
     test_counter = 1
