@@ -11,7 +11,7 @@ import pytest
 BASE = "http://localhost:8091"
 COMPOSE = "tests/nginx/docker-compose.test.yaml"
 
-pytestmark = pytest.mark.integration
+pytestmark = pytest.mark.system
 
 
 @pytest.fixture(scope="module", autouse=True)
