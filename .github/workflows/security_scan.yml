@@ -1,4 +1,4 @@
-name: OWASP ZAP Security Scan
+name: owasp zap security scan
 
 on:
   push:
@@ -10,30 +10,30 @@ jobs:
   zap-scan:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
+      - name: checkout code
         uses: actions/checkout@v4
 
-      - name: Start Application Services
+      - name: start application services
         run: |
           docker compose -f docker-compose.yaml -f docker-compose.local.yaml up -d --build
-          echo "Waiting for services to start..."
-          sleep 30 # Give Caddy/Nginx/Apps time to boot up
+          echo "waiting for services to start..."
+          sleep 30 # give caddy/nginx/apps time to boot up
 
-      - name: Verify App is Running
+      - name: verify app is running
         run: |
           curl -f http://localhost:8081 || exit 1
 
-      - name: OWASP ZAP Baseline Scan
-        uses: zaproxy/action-baseline@v0.10.0
+      - name: owasp zap baseline scan
+        uses: zaproxy/action-baseline@v0.15.0
         with:
           target: 'http://localhost:8081'
-          cmd_options: '-a -I' # -a: alpha rules, -I: don't fail on warnings yet
+          cmd_options: '-a -i' # -a: alpha rules, -i: don't fail on warnings yet
           artifact_name: 'zap-baseline-report'
           allow_issue_writing: false
 
-      - name: Upload ZAP Report
+      - name: upload zap report
         uses: actions/upload-artifact@v4
-        if: always() # Upload even if the scan finds issues
+        if: always() # upload even if the scan finds issues
         with:
           name: zap-security-report
           path: zap_report.html
