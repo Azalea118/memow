@@ -1,17 +1,27 @@
 from __future__ import annotations
 
+import os
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional, Sequence
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import String, case, delete, func, or_, select, update
+from sqlalchemy import case, delete, func, or_, select, union_all
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from models import ActivityEvent, Employee, EmployeeStatus, ViolationRecord, ViolationRemoval, ViolationType
+from models import (
+    ActivityEvent,
+    Employee,
+    EmployeeStatus,
+    Penalty,
+    ViolationRecord,
+    ViolationRemoval,
+    ViolationSubsection,
+    ViolationType,
+)
 
-import os
 
 _LOG_TZ = ZoneInfo(os.getenv("LOG_TIMEZONE", "UTC"))
+
 
 # ============================================================================
 # ERRORS
@@ -35,16 +45,63 @@ class ViolationTypeInactive(Exception):
         self.violation_type_id = violation_type_id
 
 
-class DuplicateEmployeeCode(Exception):
-    def __init__(self, code: str):
-        super().__init__(f"Employee code {code!r} already exists")
-        self.code = code
-
-
 class DuplicateViolationType(Exception):
     def __init__(self, name: str):
         super().__init__(f"ViolationType name {name!r} already exists")
         self.name = name
+
+
+class ViolationTypeInUse(Exception):
+    def __init__(self, violation_type_id: int):
+        super().__init__(
+            f"ViolationType {violation_type_id} has issued violations and cannot be deleted; "
+            f"deactivate it instead."
+        )
+        self.violation_type_id = violation_type_id
+
+
+class SubsectionNotFound(Exception):
+    def __init__(self, subsection_id: int):
+        super().__init__(f"ViolationSubsection {subsection_id} not found")
+        self.subsection_id = subsection_id
+
+
+class SubsectionInactive(Exception):
+    def __init__(self, subsection_id: int):
+        super().__init__(f"ViolationSubsection {subsection_id} is inactive")
+        self.subsection_id = subsection_id
+
+
+class DuplicateSubsection(Exception):
+    def __init__(self, violation_type_id: int, name: str):
+        super().__init__(f"Subsection {name!r} already exists under this violation type")
+        self.violation_type_id = violation_type_id
+        self.name = name
+
+
+class SubsectionInUse(Exception):
+    def __init__(self, subsection_id: int):
+        super().__init__(
+            f"ViolationSubsection {subsection_id} has issued violations and cannot be deleted; "
+            f"deactivate it instead."
+        )
+        self.subsection_id = subsection_id
+
+
+class NoPenaltyDefined(Exception):
+    def __init__(self, subsection_id: int, offense_number: int):
+        super().__init__(
+            f"No penalty defined for ViolationSubsection {subsection_id} at "
+            f"offense #{offense_number}. Add a penalty tier first."
+        )
+        self.subsection_id = subsection_id
+        self.offense_number = offense_number
+
+
+class DuplicateEmployeeCode(Exception):
+    def __init__(self, code: str):
+        super().__init__(f"Employee code {code!r} already exists")
+        self.code = code
 
 
 class ViolationRecordNotFound(Exception):
@@ -53,15 +110,10 @@ class ViolationRecordNotFound(Exception):
         self.record_id = record_id
 
 
-class ViolationTypeInUse(Exception):
-    def __init__(self, violation_type_id: int):
-        super().__init__(
-            f"ViolationType {violation_type_id} is referenced by existing records "
-            f"and cannot be deleted; deactivate it instead."
-        )
-        self.violation_type_id = violation_type_id
+# ============================================================================
+# ACTIVITY LOGGING
+# ============================================================================
 
-# ---- HELPER FUNC ---------
 def log_event(
     session: Session,
     *,
@@ -73,7 +125,6 @@ def log_event(
     summary: str,
     metadata: Optional[dict] = None,
 ) -> ActivityEvent:
-    """Append an event to the audit log. Caller is responsible for commit."""
     now_utc = datetime.now(timezone.utc)
     event = ActivityEvent(
         occurred_at=now_utc,
@@ -89,30 +140,20 @@ def log_event(
     session.add(event)
     return event
 
-# ============================================================================
-# EMPLOYEE — WRITE (CRUD)
-# ============================================================================
 
-
+# ============================================================================
+# EMPLOYEE — WRITE
+# ============================================================================
 
 def create_employee(
-    session: Session,
-    *,
-    employee_code: str,
-    first_name: str,
-    last_name: str,
-    department: Optional[str] = None,
-    position: Optional[str] = None,
-    status: EmployeeStatus = EmployeeStatus.active,
-    actor: str,
-    commit: bool = True,
+    session: Session, *, employee_code: str, first_name: str, last_name: str,
+    department: Optional[str] = None, position: Optional[str] = None,
+    status: EmployeeStatus = EmployeeStatus.active, actor: str, commit: bool = True,
 ) -> Employee:
-    exists = session.execute(
+    if session.execute(
         select(Employee.id).where(Employee.employee_code == employee_code)
-    ).scalar_one_or_none()
-    if exists is not None:
+    ).scalar_one_or_none() is not None:
         raise DuplicateEmployeeCode(employee_code)
-
     employee = Employee(
         employee_code=employee_code, first_name=first_name, last_name=last_name,
         department=department, position=position, status=status,
@@ -130,6 +171,7 @@ def create_employee(
         session.commit()
     return employee
 
+
 def create_employees_bulk(
     session: Session, rows: Sequence[dict], *, actor: str, commit: bool = True,
 ) -> list[Employee]:
@@ -139,7 +181,6 @@ def create_employees_bulk(
     ).scalars().all()
     if dupes:
         raise DuplicateEmployeeCode(dupes[0])
-
     employees = [Employee(**r) for r in rows]
     session.add_all(employees)
     session.flush()
@@ -153,27 +194,21 @@ def create_employees_bulk(
         session.commit()
     return employees
 
+
 def update_employee(
-    session: Session,
-    employee_id: int,
-    *,
-    first_name: Optional[str] = None,
-    last_name: Optional[str] = None,
-    department: Optional[str] = None,
-    position: Optional[str] = None,
-    employee_code: Optional[str] = None,
-    actor: str,
-    commit: bool = True,
+    session: Session, employee_id: int, *,
+    first_name: Optional[str] = None, last_name: Optional[str] = None,
+    department: Optional[str] = None, position: Optional[str] = None,
+    employee_code: Optional[str] = None, actor: str, commit: bool = True,
 ) -> Employee:
     employee = session.get(Employee, employee_id)
     if employee is None:
         raise EmployeeNotFound(employee_id)
-
     changes: dict = {}
     if employee_code is not None and employee_code != employee.employee_code:
         clash = session.execute(
             select(Employee.id).where(
-                Employee.employee_code == employee_code, Employee.id != employee_id
+                Employee.employee_code == employee_code, Employee.id != employee_id,
             )
         ).scalar_one_or_none()
         if clash is not None:
@@ -192,7 +227,6 @@ def update_employee(
     if position is not None:
         changes["position"] = position
         employee.position = position
-
     if changes:
         log_event(
             session, actor=actor, action="employee.updated",
@@ -203,6 +237,7 @@ def update_employee(
     if commit:
         session.commit()
     return employee
+
 
 def set_employee_status(
     session: Session, employee_id: int, status: EmployeeStatus, *, actor: str, commit: bool = True,
@@ -223,44 +258,43 @@ def set_employee_status(
         session.commit()
     return employee
 
+
 def deactivate_employee(session: Session, employee_id: int, *, actor: str, commit: bool = True) -> Employee:
-    """Soft delete — hides from default search but preserves history."""
     return set_employee_status(session, employee_id, EmployeeStatus.inactive, actor=actor, commit=commit)
 
 
 def reactivate_employee(session: Session, employee_id: int, *, actor: str, commit: bool = True) -> Employee:
     return set_employee_status(session, employee_id, EmployeeStatus.active, actor=actor, commit=commit)
 
+
 def delete_employee(session: Session, employee_id: int, *, actor: str, commit: bool = True) -> None:
     employee = session.get(Employee, employee_id)
     if employee is None:
         raise EmployeeNotFound(employee_id)
-
-    violation_records = employee.violation_records  # load once, reuse
     log_event(
         session, actor=actor, action="employee.deleted",
         target_type="employee", target_id=employee.id, employee_id=employee.id,
         summary=f"Hard-deleted {employee.employee_code} ({employee.full_name})",
-        metadata={
-            "employee_code": employee.employee_code,
-            "full_name": employee.full_name,
-            "department": employee.department,
-            "violation_count": len(violation_records),
-            "total_points": sum(r.points for r in violation_records),
-            "total_strikes": sum(1 for r in violation_records if r.is_strike),
-        },
+        metadata={"employee_code": employee.employee_code, "full_name": employee.full_name},
     )
     session.delete(employee)
     if commit:
         session.commit()
 
+
 # ============================================================================
 # EMPLOYEE — READ
 # ============================================================================
 
-def get_employee(session: Session, employee_id: int) -> Optional[Employee]:
-    """Plain fetch, no relationships loaded."""
-    return session.get(Employee, employee_id)
+def _total_offenses_ever_subq(session: Session, employee_id: int) -> int:
+    """Active violations + removed violations = total offenses ever committed."""
+    active = session.execute(
+        select(func.count(ViolationRecord.id)).where(ViolationRecord.employee_id == employee_id)
+    ).scalar_one()
+    removed = session.execute(
+        select(func.count(ViolationRemoval.id)).where(ViolationRemoval.employee_id == employee_id)
+    ).scalar_one()
+    return active + removed
 
 
 def get_employee_by_code(session: Session, employee_code: str) -> Optional[Employee]:
@@ -276,18 +310,27 @@ def search_employees(
     include_inactive: bool = False,
     department: Optional[str] = None,
     position: Optional[str] = None,
-    min_points: Optional[int] = None,
-    min_strikes: Optional[int] = None,
+    min_active_violations: Optional[int] = None,
+    min_total_offenses: Optional[int] = None,
     limit: int = 25,
     offset: int = 0,
 ) -> Sequence:
     """
-    Returns rows:
-        id, employee_code, full_name, department, position,
-        total_points, total_strikes
-    Totals are computed in SQL — no child rows loaded. Filters on totals are
-    also SQL-level (the hybrid expressions compile to correlated subqueries).
+    Returns Rows with:
+        id, employee_code, full_name, department, position, status,
+        active_violation_count, total_offenses
     """
+    total_offenses_sq = (
+        select(func.count(ViolationRecord.id))
+        .where(ViolationRecord.employee_id == Employee.id)
+        .correlate(Employee)
+        .scalar_subquery()
+        + select(func.count(ViolationRemoval.id))
+        .where(ViolationRemoval.employee_id == Employee.id)
+        .correlate(Employee)
+        .scalar_subquery()
+    ).label("total_offenses")
+
     stmt = select(
         Employee.id,
         Employee.employee_code,
@@ -295,47 +338,34 @@ def search_employees(
         Employee.department,
         Employee.position,
         Employee.status,
-        Employee.total_points,
-        Employee.total_strikes,
+        Employee.active_violation_count,
+        total_offenses_sq,
     )
-
     if search and (term := search.strip()):
         pattern = f"%{term}%"
-        stmt = stmt.where(
-            or_(
-                Employee.first_name.ilike(pattern),
-                Employee.last_name.ilike(pattern),
-                Employee.employee_code.ilike(pattern),
-                Employee.full_name.ilike(pattern),
-            )
-        )
-
+        stmt = stmt.where(or_(
+            Employee.first_name.ilike(pattern),
+            Employee.last_name.ilike(pattern),
+            Employee.employee_code.ilike(pattern),
+            Employee.full_name.ilike(pattern),
+        ))
     if department:
         stmt = stmt.where(Employee.department.ilike(f"%{department}%"))
     if position:
         stmt = stmt.where(Employee.position.ilike(f"%{position}%"))
     if not include_inactive:
         stmt = stmt.where(Employee.status == EmployeeStatus.active)
-    if min_points is not None:
-        stmt = stmt.where(Employee.total_points >= min_points)
-    if min_strikes is not None:
-        stmt = stmt.where(Employee.total_strikes >= min_strikes)
-
-    stmt = (
-        stmt.order_by(Employee.last_name, Employee.first_name, Employee.id)
-        .limit(limit)
-        .offset(offset)
-    )
+    if min_active_violations is not None:
+        stmt = stmt.where(Employee.active_violation_count >= min_active_violations)
+    if min_total_offenses is not None:
+        stmt = stmt.where(total_offenses >= min_total_offenses)
+    stmt = stmt.order_by(Employee.last_name, Employee.first_name, Employee.id).limit(limit).offset(offset)
     return session.execute(stmt).all()
 
 
 def count_employees(
-    session: Session,
-    *,
-    include_inactive: bool = False,
-    department: Optional[str] = None,
+    session: Session, *, include_inactive: bool = False, department: Optional[str] = None,
 ) -> int:
-    """Total count for pagination footers."""
     stmt = select(func.count(Employee.id))
     if not include_inactive:
         stmt = stmt.where(Employee.status == EmployeeStatus.active)
@@ -345,54 +375,127 @@ def count_employees(
 
 
 def get_employee_detail(session: Session, employee_id: int) -> Optional[Employee]:
-    """
-    Employee with `violation_records` eagerly loaded and each record's
-    `violation_type` eagerly loaded. Totals come from hybrid properties.
-    """
     stmt = (
         select(Employee)
         .options(
-            selectinload(Employee.violation_records).joinedload(
-                ViolationRecord.violation_type
-            )
+            selectinload(Employee.violation_records)
+            .joinedload(ViolationRecord.subsection)
+            .joinedload(ViolationSubsection.violation_type)
         )
         .where(Employee.id == employee_id)
     )
     return session.execute(stmt).scalar_one_or_none()
 
 
+def get_employee_offense_summary(session: Session, employee_id: int) -> list[dict]:
+    """
+    Per-subsection breakdown of an employee's offense history — active AND removed.
+    Shows next offense number and what penalty would apply.
+    """
+    employee = session.get(Employee, employee_id)
+    if employee is None:
+        raise EmployeeNotFound(employee_id)
+
+    # Group active records by subsection
+    active_rows = session.execute(
+        select(
+            ViolationRecord.subsection_id,
+            func.count(ViolationRecord.id).label("active_count"),
+            func.max(ViolationRecord.offense_number).label("max_active"),
+        ).where(ViolationRecord.employee_id == employee_id)
+        .group_by(ViolationRecord.subsection_id)
+    ).all()
+
+    # Group removed records by subsection
+    removed_rows = session.execute(
+        select(
+            ViolationRemoval.subsection_id,
+            func.count(ViolationRemoval.id).label("removed_count"),
+            func.max(ViolationRemoval.offense_number).label("max_removed"),
+        ).where(ViolationRemoval.employee_id == employee_id)
+        .group_by(ViolationRemoval.subsection_id)
+    ).all()
+
+    by_sub: dict[int, dict] = {}
+    for r in active_rows:
+        by_sub.setdefault(r.subsection_id, {"active": 0, "removed": 0, "max_offense": 0})
+        by_sub[r.subsection_id]["active"] = r.active_count
+        by_sub[r.subsection_id]["max_offense"] = max(by_sub[r.subsection_id]["max_offense"], r.max_active or 0)
+    for r in removed_rows:
+        by_sub.setdefault(r.subsection_id, {"active": 0, "removed": 0, "max_offense": 0})
+        by_sub[r.subsection_id]["removed"] = r.removed_count
+        by_sub[r.subsection_id]["max_offense"] = max(by_sub[r.subsection_id]["max_offense"], r.max_removed or 0)
+
+    # Hydrate subsection + type names, look up the penalty for next offense
+    result = []
+    for sub_id, info in by_sub.items():
+        sub = session.get(ViolationSubsection, sub_id)
+        if sub is None:
+            continue
+        next_offense = info["max_offense"] + 1
+        penalty = _lookup_penalty(session, sub_id, next_offense)
+        result.append({
+            "subsection_id": sub_id,
+            "subsection_name": sub.name,
+            "violation_type_name": sub.violation_type.name if sub.violation_type else "",
+            "active_offenses": info["active"],
+            "removed_offenses": info["removed"],
+            "total_offenses": info["active"] + info["removed"],
+            "last_offense_number": info["max_offense"],
+            "next_offense_number": next_offense,
+            "penalty_if_repeated": penalty.description if penalty else None,
+        })
+    result.sort(key=lambda x: x["subsection_name"])
+    return result
+
+
+def get_employee_totals(session: Session, employee_id: int) -> dict:
+    employee = session.get(Employee, employee_id)
+    if employee is None:
+        raise EmployeeNotFound(employee_id)
+    active = session.execute(
+        select(func.count(ViolationRecord.id)).where(ViolationRecord.employee_id == employee_id)
+    ).scalar_one()
+    removed = session.execute(
+        select(func.count(ViolationRemoval.id)).where(ViolationRemoval.employee_id == employee_id)
+    ).scalar_one()
+    return {
+        "employee_id": employee_id,
+        "active_violation_count": active,
+        "total_offenses": active + removed,
+    }
+
+
 # ============================================================================
-# VIOLATION TYPE — WRITE (CRUD)
+# VIOLATION TYPE — WRITE
 # ============================================================================
 
 def create_violation_type(
     session: Session, *, name: str, description: Optional[str] = None,
-    default_points: int = 0, is_strike: bool = False, is_active: bool = True,
-    actor: str, commit: bool = True,
+    is_active: bool = True, actor: str, commit: bool = True,
 ) -> ViolationType:
-    if default_points < 0:
-        raise ValueError("default_points must be >= 0")
-    exists = session.execute(select(ViolationType.id).where(ViolationType.name == name)).scalar_one_or_none()
+    exists = session.execute(
+        select(ViolationType.id).where(ViolationType.name == name)
+    ).scalar_one_or_none()
     if exists is not None:
         raise DuplicateViolationType(name)
-    vtype = ViolationType(name=name, description=description, default_points=default_points,
-                          is_strike=is_strike, is_active=is_active)
+    vtype = ViolationType(name=name, description=description, is_active=is_active)
     session.add(vtype)
     session.flush()
     log_event(
         session, actor=actor, action="violation_type.created",
         target_type="violation_type", target_id=vtype.id,
-        summary=f"Added violation type '{vtype.name}' ({vtype.default_points} pts)",
-        metadata={"name": vtype.name, "default_points": vtype.default_points, "is_strike": vtype.is_strike},
+        summary=f"Added violation type '{vtype.name}'",
+        metadata={"name": vtype.name},
     )
     if commit:
         session.commit()
     return vtype
 
+
 def update_violation_type(
     session: Session, violation_type_id: int, *,
     name: Optional[str] = None, description: Optional[str] = None,
-    default_points: Optional[int] = None, is_strike: Optional[bool] = None,
     actor: str, commit: bool = True,
 ) -> ViolationType:
     vtype = session.get(ViolationType, violation_type_id)
@@ -401,7 +504,9 @@ def update_violation_type(
     changes: dict = {}
     if name is not None and name != vtype.name:
         clash = session.execute(
-            select(ViolationType.id).where(ViolationType.name == name, ViolationType.id != violation_type_id)
+            select(ViolationType.id).where(
+                ViolationType.name == name, ViolationType.id != violation_type_id,
+            )
         ).scalar_one_or_none()
         if clash is not None:
             raise DuplicateViolationType(name)
@@ -410,24 +515,17 @@ def update_violation_type(
     if description is not None:
         changes["description"] = description
         vtype.description = description
-    if default_points is not None:
-        if default_points < 0:
-            raise ValueError("default_points must be >= 0")
-        changes["default_points"] = default_points
-        vtype.default_points = default_points
-    if is_strike is not None:
-        changes["is_strike"] = is_strike
-        vtype.is_strike = is_strike
     if changes:
         log_event(
             session, actor=actor, action="violation_type.updated",
             target_type="violation_type", target_id=vtype.id,
-            summary=f"Updated violation type '{vtype.name}': {', '.join(changes)}",
+            summary=f"Updated violation type '{vtype.name}'",
             metadata={"changes": changes},
         )
     if commit:
         session.commit()
     return vtype
+
 
 def set_violation_type_active(
     session: Session, violation_type_id: int, is_active: bool, *, actor: str, commit: bool = True,
@@ -447,12 +545,15 @@ def set_violation_type_active(
         session.commit()
     return vtype
 
+
 def delete_violation_type(session: Session, violation_type_id: int, *, actor: str, commit: bool = True) -> None:
     vtype = session.get(ViolationType, violation_type_id)
     if vtype is None:
         raise ViolationTypeNotFound(violation_type_id)
     in_use = session.execute(
-        select(func.count(ViolationRecord.id)).where(ViolationRecord.violation_type_id == violation_type_id)
+        select(func.count(ViolationRecord.id))
+        .join(ViolationSubsection, ViolationSubsection.id == ViolationRecord.subsection_id)
+        .where(ViolationSubsection.violation_type_id == violation_type_id)
     ).scalar_one()
     if in_use:
         raise ViolationTypeInUse(violation_type_id)
@@ -466,39 +567,25 @@ def delete_violation_type(session: Session, violation_type_id: int, *, actor: st
     if commit:
         session.commit()
 
+
 # ============================================================================
 # VIOLATION TYPE — READ
 # ============================================================================
 
 def get_active_violation_types(session: Session) -> Sequence:
-    """id, name, default_points, is_strike — for the dropdown."""
+    """id, name, description — for the first-level picker."""
     stmt = (
-        select(
-            ViolationType.id,
-            ViolationType.name,
-            ViolationType.default_points,
-            ViolationType.is_strike,
-        )
+        select(ViolationType.id, ViolationType.name, ViolationType.description)
         .where(ViolationType.is_active.is_(True))
         .order_by(ViolationType.name)
     )
     return session.execute(stmt).all()
 
 
-def list_violation_types(
-    session: Session,
-    *,
-    include_inactive: bool = True,
-    only_strikes: Optional[bool] = None,
-) -> Sequence[ViolationType]:
-    """Full ORM rows, for admin screens."""
+def list_violation_types(session: Session, *, include_inactive: bool = True) -> Sequence[ViolationType]:
     stmt = select(ViolationType).order_by(ViolationType.name)
     if not include_inactive:
         stmt = stmt.where(ViolationType.is_active.is_(True))
-    if only_strikes is True:
-        stmt = stmt.where(ViolationType.is_strike.is_(True))
-    elif only_strikes is False:
-        stmt = stmt.where(ViolationType.is_strike.is_(False))
     return session.execute(stmt).scalars().all()
 
 
@@ -507,44 +594,290 @@ def get_violation_type(session: Session, violation_type_id: int) -> Optional[Vio
 
 
 # ============================================================================
+# VIOLATION SUBSECTION — WRITE
+# ============================================================================
+
+def create_subsection(
+    session: Session, *, violation_type_id: int, name: str,
+    description: Optional[str] = None, is_active: bool = True,
+    actor: str, commit: bool = True,
+) -> ViolationSubsection:
+    vtype = session.get(ViolationType, violation_type_id)
+    if vtype is None:
+        raise ViolationTypeNotFound(violation_type_id)
+    dup = session.execute(
+        select(ViolationSubsection.id).where(
+            ViolationSubsection.violation_type_id == violation_type_id,
+            ViolationSubsection.name == name,
+        )
+    ).scalar_one_or_none()
+    if dup is not None:
+        raise DuplicateSubsection(violation_type_id, name)
+    sub = ViolationSubsection(
+        violation_type_id=violation_type_id, name=name,
+        description=description, is_active=is_active,
+    )
+    session.add(sub)
+    session.flush()
+    log_event(
+        session, actor=actor, action="subsection.created",
+        target_type="subsection", target_id=sub.id,
+        summary=f"Added subsection '{sub.name}' under '{vtype.name}'",
+        metadata={"violation_type_id": violation_type_id, "violation_type_name": vtype.name, "name": sub.name},
+    )
+    if commit:
+        session.commit()
+    return sub
+
+
+def update_subsection(
+    session: Session, subsection_id: int, *,
+    name: Optional[str] = None, description: Optional[str] = None,
+    actor: str, commit: bool = True,
+) -> ViolationSubsection:
+    sub = session.get(ViolationSubsection, subsection_id)
+    if sub is None:
+        raise SubsectionNotFound(subsection_id)
+    changes: dict = {}
+    if name is not None and name != sub.name:
+        clash = session.execute(
+            select(ViolationSubsection.id).where(
+                ViolationSubsection.violation_type_id == sub.violation_type_id,
+                ViolationSubsection.name == name,
+                ViolationSubsection.id != subsection_id,
+            )
+        ).scalar_one_or_none()
+        if clash is not None:
+            raise DuplicateSubsection(sub.violation_type_id, name)
+        changes["name"] = name
+        sub.name = name
+    if description is not None:
+        changes["description"] = description
+        sub.description = description
+    if changes:
+        log_event(
+            session, actor=actor, action="subsection.updated",
+            target_type="subsection", target_id=sub.id,
+            summary=f"Updated subsection '{sub.name}'",
+            metadata={"changes": changes},
+        )
+    if commit:
+        session.commit()
+    return sub
+
+
+def set_subsection_active(
+    session: Session, subsection_id: int, is_active: bool, *, actor: str, commit: bool = True,
+) -> ViolationSubsection:
+    sub = session.get(ViolationSubsection, subsection_id)
+    if sub is None:
+        raise SubsectionNotFound(subsection_id)
+    sub.is_active = is_active
+    log_event(
+        session, actor=actor,
+        action="subsection.activated" if is_active else "subsection.deactivated",
+        target_type="subsection", target_id=sub.id,
+        summary=f"{'Activated' if is_active else 'Deactivated'} subsection '{sub.name}'",
+        metadata={"name": sub.name},
+    )
+    if commit:
+        session.commit()
+    return sub
+
+
+def delete_subsection(session: Session, subsection_id: int, *, actor: str, commit: bool = True) -> None:
+    sub = session.get(ViolationSubsection, subsection_id)
+    if sub is None:
+        raise SubsectionNotFound(subsection_id)
+    in_use = session.execute(
+        select(func.count(ViolationRecord.id)).where(ViolationRecord.subsection_id == subsection_id)
+    ).scalar_one()
+    if in_use:
+        raise SubsectionInUse(subsection_id)
+    log_event(
+        session, actor=actor, action="subsection.deleted",
+        target_type="subsection", target_id=sub.id,
+        summary=f"Deleted subsection '{sub.name}'",
+        metadata={"name": sub.name},
+    )
+    session.delete(sub)
+    if commit:
+        session.commit()
+
+
+# ============================================================================
+# VIOLATION SUBSECTION — READ
+# ============================================================================
+
+def list_subsections(
+    session: Session, violation_type_id: int, *, include_inactive: bool = False,
+) -> Sequence[ViolationSubsection]:
+    stmt = (
+        select(ViolationSubsection)
+        .options(selectinload(ViolationSubsection.penalties))
+        .where(ViolationSubsection.violation_type_id == violation_type_id)
+        .order_by(ViolationSubsection.name)
+    )
+    if not include_inactive:
+        stmt = stmt.where(ViolationSubsection.is_active.is_(True))
+    return session.execute(stmt).scalars().all()
+
+
+def get_subsection(session: Session, subsection_id: int) -> Optional[ViolationSubsection]:
+    stmt = (
+        select(ViolationSubsection)
+        .options(selectinload(ViolationSubsection.penalties))
+        .where(ViolationSubsection.id == subsection_id)
+    )
+    return session.execute(stmt).scalar_one_or_none()
+
+
+# ============================================================================
+# PENALTY
+# ============================================================================
+
+def replace_penalties(
+    session: Session, subsection_id: int,
+    penalties: list[dict],  # each: {"offense_number": int, "description": str}
+    *, actor: str, commit: bool = True,
+) -> ViolationSubsection:
+    """Replace the full penalty ladder for a subsection."""
+    sub = session.get(ViolationSubsection, subsection_id)
+    if sub is None:
+        raise SubsectionNotFound(subsection_id)
+    # Validate offense numbers are unique and ≥ 1
+    nums = [p["offense_number"] for p in penalties]
+    if len(nums) != len(set(nums)):
+        raise ValueError("Duplicate offense_number in penalties")
+    if any(n < 1 for n in nums):
+        raise ValueError("offense_number must be >= 1")
+    # Delete existing
+    for existing in session.execute(
+        select(Penalty).where(Penalty.subsection_id == subsection_id)
+    ).scalars().all():
+        session.delete(existing)
+    session.flush()
+    # Insert new
+    for p in penalties:
+        session.add(Penalty(
+            subsection_id=subsection_id,
+            offense_number=p["offense_number"],
+            description=p["description"],
+        ))
+    log_event(
+        session, actor=actor, action="penalty.replaced",
+        target_type="subsection", target_id=sub.id,
+        summary=f"Set {len(penalties)} penalty tier(s) for '{sub.name}'",
+        metadata={"subsection_id": subsection_id, "offense_numbers": sorted(nums)},
+    )
+    if commit:
+        session.commit()
+        session.refresh(sub)
+    return sub
+
+
+def _lookup_penalty(session: Session, subsection_id: int, offense_number: int) -> Optional[Penalty]:
+    """Exact match on offense_number; fall back to the highest tier ≤ offense_number;
+    fall back to the lowest tier if offense_number is below the minimum."""
+    exact = session.execute(
+        select(Penalty).where(
+            Penalty.subsection_id == subsection_id,
+            Penalty.offense_number == offense_number,
+        )
+    ).scalar_one_or_none()
+    if exact:
+        return exact
+    below = session.execute(
+        select(Penalty).where(
+            Penalty.subsection_id == subsection_id,
+            Penalty.offense_number <= offense_number,
+        ).order_by(Penalty.offense_number.desc()).limit(1)
+    ).scalar_one_or_none()
+    if below:
+        return below
+    above = session.execute(
+        select(Penalty).where(Penalty.subsection_id == subsection_id)
+        .order_by(Penalty.offense_number.asc()).limit(1)
+    ).scalar_one_or_none()
+    return above
+
+
+# ============================================================================
 # VIOLATION RECORD — WRITE
 # ============================================================================
 
 def assign_violation(
-    session: Session, *, employee_id: int, violation_type_id: int,
+    session: Session, *, employee_id: int, subsection_id: int,
     notes: Optional[str] = None, issued_at: Optional[datetime] = None,
     issued_by: Optional[str] = None, actor: str, commit: bool = True,
 ) -> ViolationRecord:
     employee = session.get(Employee, employee_id)
     if employee is None:
         raise EmployeeNotFound(employee_id)
-    vtype = session.get(ViolationType, violation_type_id)
-    if vtype is None:
-        raise ViolationTypeNotFound(violation_type_id)
-    if not vtype.is_active:
-        raise ViolationTypeInactive(violation_type_id)
+    sub = session.execute(
+        select(ViolationSubsection)
+        .options(joinedload(ViolationSubsection.violation_type))
+        .where(ViolationSubsection.id == subsection_id)
+    ).scalar_one_or_none()
+    if sub is None:
+        raise SubsectionNotFound(subsection_id)
+    if not sub.is_active:
+        raise SubsectionInactive(subsection_id)
+    if sub.violation_type is None or not sub.violation_type.is_active:
+        raise ViolationTypeInactive(sub.violation_type_id)
+
+    # Compute next offense number: count ever issued for this (employee, subsection)
+    active = session.execute(
+        select(func.count(ViolationRecord.id)).where(
+            ViolationRecord.employee_id == employee_id,
+            ViolationRecord.subsection_id == subsection_id,
+        )
+    ).scalar_one()
+    removed = session.execute(
+        select(func.count(ViolationRemoval.id)).where(
+            ViolationRemoval.employee_id == employee_id,
+            ViolationRemoval.subsection_id == subsection_id,
+        )
+    ).scalar_one()
+    offense_number = active + removed + 1
+
+    penalty = _lookup_penalty(session, subsection_id, offense_number)
+    if penalty is None:
+        raise NoPenaltyDefined(subsection_id, offense_number)
 
     record = ViolationRecord(
-        employee_id=employee.id, violation_type_id=vtype.id,
-        issued_by=issued_by, issued_at=issued_at or datetime.now(timezone.utc),
-        notes=notes, points=vtype.default_points, is_strike=vtype.is_strike,
+        employee_id=employee_id,
+        subsection_id=subsection_id,
+        issued_by=issued_by,
+        issued_at=issued_at or datetime.now(timezone.utc),
+        notes=notes,
+        offense_number=offense_number,
+        penalty_description=penalty.description,
     )
     session.add(record)
     session.flush()
     log_event(
         session, actor=actor, action="violation.assigned",
-        target_type="violation", target_id=record.id, employee_id=record.employee_id,
-        summary=f"Issued '{vtype.name}' ({record.points} pts"
-                f"{', strike' if record.is_strike else ''}) to "
-                f"{employee.employee_code} ({employee.full_name})",
-        metadata={"violation_type_name": vtype.name, "points": record.points,
-                  "is_strike": record.is_strike, "issued_by": issued_by,
-                  "employee_code": employee.employee_code, "employee_full_name": employee.full_name},
+        target_type="violation", target_id=record.id, employee_id=employee_id,
+        summary=(
+            f"Issued '{sub.name}' to {employee.employee_code} ({employee.full_name}) "
+            f"— offense #{offense_number} — penalty: {penalty.description}"
+        ),
+        metadata={
+            "subsection_id": subsection_id,
+            "subsection_name": sub.name,
+            "violation_type_name": sub.violation_type.name if sub.violation_type else "",
+            "offense_number": offense_number,
+            "penalty_description": penalty.description,
+            "issued_by": issued_by,
+            "employee_code": employee.employee_code,
+            "employee_full_name": employee.full_name,
+        },
     )
-
     if commit:
         session.commit()
     return record
+
 
 def update_violation_record(
     session: Session, record_id: int, *,
@@ -575,358 +908,33 @@ def update_violation_record(
         session.commit()
     return record
 
-def delete_violation_record(session: Session, record_id: int, *, commit: bool = True) -> None:
-    record = session.get(ViolationRecord, record_id)
-    if record is None:
-        raise ViolationRecordNotFound(record_id)
-    session.delete(record)
-    if commit:
-        session.commit()
-    else:
-        session.flush()
 
-def clear_employee_violations(
-    session: Session, employee_id: int, *, removed_by: str, reason: str, commit: bool = True,
-) -> int:
-    employee = session.get(Employee, employee_id)
-    if employee is None:
-        raise EmployeeNotFound(employee_id)
-    records = session.execute(
-        select(ViolationRecord)
-        .options(joinedload(ViolationRecord.violation_type), joinedload(ViolationRecord.employee))
-        .where(ViolationRecord.employee_id == employee_id)
-    ).scalars().all()
-
-    now = datetime.now(timezone.utc)
-    for record in records:
-        removal = ViolationRemoval(
-            violation_record_id=record.id, violation_type_id=record.violation_type_id,
-            violation_type_name=record.violation_type.name if record.violation_type else "",
-            points=record.points, is_strike=record.is_strike,
-            original_notes=record.notes, original_issued_by=record.issued_by,
-            original_issued_at=record.issued_at,
-            employee_id=record.employee_id,
-            employee_code=employee.employee_code, employee_full_name=employee.full_name,
-            removed_by=removed_by, reason=reason, removed_at=now,
-        )
-        session.add(removal)
-        session.delete(record)
-        log_event(
-            session, actor=removed_by, action="violation.removed",
-            target_type="violation", target_id=record.id, employee_id=employee.id,
-            summary=f"Removed '{removal.violation_type_name}' from {employee.employee_code} "
-                    f"({employee.full_name}) — amnesty — reason: {reason}",
-            metadata={"violation_type_name": removal.violation_type_name, "points": removal.points,
-                      "is_strike": removal.is_strike, "reason": reason, "amnesty": True,
-                      "employee_code": employee.employee_code, "employee_full_name": employee.full_name},
-        )
-
-    if commit:
-        session.commit()
-    return len(records)
-
-# ============================================================================
-# VIOLATION RECORD — READ
-# ============================================================================
-
-def list_employee_violations(
-    session: Session,
-    employee_id: int,
-    *,
-    only_strikes: Optional[bool] = None,
-    since: Optional[datetime] = None,
-    until: Optional[datetime] = None,
-    limit: int = 100,
-    offset: int = 0,
-) -> Sequence[ViolationRecord]:
-    """Full ORM rows with violation_type eagerly loaded, newest first."""
-    stmt = (
-        select(ViolationRecord)
-        .options(joinedload(ViolationRecord.violation_type))
-        .where(ViolationRecord.employee_id == employee_id)
-    )
-    if only_strikes is True:
-        stmt = stmt.where(ViolationRecord.is_strike.is_(True))
-    elif only_strikes is False:
-        stmt = stmt.where(ViolationRecord.is_strike.is_(False))
-    if since is not None:
-        stmt = stmt.where(ViolationRecord.issued_at >= since)
-    if until is not None:
-        stmt = stmt.where(ViolationRecord.issued_at <= until)
-
-    stmt = stmt.order_by(ViolationRecord.issued_at.desc(), ViolationRecord.id.desc())
-    stmt = stmt.limit(limit).offset(offset)
-    return session.execute(stmt).scalars().all()
-
-
-def list_recent_violations(
-    session: Session,
-    *,
-    days: int = 30,
-    only_strikes: bool = False,
-    limit: int = 50,
-) -> Sequence[ViolationRecord]:
-    """Company-wide feed — "what happened in the last N days"."""
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-    stmt = (
-        select(ViolationRecord)
-        .options(
-            joinedload(ViolationRecord.violation_type),
-            joinedload(ViolationRecord.employee),
-        )
-        .where(ViolationRecord.issued_at >= cutoff)
-        .order_by(ViolationRecord.issued_at.desc())
-        .limit(limit)
-    )
-    if only_strikes:
-        stmt = stmt.where(ViolationRecord.is_strike.is_(True))
-    return session.execute(stmt).scalars().all()
-
-
-def get_violation_record(session: Session, record_id: int) -> Optional[ViolationRecord]:
-    stmt = (
-        select(ViolationRecord)
-        .options(joinedload(ViolationRecord.violation_type))
-        .where(ViolationRecord.id == record_id)
-    )
-    return session.execute(stmt).scalar_one_or_none()
-
-
-# ============================================================================
-# ANALYTICS / DASHBOARD
-# ============================================================================
-
-def get_employee_totals(session: Session, employee_id: int) -> dict:
-    """Single-row totals for a specific employee, computed in SQL."""
-    row = session.execute(
-        select(
-            Employee.id,
-            Employee.total_points,
-            Employee.total_strikes,
-            func.count(ViolationRecord.id).label("total_records"),
-        )
-        .outerjoin(ViolationRecord, ViolationRecord.employee_id == Employee.id)
-        .where(Employee.id == employee_id)
-        .group_by(Employee.id)
-    ).one_or_none()
-    if row is None:
-        raise EmployeeNotFound(employee_id)
-    return {
-        "employee_id": row.id,
-        "total_points": row.total_points or 0,
-        "total_strikes": row.total_strikes or 0,
-        "total_records": row.total_records or 0,
-    }
-
-
-def top_offenders(
-    session: Session,
-    *,
-    limit: int = 10,
-    by: str = "points",   # "points" | "strikes" | "records"
-) -> Sequence:
-    """Leaderboard of employees by points, strikes, or record count."""
-    order_col = {
-        "points": Employee.total_points,
-        "strikes": Employee.total_strikes,
-        "records": (
-            select(func.count(ViolationRecord.id))
-            .where(ViolationRecord.employee_id == Employee.id)
-            .correlate(Employee)
-            .scalar_subquery()
-        ),
-    }.get(by)
-    if order_col is None:
-        raise ValueError("by must be 'points', 'strikes', or 'records'")
-
-    stmt = (
-        select(
-            Employee.id,
-            Employee.employee_code,
-            Employee.full_name,
-            Employee.department,
-            Employee.total_points,
-            Employee.total_strikes,
-        )
-        .where(Employee.status == EmployeeStatus.active)
-        .order_by(order_col.desc(), Employee.id)
-        .limit(limit)
-    )
-    return session.execute(stmt).all()
-
-
-def department_summary(session: Session) -> Sequence:
-    """Per-department counts and totals. Great for a dashboard chart."""
-    stmt = (
-        select(
-            Employee.department.label("department"),
-            func.count(func.distinct(Employee.id)).label("employees"),
-            func.coalesce(func.sum(ViolationRecord.points), 0).label("total_points"),
-            func.count(ViolationRecord.id).label("total_records"),
-            func.coalesce(
-                func.sum(func.cast(ViolationRecord.is_strike, type_=String)),
-                "0",
-            ).label("_tmp"),  # not used directly, see note below
-        )
-        .join(ViolationRecord, ViolationRecord.employee_id == Employee.id, isouter=True)
-        .group_by(Employee.department)
-        .order_by(func.coalesce(func.sum(ViolationRecord.points), 0).desc())
-    )
-    # The cast trick above is dialect-specific; do strikes via a separate
-    # subquery count for portability:
-    strike_counts = dict(
-        session.execute(
-            select(ViolationRecord.employee_id, func.count(ViolationRecord.id))
-            .where(ViolationRecord.is_strike.is_(True))
-            .group_by(ViolationRecord.employee_id)
-        ).all()
-    )
-    emp_dept = dict(
-        session.execute(select(Employee.id, Employee.department)).all()
-    )
-    rows = session.execute(stmt).all()
-    out = []
-    for r in rows:
-        strikes_in_dept = sum(
-            c for emp_id, c in strike_counts.items()
-            if emp_dept.get(emp_id) == r.department
-        )
-        out.append({
-            "department": r.department,
-            "employees": r.employees,
-            "total_points": r.total_points,
-            "total_records": r.total_records,
-            "total_strikes": strikes_in_dept,
-        })
-    return out
-
-
-def violation_type_frequency(session: Session, *, limit: int = 20) -> Sequence:
-    """How often each violation type gets issued. Rulebook usage report."""
-    stmt = (
-        select(
-            ViolationType.id,
-            ViolationType.name,
-            ViolationType.default_points,
-            ViolationType.is_strike,
-            func.count(ViolationRecord.id).label("times_issued"),
-            func.coalesce(func.sum(ViolationRecord.points), 0).label("total_points"),
-        )
-        .outerjoin(ViolationRecord, ViolationRecord.violation_type_id == ViolationType.id)
-        .group_by(ViolationType.id)
-        .order_by(func.count(ViolationRecord.id).desc())
-        .limit(limit)
-    )
-    return session.execute(stmt).all()
-
-
-def activity_over_time(
-    session: Session,
-    *,
-    days: int = 30,
-    bucket: str = "day",  # "day" | "week" | "month"
-) -> Sequence:
-    """
-    Time series of violation counts. Uses SQLite's strftime for bucketing —
-    swap to date_trunc for Postgres.
-    """
-    fmt = {
-        "day": "%Y-%m-%d",
-        "week": "%Y-W%W",
-        "month": "%Y-%m",
-    }.get(bucket)
-    if fmt is None:
-        raise ValueError("bucket must be 'day', 'week', or 'month'")
-
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-    stmt = (
-        select(
-            func.strftime(fmt, ViolationRecord.issued_at).label("bucket"),
-            func.count(ViolationRecord.id).label("count"),
-            func.coalesce(func.sum(ViolationRecord.points), 0).label("points"),
-        )
-        .where(ViolationRecord.issued_at >= cutoff)
-        .group_by("bucket")
-        .order_by("bucket")
-    )
-    return session.execute(stmt).all()
-
-
-def employees_with_repeat_strikes(
-    session: Session,
-    *,
-    min_strikes: int = 2,
-) -> Sequence:
-    """HR watchlist — employees at or above a strike threshold."""
-    stmt = (
-        select(
-            Employee.id,
-            Employee.employee_code,
-            Employee.full_name,
-            Employee.department,
-            Employee.total_strikes,
-            Employee.total_points,
-        )
-        .where(
-            Employee.status == EmployeeStatus.active,
-            Employee.total_strikes >= min_strikes,
-        )
-        .order_by(Employee.total_strikes.desc(), Employee.total_points.desc())
-    )
-    return session.execute(stmt).all()
-
-
-def violation_free_employees(
-    session: Session,
-    *,
-    since: Optional[datetime] = None,
-) -> Sequence:
-    """
-    Employees with zero records. If `since` is given, means "clean since
-    that date" — i.e., no records at or after it.
-    """
-    subq = select(ViolationRecord.employee_id)
-    if since is not None:
-        subq = subq.where(ViolationRecord.issued_at >= since)
-
-    stmt = (
-        select(
-            Employee.id,
-            Employee.employee_code,
-            Employee.full_name,
-            Employee.department,
-        )
-        .where(
-            Employee.status == EmployeeStatus.active,
-            Employee.id.not_in(subq),
-        )
-        .order_by(Employee.last_name, Employee.first_name)
-    )
-    return session.execute(stmt).all()
-
-
-
-# ============================================================================
-# VIOLATION REMOVAL — audit log
-# ============================================================================
-
-# use removed_by as the actor (no new param)
 def remove_violation_record(
     session: Session, record_id: int, *, removed_by: str, reason: str, commit: bool = True,
 ) -> ViolationRemoval:
     record = session.execute(
         select(ViolationRecord)
-        .options(joinedload(ViolationRecord.violation_type), joinedload(ViolationRecord.employee))
+        .options(
+            joinedload(ViolationRecord.subsection).joinedload(ViolationSubsection.violation_type),
+            joinedload(ViolationRecord.employee),
+        )
         .where(ViolationRecord.id == record_id)
     ).scalar_one_or_none()
     if record is None:
         raise ViolationRecordNotFound(record_id)
 
     removal = ViolationRemoval(
-        violation_record_id=record.id, violation_type_id=record.violation_type_id,
-        violation_type_name=record.violation_type.name if record.violation_type else "",
-        points=record.points, is_strike=record.is_strike,
-        original_notes=record.notes, original_issued_by=record.issued_by,
+        violation_record_id=record.id,
+        subsection_id=record.subsection_id,
+        subsection_name=record.subsection.name if record.subsection else "",
+        violation_type_name=(
+            record.subsection.violation_type.name
+            if record.subsection and record.subsection.violation_type else ""
+        ),
+        offense_number=record.offense_number,
+        penalty_description=record.penalty_description,
+        original_notes=record.notes,
+        original_issued_by=record.issued_by,
         original_issued_at=record.issued_at,
         employee_id=record.employee_id,
         employee_code=record.employee.employee_code if record.employee else "",
@@ -938,32 +946,155 @@ def remove_violation_record(
     session.flush()
     log_event(
         session, actor=removed_by, action="violation.removed",
-        target_type="violation", target_id=record_id,
-        employee_id=removal.employee_id,
-        summary=f"Removed '{removal.violation_type_name}' from "
-                f"{removal.employee_code} ({removal.employee_full_name}) — reason: {reason}",
-        metadata={"violation_type_name": removal.violation_type_name, "points": removal.points,
-                  "is_strike": removal.is_strike, "reason": reason,
-                  "employee_code": removal.employee_code, "employee_full_name": removal.employee_full_name},
+        target_type="violation", target_id=record_id, employee_id=removal.employee_id,
+        summary=(
+            f"Removed '{removal.subsection_name}' (offense #{removal.offense_number}) from "
+            f"{removal.employee_code} ({removal.employee_full_name}) — reason: {reason}"
+        ),
+        metadata={
+            "subsection_name": removal.subsection_name,
+            "violation_type_name": removal.violation_type_name,
+            "offense_number": removal.offense_number,
+            "penalty_description": removal.penalty_description,
+            "reason": reason,
+            "employee_code": removal.employee_code,
+            "employee_full_name": removal.employee_full_name,
+        },
     )
     if commit:
         session.commit()
     return removal
 
-def list_violation_removals(
-    session: Session,
-    *,
-    employee_id: Optional[int] = None,
-    removed_by: Optional[str] = None,
-    since: Optional[datetime] = None,
-    until: Optional[datetime] = None,
-    search: Optional[str] = None,
-    limit: int = 50,
-    offset: int = 0,
-) -> Sequence[ViolationRemoval]:
+
+def clear_employee_violations(
+    session: Session, employee_id: int, *, removed_by: str, reason: str, commit: bool = True,
+) -> int:
+    employee = session.get(Employee, employee_id)
+    if employee is None:
+        raise EmployeeNotFound(employee_id)
+    records = session.execute(
+        select(ViolationRecord)
+        .options(
+            joinedload(ViolationRecord.subsection).joinedload(ViolationSubsection.violation_type),
+            joinedload(ViolationRecord.employee),
+        )
+        .where(ViolationRecord.employee_id == employee_id)
+    ).scalars().all()
+    now = datetime.now(timezone.utc)
+    for record in records:
+        removal = ViolationRemoval(
+            violation_record_id=record.id,
+            subsection_id=record.subsection_id,
+            subsection_name=record.subsection.name if record.subsection else "",
+            violation_type_name=(
+                record.subsection.violation_type.name
+                if record.subsection and record.subsection.violation_type else ""
+            ),
+            offense_number=record.offense_number,
+            penalty_description=record.penalty_description,
+            original_notes=record.notes,
+            original_issued_by=record.issued_by,
+            original_issued_at=record.issued_at,
+            employee_id=record.employee_id,
+            employee_code=employee.employee_code,
+            employee_full_name=employee.full_name,
+            removed_by=removed_by, reason=reason, removed_at=now,
+        )
+        session.add(removal)
+        session.delete(record)
+        log_event(
+            session, actor=removed_by, action="violation.removed",
+            target_type="violation", target_id=record.id, employee_id=employee.id,
+            summary=(
+                f"Removed '{removal.subsection_name}' (offense #{removal.offense_number}) from "
+                f"{employee.employee_code} ({employee.full_name}) — amnesty — reason: {reason}"
+            ),
+            metadata={
+                "subsection_name": removal.subsection_name,
+                "violation_type_name": removal.violation_type_name,
+                "offense_number": removal.offense_number,
+                "penalty_description": removal.penalty_description,
+                "reason": reason,
+                "amnesty": True,
+                "employee_code": employee.employee_code,
+                "employee_full_name": employee.full_name,
+            },
+        )
+    if commit:
+        session.commit()
+    return len(records)
+
+
+# ============================================================================
+# VIOLATION RECORD — READ
+# ============================================================================
+
+def list_employee_violations(
+    session: Session, employee_id: int, *,
+    only_offense_number_gte: Optional[int] = None,
+    since: Optional[datetime] = None, until: Optional[datetime] = None,
+    limit: int = 100, offset: int = 0,
+) -> Sequence[ViolationRecord]:
     stmt = (
-        select(ViolationRemoval)
-        .order_by(ViolationRemoval.removed_at.desc(), ViolationRemoval.id.desc())
+        select(ViolationRecord)
+        .options(
+            joinedload(ViolationRecord.subsection).joinedload(ViolationSubsection.violation_type),
+            joinedload(ViolationRecord.employee),
+        )
+        .where(ViolationRecord.employee_id == employee_id)
+    )
+    if only_offense_number_gte is not None:
+        stmt = stmt.where(ViolationRecord.offense_number >= only_offense_number_gte)
+    if since is not None:
+        stmt = stmt.where(ViolationRecord.issued_at >= since)
+    if until is not None:
+        stmt = stmt.where(ViolationRecord.issued_at <= until)
+    stmt = stmt.order_by(ViolationRecord.issued_at.desc(), ViolationRecord.id.desc())
+    stmt = stmt.limit(limit).offset(offset)
+    return session.execute(stmt).scalars().all()
+
+
+def list_recent_violations(
+    session: Session, *, days: int = 30, limit: int = 50,
+) -> Sequence[ViolationRecord]:
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    stmt = (
+        select(ViolationRecord)
+        .options(
+            joinedload(ViolationRecord.subsection).joinedload(ViolationSubsection.violation_type),
+            joinedload(ViolationRecord.employee),
+        )
+        .where(ViolationRecord.issued_at >= cutoff)
+        .order_by(ViolationRecord.issued_at.desc(), ViolationRecord.id.desc())
+        .limit(limit)
+    )
+    return session.execute(stmt).scalars().all()
+
+
+def get_violation_record(session: Session, record_id: int) -> Optional[ViolationRecord]:
+    stmt = (
+        select(ViolationRecord)
+        .options(
+            joinedload(ViolationRecord.subsection).joinedload(ViolationSubsection.violation_type),
+            joinedload(ViolationRecord.employee),
+        )
+        .where(ViolationRecord.id == record_id)
+    )
+    return session.execute(stmt).scalar_one_or_none()
+
+
+# ============================================================================
+# VIOLATION REMOVAL — READ
+# ============================================================================
+
+def list_violation_removals(
+    session: Session, *,
+    employee_id: Optional[int] = None, removed_by: Optional[str] = None,
+    since: Optional[datetime] = None, until: Optional[datetime] = None,
+    search: Optional[str] = None, limit: int = 50, offset: int = 0,
+) -> Sequence[ViolationRemoval]:
+    stmt = select(ViolationRemoval).order_by(
+        ViolationRemoval.removed_at.desc(), ViolationRemoval.id.desc(),
     )
     if employee_id is not None:
         stmt = stmt.where(ViolationRemoval.employee_id == employee_id)
@@ -979,19 +1110,16 @@ def list_violation_removals(
             ViolationRemoval.reason.ilike(pattern),
             ViolationRemoval.employee_code.ilike(pattern),
             ViolationRemoval.employee_full_name.ilike(pattern),
+            ViolationRemoval.subsection_name.ilike(pattern),
             ViolationRemoval.violation_type_name.ilike(pattern),
         ))
-    stmt = stmt.limit(limit).offset(offset)
-    return session.execute(stmt).scalars().all()
+    return session.execute(stmt.limit(limit).offset(offset)).scalars().all()
 
 
 def count_violation_removals(
-    session: Session,
-    *,
-    employee_id: Optional[int] = None,
-    removed_by: Optional[str] = None,
-    since: Optional[datetime] = None,
-    until: Optional[datetime] = None,
+    session: Session, *,
+    employee_id: Optional[int] = None, removed_by: Optional[str] = None,
+    since: Optional[datetime] = None, until: Optional[datetime] = None,
     search: Optional[str] = None,
 ) -> int:
     stmt = select(func.count(ViolationRemoval.id))
@@ -1009,34 +1137,26 @@ def count_violation_removals(
             ViolationRemoval.reason.ilike(pattern),
             ViolationRemoval.employee_code.ilike(pattern),
             ViolationRemoval.employee_full_name.ilike(pattern),
+            ViolationRemoval.subsection_name.ilike(pattern),
             ViolationRemoval.violation_type_name.ilike(pattern),
         ))
     return session.execute(stmt).scalar_one()
 
 
-def get_violation_removal(
-    session: Session,
-    removal_id: int,
-) -> Optional[ViolationRemoval]:
+def get_violation_removal(session: Session, removal_id: int) -> Optional[ViolationRemoval]:
     return session.get(ViolationRemoval, removal_id)
 
 
 # ============================================================================
-# ACTIVITY — read side
+# ACTIVITY — read side (unchanged shape)
 # ============================================================================
 
 def list_activity_events(
-    session: Session,
-    *,
-    day: Optional[date] = None,
-    start: Optional[date] = None,
-    end: Optional[date] = None,
-    actor: Optional[str] = None,
-    action: Optional[str] = None,
-    target_type: Optional[str] = None,
-    employee_id: Optional[int] = None,
-    limit: int = 50,
-    offset: int = 0,
+    session: Session, *,
+    day: Optional[date] = None, start: Optional[date] = None, end: Optional[date] = None,
+    actor: Optional[str] = None, action: Optional[str] = None,
+    target_type: Optional[str] = None, employee_id: Optional[int] = None,
+    limit: int = 50, offset: int = 0,
 ) -> Sequence[ActivityEvent]:
     stmt = select(ActivityEvent).order_by(ActivityEvent.occurred_at.desc(), ActivityEvent.id.desc())
     if day is not None:
@@ -1057,15 +1177,10 @@ def list_activity_events(
 
 
 def count_activity_events(
-    session: Session,
-    *,
-    day: Optional[date] = None,
-    start: Optional[date] = None,
-    end: Optional[date] = None,
-    actor: Optional[str] = None,
-    action: Optional[str] = None,
-    target_type: Optional[str] = None,
-    employee_id: Optional[int] = None,
+    session: Session, *,
+    day: Optional[date] = None, start: Optional[date] = None, end: Optional[date] = None,
+    actor: Optional[str] = None, action: Optional[str] = None,
+    target_type: Optional[str] = None, employee_id: Optional[int] = None,
 ) -> int:
     stmt = select(func.count(ActivityEvent.id))
     if day is not None:
@@ -1086,21 +1201,20 @@ def count_activity_events(
 
 
 def get_activity_calendar(session: Session, *, start: date, end: date) -> Sequence:
-    """Per-day rollup for the calendar UI. Returns one row per day with events."""
-    total_stmt = (
+    stmt = (
         select(
             ActivityEvent.event_date,
             func.count(ActivityEvent.id).label("total"),
             func.sum(case((ActivityEvent.target_type == "employee", 1), else_=0)).label("employees"),
             func.sum(case((ActivityEvent.target_type == "violation", 1), else_=0)).label("violations"),
-            func.sum(case((ActivityEvent.target_type == "violation_type", 1), else_=0)).label("violation_types"),
+            func.sum(case((ActivityEvent.target_type.in_(["violation_type", "subsection"]), 1), else_=0)).label("config_changes"),
             func.sum(case((ActivityEvent.action == "violation.removed", 1), else_=0)).label("removals"),
         )
         .where(ActivityEvent.event_date >= start, ActivityEvent.event_date <= end)
         .group_by(ActivityEvent.event_date)
         .order_by(ActivityEvent.event_date)
     )
-    return session.execute(total_stmt).all()
+    return session.execute(stmt).all()
 
 
 def get_daily_digest_events(session: Session, day: date) -> Sequence[ActivityEvent]:
@@ -1110,3 +1224,177 @@ def get_daily_digest_events(session: Session, day: date) -> Sequence[ActivityEve
         .order_by(ActivityEvent.occurred_at.asc(), ActivityEvent.id.asc())
     )
     return session.execute(stmt).scalars().all()
+
+
+# ============================================================================
+# ANALYTICS
+# ============================================================================
+
+def top_offenders(
+    session: Session, *, limit: int = 10, by: str = "active",
+) -> Sequence:
+    """by: 'active' = current violations, 'total' = all-time including removed."""
+    if by == "active":
+        order_col = Employee.active_violation_count
+    elif by == "total":
+        order_col = (
+            select(func.count(ViolationRecord.id))
+            .where(ViolationRecord.employee_id == Employee.id)
+            .correlate(Employee)
+            .scalar_subquery()
+            + select(func.count(ViolationRemoval.id))
+            .where(ViolationRemoval.employee_id == Employee.id)
+            .correlate(Employee)
+            .scalar_subquery()
+        )
+    else:
+        raise ValueError("by must be 'active' or 'total'")
+
+    stmt = (
+        select(
+            Employee.id,
+            Employee.employee_code,
+            Employee.full_name,
+            Employee.department,
+            Employee.active_violation_count,
+            (
+                select(func.count(ViolationRecord.id))
+                .where(ViolationRecord.employee_id == Employee.id)
+                .correlate(Employee)
+                .scalar_subquery()
+                + select(func.count(ViolationRemoval.id))
+                .where(ViolationRemoval.employee_id == Employee.id)
+                .correlate(Employee)
+                .scalar_subquery()
+            ).label("total_offenses"),
+        )
+        .where(Employee.status == EmployeeStatus.active)
+        .order_by(order_col.desc(), Employee.id)
+        .limit(limit)
+    )
+    return session.execute(stmt).all()
+
+
+def department_summary(session: Session) -> Sequence:
+    active_rows = session.execute(
+        select(Employee.department, func.count(ViolationRecord.id).label("c"))
+        .join(ViolationRecord, ViolationRecord.employee_id == Employee.id, isouter=True)
+        .where(Employee.status == EmployeeStatus.active)
+        .group_by(Employee.department)
+    ).all()
+    active_map = {(r.department or ""): r.c for r in active_rows}
+
+    removed_rows = session.execute(
+        select(func.count(ViolationRemoval.id)).group_by(ViolationRemoval.employee_id)
+    ).all()
+
+    employees_rows = session.execute(
+        select(Employee.department, func.count(Employee.id).label("c"))
+        .where(Employee.status == EmployeeStatus.active)
+        .group_by(Employee.department)
+    ).all()
+
+    out = []
+    for r in employees_rows:
+        dept = r.department
+        out.append({
+            "department": dept,
+            "employees": r.c,
+            "active_violations": active_map.get(dept or "", 0),
+        })
+    out.sort(key=lambda x: x["active_violations"], reverse=True)
+    return out
+
+
+def subsection_frequency(session: Session, *, limit: int = 20) -> Sequence:
+    stmt = (
+        select(
+            ViolationSubsection.id,
+            ViolationSubsection.name.label("subsection_name"),
+            ViolationType.name.label("violation_type_name"),
+            func.count(ViolationRecord.id).label("times_issued"),
+            func.max(ViolationRecord.offense_number).label("max_offense_number"),
+        )
+        .join(ViolationRecord, ViolationRecord.subsection_id == ViolationSubsection.id, isouter=True)
+        .join(ViolationType, ViolationType.id == ViolationSubsection.violation_type_id)
+        .group_by(ViolationSubsection.id)
+        .order_by(func.count(ViolationRecord.id).desc())
+        .limit(limit)
+    )
+    return session.execute(stmt).all()
+
+
+def activity_over_time(session: Session, *, days: int = 30, bucket: str = "day") -> Sequence:
+    fmt = {"day": "%Y-%m-%d", "week": "%Y-W%W", "month": "%Y-%m"}.get(bucket)
+    if fmt is None:
+        raise ValueError("bucket must be 'day', 'week', or 'month'")
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    stmt = (
+        select(
+            func.strftime(fmt, ViolationRecord.issued_at).label("bucket"),
+            func.count(ViolationRecord.id).label("count"),
+        )
+        .where(ViolationRecord.issued_at >= cutoff)
+        .group_by("bucket")
+        .order_by("bucket")
+    )
+    return session.execute(stmt).all()
+
+
+def employees_with_repeat_offenses(
+    session: Session, *, min_offense_number: int = 2,
+) -> Sequence:
+    """Employees who have reached at least `min_offense_number` on any single subsection,
+    counting both active and removed records."""
+    rec = select(
+        ViolationRecord.employee_id.label("employee_id"),
+        ViolationRecord.subsection_id.label("subsection_id"),
+        ViolationRecord.offense_number.label("offense_number"),
+    )
+    rem = select(
+        ViolationRemoval.employee_id.label("employee_id"),
+        ViolationRemoval.subsection_id.label("subsection_id"),
+        ViolationRemoval.offense_number.label("offense_number"),
+    )
+    unioned = union_all(rec, rem).subquery()
+    max_per_emp = (
+        select(
+            unioned.c.employee_id,
+            func.max(unioned.c.offense_number).label("max_offense"),
+            func.count().label("total_offenses"),
+        )
+        .group_by(unioned.c.employee_id)
+        .having(func.max(unioned.c.offense_number) >= min_offense_number)
+        .subquery()
+    )
+    stmt = (
+        select(
+            Employee.id,
+            Employee.employee_code,
+            Employee.full_name,
+            Employee.department,
+            max_per_emp.c.max_offense,
+            max_per_emp.c.total_offenses,
+        )
+        .join(max_per_emp, max_per_emp.c.employee_id == Employee.id)
+        .where(Employee.status == EmployeeStatus.active)
+        .order_by(max_per_emp.c.max_offense.desc(), max_per_emp.c.total_offenses.desc())
+    )
+    return session.execute(stmt).all()
+
+
+def violation_free_employees(session: Session, *, since: Optional[datetime] = None) -> Sequence:
+    subq = select(ViolationRecord.employee_id)
+    if since is not None:
+        subq = subq.where(ViolationRecord.issued_at >= since)
+    stmt = (
+        select(
+            Employee.id, Employee.employee_code, Employee.full_name, Employee.department,
+        )
+        .where(
+            Employee.status == EmployeeStatus.active,
+            Employee.id.not_in(subq),
+        )
+        .order_by(Employee.last_name, Employee.first_name)
+    )
+    return session.execute(stmt).all()
