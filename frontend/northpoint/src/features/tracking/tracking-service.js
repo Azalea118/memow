@@ -19,5 +19,24 @@ export async function readTrackingLocation(id,signal){
 export async function readTrackingRoute(id,signal){
  const raw=await dataSource.request({service:'tracking',path:devicePath('route',id),signal});
  if(!raw||!Array.isArray(raw.segments)||raw.segments.some(segment=>!Array.isArray(segment)||segment.some(p=>!Array.isArray(p)||p.length!==2||!validLocation(p[0],p[1]))))throw Error('The tracking service returned an invalid route.');
- return raw.segments.filter(segment=>segment.length);
+ // Defense in depth: use timestamp/accuracy metadata when the new backend provides it.
+ const distance=(a,b)=>{const r=Math.PI/180,h=Math.sin((b[0]-a[0])*r/2)**2+Math.cos(a[0]*r)*Math.cos(b[0]*r)*Math.sin((b[1]-a[1])*r/2)**2;return 12742000*Math.asin(Math.sqrt(Math.min(1,Math.max(0,h))));};
+ const result=[];
+ if(Array.isArray(raw.point_segments)){
+  for(const segment of raw.point_segments){
+   if(!Array.isArray(segment))throw Error('Invalid route quality data.');
+   let points=[],last=null;
+   for(const p of segment){
+    if(!p||!validLocation(p.lat,p.lon)||!Number.isFinite(p.ts)||p.acc!=null&&(!Number.isFinite(p.acc)||p.acc<0||p.acc>25))continue;
+    const coord=[p.lat,p.lon];
+    if(last){const dt=p.ts-last.ts,d=distance([last.lat,last.lon],coord);if(dt<=0||dt<=60&&d>45*dt+125)continue;if(dt>60||d>1000){if(points.length)result.push(points);points=[];}}
+    points.push(coord);last=p;
+   }
+   if(points.length)result.push(points);
+  }
+ }else{
+  // Legacy API has no timestamps: break long connectors rather than invent a route.
+  for(const segment of raw.segments){let points=[];for(const coord of segment){if(points.length&&distance(points[points.length-1],coord)>1000){result.push(points);points=[];}points.push(coord);}if(points.length)result.push(points);}
+ }
+ return result;
 }

@@ -3,6 +3,7 @@ import {businessDate} from '../reports/yesterday.js';
 
 function activityRows(rows){
  if(!Array.isArray(rows)||rows.some(e=>!e||!Number.isSafeInteger(e.id)||e.id<1||e.photo_id!=null&&(!Number.isSafeInteger(e.photo_id)||e.photo_id<1)||e.photo_display_name!=null&&typeof e.photo_display_name!=='string'||typeof e.actor!=='string'||typeof e.action!=='string'||typeof e.created_at!=='string'||Number.isNaN(Date.parse(e.created_at))))throw Error('The photo service returned invalid activity.');
+ if(rows.some(e=>typeof e.photo_title!=='string'||typeof e.author!=='string'))throw Error('Photo activity needs the updated backend. Restart app2 and refresh.');
  return rows;
 }
 export function createPhotoActivity(request=photoRequest,notify=()=>{}){
@@ -13,13 +14,13 @@ export function createPhotoActivity(request=photoRequest,notify=()=>{}){
   Object.assign(state,{status:'loading',error:'',items:[],total:0,digest:null,actors:[]});notify();
   try{
    const [year,month]=state.month.split('-').map(Number),from=state.month+'-01',to=state.month+'-'+new Date(year,month,0).getDate();
-   const filters={q:state.q||undefined,actor:state.actor||undefined,action:state.action||undefined};
+   const filters={q:state.q||undefined,author:state.actor||undefined,action:state.action||undefined};
    const feed={...filters,limit:8,offset:(state.page-1)*8,from_date:state.day||undefined,to_date:state.day||undefined};
    const digestQuery={...filters,from_date:from,to_date:to,include_items:false},key=JSON.stringify(digestQuery);
    const [page,digest,actors]=await Promise.all([
     request('/activity',{query:feed,signal}),
     !force&&digestCache?.key===key?digestCache.value:request('/activity/digest',{query:digestQuery,signal}),
-    !force&&actorCache?actorCache:request('/activity/actors',{signal})
+    !force&&actorCache?actorCache:request('/activity/authors',{signal})
    ]);
    if(ticket!==version)return;
    activityRows(page.items);

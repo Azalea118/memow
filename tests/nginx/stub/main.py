@@ -23,7 +23,7 @@ if ROLE == "auth":
                 "X-Username": "testuser",
             })
         if authz == "Bearer device-good":
-            if method == "POST" and uri.startswith("/app3/"):
+            if method == "POST" and uri.split("?")[0] in ("/app3/", "/app2/mobile-upload"):
                 return JSONResponse({"ok": True}, headers={
                     "X-Device": "testuser:phone-1",
                 })
@@ -48,6 +48,7 @@ else:
             "path": path,
             "method": request.method,
             "x_actor": request.headers.get("x-actor"),
+            "authorization": request.headers.get("authorization"),
             "x_device": request.headers.get("x-device"),
             "host": request.headers.get("host"),
         }

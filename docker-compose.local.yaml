@@ -13,6 +13,7 @@ services:
       - TZ=Asia/Manila
       - AUTH_COOKIE_SECURE=0
       - AUTH_DB_PATH=/app/data/auth/auth.db
+      - APP1_DB_PATH=/app/data/app1/app.db
 
   app1:
     <<: *dev
@@ -20,7 +21,7 @@ services:
 
   app2:
     <<: *dev
-    environment: [TZ=Asia/Manila, PT_DB_PATH=/app/data/app2/photos.db, PT_UPLOAD_DIR=/app/data/app2/uploads]
+    environment: [TZ=Asia/Manila, PT_DB_PATH=/app/data/app2/photos.db, PT_UPLOAD_DIR=/app/data/app2/uploads, AUTH_DB_PATH=/app/data/auth/auth.db, APP1_DB_PATH=/app/data/app1/app.db]
 
   app3:
     <<: *dev

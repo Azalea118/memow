@@ -12,17 +12,11 @@ function positionDashboardActions(phone){
 function positionTrackingMap(phone){
  const page=document.querySelector('.tracking-page'),layout=page?.querySelector('.tracking-layout'),panel=page?.querySelector('.tracking-map-panel');
  if(!page||!layout||!panel)return;
- const toolbar=page.querySelector('#tracking-filters'),headingActions=document.querySelector('.page-heading .heading-actions'),refresh=document.querySelector('[data-action="tracking-refresh"]');
  if(phone){
   if(page.firstElementChild!==panel)page.prepend(panel);
-  let actions=page.querySelector('.tracking-mobile-actions');
-  if(refresh&&!actions){actions=document.createElement('div');actions.className='tracking-mobile-actions';toolbar.before(actions);}
-  if(refresh&&refresh.parentElement!==actions)actions.append(refresh);
- }else{
-  if(panel.parentElement!==layout)layout.append(panel);
-  if(refresh&&headingActions&&refresh.parentElement!==headingActions)headingActions.append(refresh);
-  page.querySelector('.tracking-mobile-actions')?.remove();
- }
+ }else if(panel.parentElement!==layout){layout.append(panel);}
+ // Refresh stays in the filter bar on both desktop and phone.
+
 }
 
 export function enhancePhoneLayout({icon}) {

@@ -37,7 +37,6 @@ export function renderDashboard(ctx) {
   const quickActions=[
     {label:'Issue Violation',icon:'shield',action:'record',disabled:!directoryReady,hint:'Load employees before issuing a violation.'},
     {label:'Add Employee',icon:'users',action:'add-employee',disabled:!directoryReady,hint:'Load employees before adding an employee.'},
-    {label:'Timestamp Camera',icon:'camera',action:'navigate',page:'camera',disabled:false},
     {label:'Map Tracking',icon:'map',action:'navigate',page:'tracking',disabled:false}
   ];
   return `<div class="dashboard-simple">

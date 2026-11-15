@@ -51,7 +51,7 @@ Open **http://localhost:8081/**. The existing backend sign-in page appears when 
 If you need an account, the backend's existing account command is:
 
 ```powershell
-docker compose -f docker-compose.yaml -f docker-compose.local.yaml exec auth uv run --no-sync python -m auth.manage create-user YOUR_USERNAME
+Use your existing HR/head-manager web account to sign in. Manage employee mobile accounts from Employees → Mobile App Access.
 ```
 
 If the stack is already running, apply the frontend mount by recreating only Nginx:

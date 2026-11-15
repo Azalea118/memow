@@ -29,7 +29,7 @@ import pytest
 # TUNING CONSTANTS — mirror of gps_service/main.py
 # ============================================================
 MAX_ACC           = 25        # m  — points above this are dropped
-MAX_SPEED         = 55        # m/s — speed sanity ceiling
+MAX_SPEED         = 45        # m/s — speed sanity ceiling
 GAP               = 60        # s  — long gap forces a new segment
 MIN_MOVE          = 15        # m  — minimum jitter radius floor
 BREAKOUT_DIST     = 20        # m  — min displacement to confirm movement
@@ -38,11 +38,9 @@ ACC_MULTIPLIER    = 1.8       # jitter radius = max(MIN_MOVE, acc * this)
 CONFIRM_COUNT     = 3         # coherent points needed to confirm movement
 MIN_STRAIGHTNESS  = 0.75
 WINDOW_SIZE       = 5         # smoothing window (median)
-MAX_REJECTS       = 5         # speed-rejects before forced segment bump
 ONLINE_SECONDS    = 15        # s  — ping newer than this counts as online
 
-# Accuracy assumed for points that don't send `acc` — matches the default
-# used inside receive():  jitter_radius = max(MIN_MOVE, (p.acc or 10) * ACC_MULTIPLIER)
+# Fixtures explicitly include valid accuracy; unknown accuracy is rejected.
 DEFAULT_ACC = 10
 JITTER_RADIUS_M = max(MIN_MOVE, DEFAULT_ACC * ACC_MULTIPLIER)
 
@@ -84,7 +82,7 @@ def _batch(device_id, points):
     return {"id": device_id, "points": points}
 
 
-def _pt(lat, lon, ts, acc=None):
+def _pt(lat, lon, ts, acc=DEFAULT_ACC):
     p = {"lat": lat, "lon": lon, "ts": ts}
     if acc is not None:
         p["acc"] = acc
@@ -106,8 +104,8 @@ def _moving_points(t, lat0=14.6, lon=120.9):
 
 class _FakeTime:
     """Stand-in for the `time` module. Only `.time()` is used by main.py."""
-    def __init__(self, start=1_000_000.0):
-        self.now = start
+    def __init__(self, start=None):
+        self.now = time.time() if start is None else start
 
     def time(self):
         return self.now
@@ -213,7 +211,7 @@ def test_coherent_movement_creates_single_segment(gps_client):
 
 
 def test_time_gap_creates_new_segment(gps_client):
-    t = _base_ts()
+    t = int(time.time()) - 180
     gps_client.post("/", json=_batch("gap-dev", _moving_points(t)))
 
     # Time gap > GAP, then one more moving point -> new segment.

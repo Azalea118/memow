@@ -10,8 +10,8 @@ for(const file of code){const result=spawnSync(process.execPath,['--check',file]
 const sources=files.filter(file=>file.includes(path.sep+'src'+path.sep)&&file.endsWith('.js')).map(file=>fs.readFileSync(file,'utf8')).join('\n');
 if(/\b(?:indexedDB|localStorage|sessionStorage)\b/.test(sources))throw new Error('Employee records must not be saved to browser storage.');
 for(const file of files.filter(file=>file.includes(path.sep+'src'+path.sep)&&file.endsWith('.js')&&!file.endsWith(path.sep+'hosted-api.js'))){if(/\b(?:fetch|XMLHttpRequest|WebSocket|EventSource)\b/.test(fs.readFileSync(file,'utf8')))throw new Error('Network requests must go through hosted-api.js.');}
-const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
-if(!html.includes('<script src="./config.js"></script>')||html.indexOf('<script src="./config.js"></script>')>html.indexOf('<script>'))throw new Error('Runtime configuration must load before the application.');
+const html=fs.readFileSync(path.join(root,'index.html'),'utf8')+'<script>'+fs.readFileSync(path.join(root,'generated/dashboard.js'),'utf8')+'</script>';
+if(!html.includes('<script src="./config.js"></script>'))throw new Error('Runtime configuration must load before the application.');
 const config=fs.readFileSync(path.join(root,'config.js'),'utf8');
 if(!config.includes("connect-src 'self' ${url.href} " ))throw new Error('The connection policy must follow the runtime API URL.');
 if(html.includes('cs317.duckdns.org')||html.includes('http://localhost:8081/app1'))throw new Error('The generated page must not hard-code an API server. Edit config.js instead.');

@@ -8,3 +8,23 @@
 
 /* Phone: map first, followed by refresh, search, summary and devices. */
 @media(max-width:900px){.tracking-view>.page-heading{margin-bottom:14px}.tracking-view>.page-heading .eyebrow,.tracking-view>.page-heading .page-description{display:none}.tracking-view>.page-heading h1{font-size:24px;margin:0}.tracking-view>.page-heading .heading-actions:empty{display:none}.tracking-page>.tracking-map-panel{margin-bottom:18px}.tracking-mobile-actions{margin-bottom:16px}.tracking-mobile-actions>.button{width:100%;min-height:44px}.tracking-page>.tracking-layout{display:block}.tracking-page>.tracking-summary{margin-top:0}}
+
+/* Legible device status and selected-device summary. */
+.tracking-device{padding:18px;text-align:left;min-height:100px}
+.tracking-device-top{gap:12px;flex-wrap:wrap;align-items:center}
+.tracking-device-top strong{font-size:17px;line-height:1.5;overflow-wrap:anywhere}
+.tracking-status{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;background:#edf3fa;color:#234e7d;font-size:13px;font-weight:600;white-space:nowrap}
+.tracking-status.online{background:#e4eef9;color:#234e7d}.tracking-status.offline{background:#f1f3f6;color:#526176}
+.tracking-device-id{font-size:13px;overflow-wrap:anywhere}.tracking-device-meta{font-size:14px;line-height:1.6;margin-top:9px}
+.tracking-selected{padding:22px;background:#f8faff}.tracking-selected-title{gap:16px;align-items:center;flex-wrap:wrap}
+.tracking-eyebrow{font-size:12px;letter-spacing:.08em;color:#536d89}.tracking-selected-title h3{font-size:21px;margin:6px 0}.tracking-selected-title p{font-size:13px;overflow-wrap:anywhere}
+.tracking-details{gap:16px;margin-top:18px}.tracking-details>div{padding:12px;background:white;border:1px solid #dce5ef;border-radius:10px;min-width:0}.tracking-details dt{font-size:14px;color:#526176}.tracking-details dd{font-size:17px;line-height:1.5;margin-top:5px;overflow-wrap:anywhere}
+.tracking-list-note[hidden]{display:none}
+@media(max-width:700px){.tracking-details{grid-template-columns:repeat(2,minmax(0,1fr))}.tracking-selected{padding:16px}}
+
+/* One visible refresh action, alongside the tracking filters. */
+#tracking-filters [data-action="tracking-refresh"] {
+ min-height:44px;padding:10px 18px;border:1px solid #c8d7e9;
+ background:#fff;color:#234669;font-size:15px;font-weight:600;border-radius:9px;
+}
+#tracking-filters [data-action="tracking-refresh"]:hover {background:#edf4fc;}

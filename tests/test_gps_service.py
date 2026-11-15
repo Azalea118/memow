@@ -3,7 +3,7 @@ import time
 
 
 def _batch(device_id, points):
-    return {"id": device_id, "points": points}
+    return {"id": device_id, "points": [{"acc":10, **p} for p in points]}
 
 
 def test_first_point_saved(gps_client):

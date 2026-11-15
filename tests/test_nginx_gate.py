@@ -185,3 +185,21 @@ def test_login_rate_limit():
     statuses = [_post("/auth/login", data={"u": "x", "p": "y"}).status_code
                 for _ in range(12)]
     assert 503 in statuses, f"rate limiter never fired: {statuses}"
+
+
+def test_mobile_upload_passes_bearer_and_drops_claimed_actor():
+    r = _post('/app2/mobile-upload', headers={'Authorization':'Bearer device-good', 'X-Actor':'Forged name'})
+    assert r.status_code == 200
+    assert r.json()['authorization'] == 'Bearer device-good'
+    assert r.json()['x_actor'] in (None, '')
+
+
+def test_mobile_upload_without_token_does_not_redirect():
+    r = _post('/app2/mobile-upload')
+    assert r.status_code == 401
+    assert 'location' not in r.headers
+
+
+def test_mobile_token_cannot_use_browser_photo_upload():
+    r = _post('/app2/upload', headers={'Authorization':'Bearer device-good'})
+    assert r.status_code in (302, 401)

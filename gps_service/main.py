@@ -8,7 +8,7 @@ from fastapi import FastAPI, Depends, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, Integer, BigInteger, Float, String, Index, event
+from sqlalchemy import create_engine, Column, Integer, BigInteger, Float, String, Index, event, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import declarative_base, sessionmaker
 
@@ -16,7 +16,7 @@ TZ = ZoneInfo("Asia/Manila")
 
 # ---------- Anti-Jitter Settings (Tuned for Real Android GPS) ----------
 MAX_ACC = 25
-MAX_SPEED = 55
+MAX_SPEED = 45
 GAP = 60
 MIN_MOVE = 15
 BREAKOUT_DIST = 20
@@ -25,7 +25,6 @@ ACC_MULTIPLIER = 1.8
 CONFIRM_COUNT = 3
 MIN_STRAIGHTNESS = 0.75
 WINDOW_SIZE = 5
-MAX_REJECTS = 5
 
 ONLINE_SECONDS = 15   # a ping newer than this counts as online
 
@@ -51,9 +50,15 @@ class TrackPoint(Base):
     lat = Column(Float, nullable=False)
     lon = Column(Float, nullable=False)
     segment = Column(Integer, nullable=False)
+    accuracy_m = Column(Float)
     __table_args__ = (Index("ix_device_ts", "device_id", "ts", unique=True),)
 
 Base.metadata.create_all(engine)
+# Additive migration: retain existing routes; old rows have unknown accuracy.
+with engine.begin() as connection:
+    if 'accuracy_m' not in {r[1] for r in connection.execute(text('PRAGMA table_info(track_points)'))}:
+        connection.execute(text('ALTER TABLE track_points ADD COLUMN accuracy_m FLOAT'))
+receive_lock = threading.RLock()
 
 def get_db():
     db = SessionLocal()
@@ -100,7 +105,7 @@ class Batch(BaseModel):
 def haversine(a, b, c, d):
     p1, p2 = math.radians(a), math.radians(c)
     h = math.sin((p2 - p1) / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(math.radians(d - b) / 2) ** 2
-    return 12742000 * math.asin(math.sqrt(h))
+    return 12742000 * math.asin(math.sqrt(min(1, max(0, h))))
 
 def is_coherent_breakout(anchor_lat, anchor_lon, pts):
     dists = [haversine(anchor_lat, anchor_lon, pt[0], pt[1]) for pt in pts]
@@ -127,8 +132,7 @@ def load_state(db, dev):
 async def serve_map_app():
     return FileResponse(BASE_DIR / "map.html")
 
-@gps_service.post("/")
-def receive(batch: Batch, db=Depends(get_db), x_device: str | None = Header(None)):
+def _receive(batch: Batch, db=Depends(get_db), x_device: str | None = Header(None)):
     # Device binding: tracker tokens are named "username:device_id". If nginx
     # stamped such a name, the payload id must match it. Tokens without a colon
     # (made with add-device) and requests without the header skip this check.
@@ -137,23 +141,41 @@ def receive(batch: Batch, db=Depends(get_db), x_device: str | None = Header(None
 
     s = load_state(db, batch.id)
     rows = []
+    accepted_fix = None
 
     for p in sorted(batch.points, key=lambda p: p.ts):
         if s is not None and p.ts <= s["seen"]:
             continue
 
-        if p.acc is not None and p.acc > MAX_ACC:
-            if s is not None:
-                s["seen"] = p.ts
+        if (not all(math.isfinite(v) for v in (p.lat,p.lon,p.ts)) or
+            abs(p.lat)>90 or abs(p.lon)>180 or p.acc is None or
+            not math.isfinite(p.acc) or not 0<=p.acc<=MAX_ACC or
+            p.ts>time.time()+30 or p.ts<day_start()):
             continue
+        quality = s.get('quality', (s['lat'],s['lon'],s['seen'],MAX_ACC)) if s else None
+        if quality:
+            elapsed = p.ts-quality[2]
+            if elapsed <= 0:
+                continue
+            if elapsed <= 120 and haversine(quality[0],quality[1],p.lat,p.lon) > MAX_SPEED*elapsed+quality[3]+p.acc+25:
+                continue
+        accepted_fix = p
+        if s:
+            s['quality'] = (p.lat,p.lon,p.ts,p.acc)
+            if quality and p.ts-quality[2] > GAP:
+                # Never draw a connector across a reporting gap.
+                s.update(lat=p.lat,lon=p.lon,ts=p.ts,seen=p.ts,seg=s['seg']+1,
+                         moving=False,pending=[],window=[(p.lat,p.lon)],recent_raw=[],rejects=0)
+                rows.append(TrackPoint(device_id=batch.id,ts=p.ts,lat=p.lat,lon=p.lon,segment=s['seg'],accuracy_m=p.acc))
+                continue
 
         if s is None:
             s = {
                 "lat": p.lat, "lon": p.lon, "ts": p.ts, "seen": p.ts,
-                "seg": 0, "rejects": 0, "moving": False,
+                "seg": 0, "rejects": 0, "moving": False, "quality": (p.lat,p.lon,p.ts,p.acc),
                 "pending": [], "window": [(p.lat, p.lon)]
             }
-            rows.append(TrackPoint(device_id=batch.id, ts=p.ts, lat=p.lat, lon=p.lon, segment=0))
+            rows.append(TrackPoint(device_id=batch.id, ts=p.ts, lat=p.lat, lon=p.lon, segment=0, accuracy_m=p.acc))
             continue
 
         gap = p.ts - s["seen"]
@@ -161,25 +183,34 @@ def receive(batch: Batch, db=Depends(get_db), x_device: str | None = Header(None
         d = haversine(s["lat"], s["lon"], p.lat, p.lon)
         dt = max(p.ts - s["ts"], 1)
 
-        jitter_radius = max(MIN_MOVE, (p.acc or 10) * ACC_MULTIPLIER)
+        # Raw fixes, not the lagging smoothed route point, determine a stop.
+        recent = s.setdefault("recent_raw", [])
+        recent.append((p.lat, p.lon, p.ts, p.acc))
+        recent[:] = [q for q in recent if p.ts-q[2] <= 30]
+        if s["moving"] and len(recent) >= 4 and p.ts-recent[0][2] >= 20:
+            center_lat = statistics.median(q[0] for q in recent)
+            center_lon = statistics.median(q[1] for q in recent)
+            radius = max(6, statistics.median(q[3] for q in recent))
+            if all(haversine(center_lat,center_lon,q[0],q[1]) <= radius for q in recent):
+                s["moving"] = False
+                s["pending"].clear()
+                s["window"] = [(s["lat"],s["lon"])]
+
+        jitter_radius = max(MIN_MOVE, p.acc * ACC_MULTIPLIER)
         if not s["moving"] and d < jitter_radius:
             s["rejects"] = 0
             s["pending"].clear()
             continue
 
-        if s["moving"] and d < MOVE_MIN_STEP:
-            s["moving"] = False
+        if s["moving"] and d < max(MOVE_MIN_STEP, p.acc * 1.2):
+            # Keep accumulating real displacement; an uncertain step is not motion.
+            # The raw-fix window above confirms an actual stop.
             s["pending"].clear()
             continue
 
-        if d / dt > MAX_SPEED and gap <= GAP:
-            s["rejects"] += 1
-            if s["rejects"] < MAX_REJECTS:
-                continue
-            s["seg"] += 1
-            s["moving"] = True
-            s["pending"].clear()
-            s["window"].clear()
+        if d > MAX_SPEED * dt + MAX_ACC * 2 + 25 and gap <= GAP:
+            # Repeated bad fixes never earn an automatic acceptance.
+            continue
         elif not s["moving"]:
             s["pending"].append((p.lat, p.lon, p.ts))
             if len(s["pending"]) > CONFIRM_COUNT:
@@ -199,7 +230,7 @@ def receive(batch: Batch, db=Depends(get_db), x_device: str | None = Header(None
                 sm_lat = statistics.median(pt[0] for pt in s["window"])
                 sm_lon = statistics.median(pt[1] for pt in s["window"])
                 s.update(lat=sm_lat, lon=sm_lon, ts=ts_p, seen=ts_p, rejects=0)
-                rows.append(TrackPoint(device_id=batch.id, ts=ts_p, lat=sm_lat, lon=sm_lon, segment=s["seg"]))
+                rows.append(TrackPoint(device_id=batch.id, ts=ts_p, lat=sm_lat, lon=sm_lon, segment=s["seg"], accuracy_m=p.acc))
             continue
 
         if gap > GAP:
@@ -213,7 +244,7 @@ def receive(batch: Batch, db=Depends(get_db), x_device: str | None = Header(None
         smooth_lon = statistics.median(pt[1] for pt in s["window"])
 
         s.update(lat=smooth_lat, lon=smooth_lon, ts=p.ts, seen=p.ts, rejects=0)
-        rows.append(TrackPoint(device_id=batch.id, ts=p.ts, lat=smooth_lat, lon=smooth_lon, segment=s["seg"]))
+        rows.append(TrackPoint(device_id=batch.id, ts=p.ts, lat=smooth_lat, lon=smooth_lon, segment=s["seg"], accuracy_m=p.acc))
 
     state[batch.id] = s
 
@@ -226,15 +257,15 @@ def receive(batch: Batch, db=Depends(get_db), x_device: str | None = Header(None
             for r in rows:
                 try:
                     db.add(TrackPoint(device_id=r.device_id, ts=r.ts, lat=r.lat,
-                                      lon=r.lon, segment=r.segment))
+                                      lon=r.lon, segment=r.segment, accuracy_m=r.accuracy_m))
                     db.commit()
                 except IntegrityError:
                     db.rollback()
 
-    if s:
+    if s and accepted_fix and time.time()-accepted_fix.ts<=120:
         now = time.time()
         prev = live.get(batch.id, {})
-        last_acc = batch.points[-1].acc if batch.points else prev.get("acc")
+        last_acc = accepted_fix.acc
         tracker = x_device.split(":", 1)[0] if x_device else prev.get("tracker")
         # a gap since the last ping means a new "online session"
         first_seen = prev.get("first_seen", now)
@@ -243,6 +274,11 @@ def receive(batch: Batch, db=Depends(get_db), x_device: str | None = Header(None
         live[batch.id] = {"lat": s["lat"], "lon": s["lon"], "last_seen": now,
                           "first_seen": first_seen, "acc": last_acc, "tracker": tracker}
     return {"status": "success", "saved": len(rows)}
+
+@gps_service.post("/")
+def receive(batch: Batch, db=Depends(get_db), x_device: str | None = Header(None)):
+    with receive_lock:
+        return _receive(batch, db, x_device)
 
 @gps_service.get("/live/{dev}")
 def get_live(dev: str):
@@ -277,8 +313,35 @@ def devices(include_offline: bool = False):
 def route(dev: str, db=Depends(get_db)):
     rows = (db.query(TrackPoint)
               .filter(TrackPoint.device_id == dev, TrackPoint.ts >= day_start())
-              .order_by(TrackPoint.ts))
-    segs = {}
-    for r in rows:
-        segs.setdefault(r.segment, []).append([r.lat, r.lon])
-    return {"segments": list(segs.values())}
+              .order_by(TrackPoint.ts).all())
+    rows = [r for r in rows if math.isfinite(r.lat) and math.isfinite(r.lon)
+            and abs(r.lat)<=90 and abs(r.lon)<=180 and r.ts<=time.time()+30
+            and (r.accuracy_m is None or math.isfinite(r.accuracy_m) and 0<=r.accuracy_m<=MAX_ACC)]
+    segments, current = [], []
+    previous = None
+    for index, r in enumerate(rows):
+        # Remove isolated historic spikes using their neighboring fixes as evidence.
+        following = rows[index+1] if index+1<len(rows) else None
+        if following and 0<following.ts-r.ts<=GAP:
+            jump = haversine(r.lat,r.lon,following.lat,following.lon)
+            reference = previous or (rows[index+2] if index+2<len(rows) else None)
+            if reference and jump>MAX_SPEED*(following.ts-r.ts)+125:
+                span = abs(following.ts-reference.ts)
+                if span<=GAP and haversine(reference.lat,reference.lon,following.lat,following.lon)<=MAX_SPEED*span+125:
+                    continue
+        if previous:
+            elapsed = r.ts-previous.ts
+            distance = haversine(previous.lat,previous.lon,r.lat,r.lon)
+            if elapsed<=0:
+                continue
+            if elapsed<=GAP and distance>MAX_SPEED*elapsed+125:
+                continue
+            if r.segment!=previous.segment or elapsed>GAP or distance>1000:
+                if current: segments.append(current)
+                current=[]
+        current.append({'lat':r.lat,'lon':r.lon,'ts':r.ts,'acc':r.accuracy_m})
+        previous=r
+    if current: segments.append(current)
+    if not segments: return {'segments': []}
+    return {'segments': [[[p['lat'],p['lon']] for p in seg] for seg in segments],
+            'point_segments': segments}

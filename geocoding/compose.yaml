@@ -1,0 +1,53 @@
+# Separate project: does not restart or reconfigure the existing Northpoint stack.
+name: northpoint-places
+services:
+  prepare-map:
+    profiles: [tools]
+    build:
+      context: .
+      dockerfile: Map.Dockerfile
+    volumes:
+      - ../data/geocoding/maps:/maps
+    mem_limit: 4g
+  nominatim:
+    image: mediagis/nominatim:5.3
+    restart: "no"
+    mem_limit: 4g
+    shm_size: 512m
+    environment:
+      PBF_PATH: /maps/cdo-bukidnon.osm.pbf
+      REVERSE_ONLY: "true"
+      IMPORT_STYLE: full
+      FREEZE: "true"
+      UPDATE_MODE: none
+      THREADS: "1"
+      GUNICORN_WORKERS: "1"
+      POSTGRES_SHARED_BUFFERS: 256MB
+      POSTGRES_MAINTENANCE_WORK_MEM: 512MB
+      POSTGRES_AUTOVACUUM_WORK_MEM: 128MB
+      POSTGRES_WORK_MEM: 8MB
+      POSTGRES_EFFECTIVE_CACHE_SIZE: 1GB
+      POSTGRES_MAX_WAL_SIZE: 512MB
+      IMPORT_WIKIPEDIA: "false"
+      IMPORT_US_POSTCODES: "false"
+      IMPORT_GB_POSTCODES: "false"
+      IMPORT_TIGER_ADDRESSES: "false"
+    volumes:
+      - ../data/geocoding/maps:/maps:ro
+      - places-db:/var/lib/postgresql/16/main
+    ports:
+      - "127.0.0.1:8088:8080"
+  photo-places:
+    image: python:3.12-slim-bookworm
+    restart: unless-stopped
+    mem_limit: 128m
+    environment:
+      PT_DB_PATH: /data/photos.db
+      GEOCODER_URL: http://nominatim:8080
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - ./worker.py:/opt/worker.py:ro
+      - ../data/app2:/data
+    command: [python, -u, /opt/worker.py]
+volumes:
+  places-db:

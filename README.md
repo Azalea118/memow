@@ -20,35 +20,23 @@ docker compose -f docker-compose.yaml -f docker-compose.local.yaml up -d --build
 
 Open http://localhost:8081
 
-## Accounts & devices
+## Mobile accounts — HR website only
 
-All account management goes through `auth.manage`, run inside the `auth` container:
+Sign in using an existing HR/head-manager web account. Open Employees, choose
+an employee, then open **Mobile App Access**. Enter a username and password
+and click **Create Mobile Account**. The employee link is saved automatically.
+Use this same section to reset passwords or enable/disable access. For an
+older unlinked tracker, expand **Already has an older tracker account?** and
+use **Link Existing Account** with its username and a new password.
 
-```bash
-# create / update a browser user (session-cookie login)
-docker compose -f docker-compose.yaml -f docker-compose.local.yaml exec auth \
-  uv run --no-sync python -m auth.manage create-user james
+All authenticated web users are authorized managers. Phone tokens cannot
+create accounts or read the HR dashboard. No account-management terminal
+commands are required. Keep the existing `data` directory when updating.
+This update assumes your existing working HR sign-in; it does not ship a
+shared/default HR password or a public registration page.
 
-# create / update a tracker account (used by the Android app)
-docker compose -f docker-compose.yaml -f docker-compose.local.yaml exec auth \
-  uv run --no-sync python -m auth.manage create-tracker phone1
-
-# disable a tracker and log out all its phones
-docker compose -f docker-compose.yaml -f docker-compose.local.yaml exec auth \
-  uv run --no-sync python -m auth.manage disable-tracker phone1
-
-# issue a device token for a tracker (shown once — copy it now)
-docker compose -f docker-compose.yaml -f docker-compose.local.yaml exec auth \
-  uv run --no-sync python -m auth.manage add-device phone1
-
-# revoke a device token
-docker compose -f docker-compose.yaml -f docker-compose.local.yaml exec auth \
-  uv run --no-sync python -m auth.manage revoke-device phone1
-
-# list users, trackers, and devices
-docker compose -f docker-compose.yaml -f docker-compose.local.yaml exec auth \
-  uv run --no-sync python -m auth.manage list
-```
+See `PHASE2_SETUP_WINDOWS.md` in the delivery package for installation,
+Android build steps, and the acceptance checklist.
 
 ## Run on production (VPS)
 
@@ -61,7 +49,7 @@ Back up `auth/auth.db` before every deploy.
 ## Auth
 
 - Browser → session cookie (7 days)
-- Phone → device token (only works for `POST /app3/`)
+- Phone → device token (`POST /app3/` for GPS; `POST /app2/mobile-upload` for linked employee photos; `/auth/device-me` validates its own token)
 - nginx forwards every request to auth/verify before it reaches an app. That endpoint must return 2xx (allow), 401 (deny → redirect to login), or 403 (deny). Anything else — including a 500 — is surfaced to the client as a 500.
 
 ## Android
@@ -110,6 +98,6 @@ public URL = /<appN> + path in appN_openapi.json
 
 ```bash
 uv run pytest tests/unit/ -v                    # unit
-uv run pytest tests/ -m "not integration" -v    # integration
-uv run pytest tests/ -m integration -v          # system
+uv run pytest tests/ -m "not system" -v    # integration
+uv run pytest tests/ -m system -v          # system
 ```

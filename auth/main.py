@@ -15,10 +15,10 @@ PREFIX = "/auth"
 COOKIE = "auth_session"
 COOKIE_SECURE = os.getenv("AUTH_COOKIE_SECURE", "1") == "1"
 SESSION_TTL = 7 * 24 * 3600
-# what a device token may do: POST anywhere under /app3/, nothing else
+# Device tokens may upload GPS/photos and edit a mobile photo title only.
 DEVICE_ALLOWED_PREFIX = "/app3/"
 DEVICE_ALLOWED_METHOD = "POST"
-DEVICE_ALLOWED = {(DEVICE_ALLOWED_METHOD, DEVICE_ALLOWED_PREFIX)}
+DEVICE_ALLOWED = {(DEVICE_ALLOWED_METHOD, DEVICE_ALLOWED_PREFIX), ("POST", "/app2/mobile-upload")}
 LOGIN_HTML_PATH = Path(os.getenv(
     "LOGIN_HTML",
     BASE_DIR.parent / "frontend" / "northpoint" / "login.html",
@@ -204,7 +204,10 @@ def verify(request: Request):
                 "AND (d.expires_at IS NULL OR d.expires_at>?) "
                 "AND (d.tracker_id IS NULL OR t.disabled=0)",
                 (hash_token(bearer[7:].strip()), now)).fetchone()
-            if dev and (method, path) in DEVICE_ALLOWED:
+            allowed = (method, path) in DEVICE_ALLOWED or (
+                method == 'PATCH' and re.fullmatch(r'/app2/mobile-photos/[1-9][0-9]*/title', path) is not None
+            )
+            if dev and allowed:
                 if now - (dev["last_used"] or 0) > RENEW_AFTER:
                     with c:
                         c.execute("UPDATE devices SET last_used=?, expires_at=? WHERE id=?",
@@ -267,3 +270,15 @@ def me(request: Request):
                  "full_name": full_name(row)},
                 headers={"Cache-Control": "no-store"})
     return JSONResponse({"detail": "Not signed in"}, status_code=401)
+
+
+# Additive migration: old trackers keep GPS access until HR links them.
+with closing(db()) as _c, _c:
+    _cols = {r['name'] for r in _c.execute('PRAGMA table_info(trackers)')}
+    for _name, _type in [('employee_id', 'INTEGER'), ('employee_code', 'TEXT')]:
+        if _name not in _cols:
+            _c.execute(f'ALTER TABLE trackers ADD COLUMN {_name} {_type}')
+    _c.execute('CREATE UNIQUE INDEX IF NOT EXISTS ux_tracker_employee ON trackers(employee_id) WHERE employee_id IS NOT NULL')
+
+from auth.mobile_access import router as mobile_access_router
+auth_app.include_router(mobile_access_router)
