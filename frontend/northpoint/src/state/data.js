@@ -12,6 +12,6 @@ export function visibleViolations() {
 export function employeeSummary(id) {
   const employee = store.employees.find(employee => employee.id === id);
   const violations = store.violations.filter(record => record.employeeId === id);
-  const points = employee?.totalPoints ?? null, strikes = employee?.totalStrikes ?? null;
-  return { violations, total: store.recordsReady ? violations.length : null, points, strikes, status: strikes >= 2 ? 'Needs attention' : points > 0 || strikes > 0 ? 'For monitoring' : store.recordsReady && !violations.length ? 'Good standing' : 'Not provided' };
+  const maxOffense=Math.max(0,...violations.map(v=>v.offenseNumber),...store.removals.filter(r=>r.employeeId===id).map(r=>r.offenseNumber));
+  return {violations,total:employee?.activeCount??null,activeCount:employee?.activeCount??null,totalOffenses:employee?.totalOffenses??null,maxOffense,status:maxOffense>=2?'Repeated offenses':employee?.activeCount?'For review':'No active violations'};
 }

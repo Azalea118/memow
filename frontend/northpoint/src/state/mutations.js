@@ -6,18 +6,16 @@ export function pendingMutation() { return pending; }
 export function clearPendingMutation() { pending = null; }
 
 export function typePayload(values) {
-  const name = String(values.name || '').trim(), description = String(values.description || '').trim(), points = Number(values.points);
-  if (!name || !description) throw new Error('Please enter a name and description.');
-  if (name.length > 100 || description.length > 1000) throw new Error('The name or description is too long. Please shorten it.');
-  if (!Number.isInteger(points) || points < 0 || points > 100) throw new Error('Enter a whole number of points from 0 to 100.');
-  return { name, description, default_points: points, is_strike: values.strike === 'on' };
+ const name=String(values.name||'').trim(),description=String(values.description||'').trim();
+ if(!name||name.length>150)throw new Error('Enter a category name of 150 characters or fewer.');
+ return {name,description:description||null};
 }
 export async function saveType(id, values, actor) { return apiRequest(`/violation-types${id ? '/' + apiId(id) : ''}`, { method: id ? 'PATCH' : 'POST', body: typePayload(values), actor }); }
 export async function changeType(id, mode, actor) { return apiRequest(`/violation-types/${apiId(id)}${mode === 'delete' ? '' : '/' + mode}`, { method: mode === 'delete' ? 'DELETE' : 'POST', actor }); }
 export async function issueViolation(employeeApiId, values, actor) {
   const issuer = String(values.recordedBy || '').trim();
   if (!issuer) throw new Error('Choose who issued this violation. Your signed-in name is used automatically.');
-  return apiRequest(`/employees/${apiId(employeeApiId)}/violations`, { method: 'POST', actor, body: { violation_type_id: Number(apiId(values.typeId)), notes: String(values.description || '').trim(), issued_by: issuer } });
+  return apiRequest(`/employees/${apiId(employeeApiId)}/violations`, { method: 'POST', actor, body: { subsection_id: Number(apiId(values.subsectionId)), notes: String(values.description || '').trim(), issued_by: issuer } });
 }
 export async function updateViolation(id, values, actor) {
   const issuer = String(values.recordedBy || '').trim();
@@ -29,8 +27,8 @@ export async function deleteViolation(id, reason, removedBy) {
   reason = reason || 'No reason provided.';
   if (reason.length > 1000) throw new Error('Keep the removal reason within 1,000 characters.');
   if (!removedBy) throw new Error('Sign in before removing a record.');
-  // Removal attribution is in the body. The reference explicitly excludes X-Actor.
-  return apiRequest(`/violations/${apiId(id)}/remove`, { method: 'POST', body: { removed_by: removedBy, reason } });
+  // The current backend takes removal attribution from X-Actor.
+  return apiRequest(`/violations/${apiId(id)}/remove`, { method: 'POST', actor: removedBy, body: { reason } });
 }
 
 // A single write per explicit confirmation. Lost replies are resolved by GET only.

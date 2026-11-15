@@ -30,7 +30,7 @@ script += `const {dataSource,sourceLabel,sourceNotice}=(()=>{
 ${withoutExports(read('state/data-source.js'))}
 return {dataSource,sourceLabel,sourceNotice};})();
 `;
-script += `const {VIOLATION_STATUSES,normalizeViolationStatus,violationStatusLabel,localDate,startOfWeek,weeklyTotals,monthlyTotals,dashboardSummary,recentViolationActivity}=(()=>{\n${withoutExports(read('shared/domain.js'))}\nreturn {VIOLATION_STATUSES,normalizeViolationStatus,violationStatusLabel,localDate,startOfWeek,weeklyTotals,monthlyTotals,dashboardSummary,recentViolationActivity};})();\n`;
+script += `const {WATCHLIST_OFFENSE,VIOLATION_STATUSES,normalizeViolationStatus,violationStatusLabel,localDate,startOfWeek,weeklyTotals,monthlyTotals,dashboardSummary,recentViolationActivity}=(()=>{\n${withoutExports(read('shared/domain.js'))}\nreturn {WATCHLIST_OFFENSE,VIOLATION_STATUSES,normalizeViolationStatus,violationStatusLabel,localDate,startOfWeek,weeklyTotals,monthlyTotals,dashboardSummary,recentViolationActivity};})();\n`;
 script += `const {loadingSkeleton}=(()=>{\n${withoutExports(read('shared/loading.js'))}\nreturn {loadingSkeleton};})();\n`;
 script += `const {apiId,apiActor,apiRequest,paginatedApi}=(()=>{\n${withoutExports(read('api/api-client.js'))}\nreturn {apiId,apiActor,apiRequest,paginatedApi};})();\n`;
 script += `const {normalizeApiEmployee,employeeDirectory,loadEmployeeDirectory,suspendEmployeeDirectory,apiEmployeeSummary,nextApiEmployeeCode,employeeCodeKey,fetchEmployeeDirectorySnapshot,employeeCreatePayload,employeeMatchesCreation,createApiEmployee}=(()=>{\n${withoutExports(read('features/employees/employee-api.js'))}\nreturn {normalizeApiEmployee,employeeDirectory,loadEmployeeDirectory,suspendEmployeeDirectory,apiEmployeeSummary,nextApiEmployeeCode,employeeCodeKey,fetchEmployeeDirectorySnapshot,employeeCreatePayload,employeeMatchesCreation,createApiEmployee};})();\n`;
@@ -42,6 +42,7 @@ script += `const {mutationInFlight,pendingMutation,runMutation,checkPendingMutat
 script += `const {sortEmployeeRecords,analyticsData,historyEvents}=(()=>{\n${withoutExports(read('features/reports/insight-data.js'))}\nreturn {sortEmployeeRecords,analyticsData,historyEvents};})();\n`;
 script += `const {recordChoice,recordDateFilter,recordToolbar,handleRecordFilterToggle,closeRecordFilters}=(()=>{\n${withoutExports(read('shared/record-ui.js'))}\nreturn {recordChoice,recordDateFilter,recordToolbar,handleRecordFilterToggle,closeRecordFilters};})();\n`;
 script += `const {employeeCreationTime,isNewEmployee,employeeDateErrors,retryEmployeeDates,ensureEmployeeDates}=(()=>{\n${withoutExports(read('features/employees/employee-new.js'))}\nreturn {employeeCreationTime,isNewEmployee,employeeDateErrors,retryEmployeeDates,ensureEmployeeDates};})();\n`;
+script += `const {latestProfileViolations,profileHistoryRecords,renderProfileRecords}=(()=>{\n${withoutExports(read('features/employees/profile-records.js'))}\nreturn {latestProfileViolations,profileHistoryRecords,renderProfileRecords};})();\n`;
 script += `const {renderEmployees,renderViolations,renderTypesList,employeeLoadState}=(()=>{\n${withoutExports(read('features/records/records.js'))}\nreturn {renderEmployees,renderViolations,renderTypesList,employeeLoadState};})();\n`;
 script += `const {renderReports,renderHistory}=(()=>{\n${withoutExports(read('features/reports/insights.js'))}\nreturn {renderReports,renderHistory};})();\n`;
 script += `const {renderSecondary,handleSecondary}=(()=>{\n${withoutExports(read('features/settings/secondary.js'))}\nreturn {renderSecondary,handleSecondary};})();\n`;
@@ -61,6 +62,7 @@ script += `const {readTrackingDevices,readTrackingLocation,readTrackingRoute}=((
 script += `const {renderMapTracking,mountMapTracking,stopMapTracking,handleTrackingAction,handleTrackingSubmit,handleTrackingChange}=(()=>{\n${withoutExports(read('features/tracking/map-tracking.js'))}\nreturn {renderMapTracking,mountMapTracking,stopMapTracking,handleTrackingAction,handleTrackingSubmit,handleTrackingChange};})();\n`;
 script = read('assets/vendor/leaflet/leaflet.js').replace(/\/\/# sourceMappingURL=.*$/m,'')+'\n'+script;
 script += `const {enhanceSearchSuggestions}=(()=>{\n${withoutExports(read('shared/search-suggestions.js'))}\nreturn {enhanceSearchSuggestions};})();\n`;
+script += `const {readSubsection,penaltyPreview,fillSubsections,openRulebook,renderCategoryTiles,renderRulebookPage,preserveRulebookDraft,handleRulebookAction,handleRulebookSubmit}=(()=>{\n${withoutExports(read('features/records/rulebook.js'))}\nreturn {readSubsection,penaltyPreview,fillSubsections,openRulebook,renderCategoryTiles,renderRulebookPage,preserveRulebookDraft,handleRulebookAction,handleRulebookSubmit};})();\n`;
 script += read('app.js').replace(/^import .*?;\s*$/gm, '').replaceAll('./favicon.svg', favicon).replaceAll('./assets/company-logo.png', favicon);
 script = script.replace(/<\/script/gi, '<\\/script');
 const html = read('index.html')

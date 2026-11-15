@@ -1,5 +1,6 @@
 // Shared rules for violation status and the weekly dashboard. No network calls.
 export const VIOLATION_STATUSES = ['Active', 'Inactive'];
+export const WATCHLIST_OFFENSE = 3;
 
 function retained(violation) {
   return violation.status !== 'Removed' && !violation.removed && !violation.removedAt;
@@ -53,33 +54,10 @@ export function recentViolationActivity(violations, today = localDate()) {
   }).slice().sort((a, b) => b.date.localeCompare(a.date) || String(b.id).localeCompare(String(a.id))).slice(0, 5);
 }
 
-export function dashboardSummary(employees, violations, removals) {
-  const numeric = value => Number.isFinite(Number(value)) ? Number(value) : 0;
-  const employeeIds = new Set(employees.map(employee => employee.id));
-  const records = violations.filter(violation => employeeIds.has(violation.employeeId) && retained(violation));
-  const ranked = employees.map(employee => {
-    const own = records.filter(violation => violation.employeeId === employee.id);
-    return { ...employee, violations: own.length, points: employee.totalPoints ?? own.reduce((sum, v) => sum + numeric(v.points), 0), strikes: employee.totalStrikes ?? own.filter(v => v.strike).length };
-  });
-  const departments = [...new Set(employees.map(employee => employee.department || 'Unassigned'))].sort().map(department => {
-    const members = ranked.filter(employee => (employee.department || 'Unassigned') === department);
-    return {
-      name: department,
-      employees: members.length,
-      violations: members.reduce((sum, employee) => sum + employee.violations, 0),
-      points: members.reduce((sum, employee) => sum + employee.points, 0),
-      strikes: members.reduce((sum, employee) => sum + employee.strikes, 0)
-    };
-  });
-  return {
-    employees: employees.length,
-    violations: records.length,
-    points: ranked.reduce((sum, employee) => sum + employee.points, 0),
-    watchlist: ranked.filter(employee => employee.strikes >= 2),
-    topOffenders: ranked.filter(employee => employee.violations > 0).sort((a, b) => b.points - a.points || b.strikes - a.strikes || a.name.localeCompare(b.name)).slice(0, 5),
-    departments,
-    recentRemovals: removals.filter(removal => employeeIds.has(removal.employeeId)).slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 3)
-  };
+export function dashboardSummary(employees, violations, removals=[]) {
+ const ranked=employees.map(e=>{const own=violations.filter(v=>v.employeeId===e.id),removed=removals.filter(r=>r.employeeId===e.id);return {...e,violations:e.activeCount??own.length,totalOffenses:e.totalOffenses,maxOffense:Math.max(0,...own.map(v=>v.offenseNumber),...removed.map(v=>v.offenseNumber))};});
+ const departments=[...new Set(employees.map(e=>e.department||'Unassigned'))].sort().map(name=>{const own=ranked.filter(e=>(e.department||'Unassigned')===name);return {name,employees:own.length,violations:own.reduce((n,e)=>n+e.violations,0),totalOffenses:own.some(e=>e.totalOffenses===null)?null:own.reduce((n,e)=>n+e.totalOffenses,0)};});
+ return {employees:employees.length,violations:ranked.reduce((n,e)=>n+e.violations,0),offenses:ranked.some(e=>e.totalOffenses===null)?null:ranked.reduce((n,e)=>n+e.totalOffenses,0),watchlist:ranked.filter(e=>e.maxOffense>=WATCHLIST_OFFENSE),topOffenders:ranked.filter(e=>e.violations).sort((a,b)=>b.violations-a.violations),departments,recentRemovals:removals};
 }
 
 export function monthlyTotals(violations,today=localDate(),months=6){

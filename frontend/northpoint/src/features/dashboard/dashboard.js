@@ -29,9 +29,9 @@ export function renderDashboard(ctx) {
   };
   const cards = [
     ['Employees', summary.employees, 'users', '', 'Employee records', 'employees'],
-    ['Total Violations', summary.violations, 'shield', 'rose', 'Retained violation records', 'violations'],
-    ['Total Points', summary.points, 'clipboard', 'amber', 'Recorded demerit points', 'points'],
-    ['Watchlist', summary.watchlist.length, 'alert', 'purple', 'Employees with 2 or more strikes', 'watchlist']
+    ['Active Violations', summary.violations, 'shield', 'rose', 'Total active records', 'violations'],
+    ['Total Offenses', summary.offenses??'—', 'clipboard', 'amber', 'Active and removed records', 'offenses'],
+    ['Watchlist', summary.watchlist.length, 'alert', 'purple', 'Reached a 3rd or later offense', 'watchlist']
   ];
   const directoryReady=ctx.employeeDirectory?.status==='ready';
   const quickActions=[
@@ -48,9 +48,9 @@ export function renderDashboard(ctx) {
       <section class="panel dashboard-activity-panel"><div class="panel-header"><div><h2>Recent Activity</h2><p>Last 14 days · Latest 5 violations</p></div></div>${ctx.recentState || (recentActivity.length ? `<div class="dashboard-activity-list">${recentActivity.map(violation => {
         const employee = employees.find(employee => employee.apiId ? employee.apiId === violation.employeeApiId : employee.id === violation.employeeId) || violation.employee;
         const initials = employee.name.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('');
-        return `<button class="dashboard-activity-item" data-action="case-details" data-id="${esc(violation.id)}"><span class="avatar" aria-hidden="true">${esc(initials)}</span><span class="dashboard-activity-content"><span class="dashboard-activity-title"><strong>${esc(employee.name)}</strong>${violation.strike ? '<span class="bordered-badge bordered-strike">Strike</span>' : ''}</span><span class="dashboard-activity-detail">was issued <strong>${esc(violation.typeName)}</strong></span></span><span class="dashboard-activity-time">${daysAgo(violation.date)}</span></button>`;
+        return `<button class="dashboard-activity-item" data-action="case-details" data-id="${esc(violation.id)}"><span class="avatar" aria-hidden="true">${esc(initials)}</span><span class="dashboard-activity-content"><span class="dashboard-activity-title"><strong>${esc(employee.name)}</strong><span class="bordered-badge">Offense ${violation.offenseNumber}</span></span><span class="dashboard-activity-detail">was issued <strong>${esc(violation.typeName)}</strong></span></span><span class="dashboard-activity-time">${daysAgo(violation.date)}</span></button>`;
       }).join('')}</div>` : `<div class="empty-state">${icon('clock', 28)}<h3>No recent violations</h3><p>Violations issued in the last 14 days will appear here.</p></div>`)}<div class="panel-link-footer"><button class="button ghost" data-action="navigate" data-page="history">View History ${icon('arrow', 17)}</button></div></section>
     </div>
-    <p class="dashboard-totals-note">Totals cover the returned employee directory and its retained violations. Removed records are excluded.</p>
+    <p class="dashboard-totals-note">Active violations exclude removed records. Total offenses and Watchlist include removed history; removal does not reset the offense sequence.</p>
   </div>`;
 }

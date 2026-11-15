@@ -1,10 +1,15 @@
 // Allowed routes from the supplied references, plus the existing Calendar contract.
 const routes=[
+ ['GET',/^\/employees\/\d+\/(?:offense-summary|totals)$/],
+ ['GET',/^\/analytics\/(?:top-offenders|departments|subsections|activity|watchlist|clean-employees)$/],
+ ['GET',/^\/violation-types\/\d+\/subsections$/],['POST',/^\/violation-types\/\d+\/subsections$/,true],
+ ['GET',/^\/subsections\/\d+$/],['PATCH',/^\/subsections\/\d+$/,true],['DELETE',/^\/subsections\/\d+$/,true],
+ ['POST',/^\/subsections\/\d+\/(?:activate|deactivate)$/,true],['PUT',/^\/subsections\/\d+\/penalties$/,true],
  ['GET',/^\/employees$/],['POST',/^\/employees$/,true],
  ['GET',/^\/employees\/\d+$/],['PATCH',/^\/employees\/\d+$/,true],['DELETE',/^\/employees\/\d+$/,true],
  ['POST',/^\/employees\/\d+\/(?:deactivate|reactivate)$/,true],
- ['GET',/^\/employees\/\d+\/violations$/],['POST',/^\/employees\/\d+\/violations$/,true],['POST',/^\/employees\/\d+\/violations\/clear$/],
- ['GET',/^\/violations\/recent$/],['GET',/^\/violations\/\d+$/],['PATCH',/^\/violations\/\d+$/,true],['POST',/^\/violations\/\d+\/remove$/],
+ ['GET',/^\/employees\/\d+\/violations$/],['POST',/^\/employees\/\d+\/violations$/,true],['POST',/^\/employees\/\d+\/violations\/clear$/,true],
+ ['GET',/^\/violations\/recent$/],['GET',/^\/violations\/\d+$/],['PATCH',/^\/violations\/\d+$/,true],['POST',/^\/violations\/\d+\/remove$/,true],
  ['GET',/^\/violation-removals(?:\/\d+)?$/],['GET',/^\/activity\/(?:timeline|calendar|digest\/\d{4}-\d{2}-\d{2})$/],
  ['GET',/^\/violation-types(?:\/all|\/\d+)?$/],['POST',/^\/violation-types$/,true],['PATCH',/^\/violation-types\/\d+$/,true],['DELETE',/^\/violation-types\/\d+$/,true],['POST',/^\/violation-types\/\d+\/(?:activate|deactivate)$/,true]
 ];

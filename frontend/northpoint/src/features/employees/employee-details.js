@@ -7,7 +7,8 @@ let profileSequence=0, profileController=null;
 export async function fetchEmployeeProfile(id, options={}) {
   id=apiId(id);
   const raw=await apiRequest('/employees/'+id,options);
-  const employee=normalizeApiEmployee(raw);
+  const totals=await apiRequest('/employees/'+id+'/totals',options);
+  const employee=normalizeApiEmployee({...raw,...totals,id:raw.id});
   if(employee.apiId!==id||!employee.firstName||!employee.lastName||!Array.isArray(raw.violation_records)) throw new Error('The API returned an incomplete employee profile. Please try again.');
   const seen=new Set();
   const violations=raw.violation_records.map(record=>{

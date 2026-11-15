@@ -18,12 +18,12 @@ export function normalizeApiEmployee(item) {
   if (!['active', 'inactive'].includes(status)) throw new Error('The employee API returned an unknown employee status. Please retry.');
   for (const key of ['department', 'position']) if (item[key] != null && typeof item[key] !== 'string') throw new Error(`The employee API returned an invalid ${key}. Please retry.`);
   for (const key of ['first_name','last_name']) if (item[key] != null && typeof item[key] !== 'string') throw new Error(`The employee API returned an invalid ${key}. Please retry.`);
-  const totalStrikes = nonnegative(item.total_strikes, 'strike total');
-  if (!Number.isInteger(totalStrikes)) throw new Error('The employee API returned an invalid strike total. Please retry.');
+  const activeCount = nonnegative(item.active_violation_count, "active violation count");
+  if(!Number.isInteger(activeCount))throw new Error("Invalid active violation count.");
   return {
     id: code, apiId: String(item.id), profileId: `api/${encodeURIComponent(String(item.id))}`, source: 'api',
     name: requiredText(item.full_name, 'employee name'), department: item.department?.trim() || '', position: item.position?.trim() || '',
-    status: status === 'active' ? 'Active' : 'Inactive', totalPoints: nonnegative(item.total_points, 'points total'), totalStrikes,
+    status: status === 'active' ? 'Active' : 'Inactive', activeCount, totalOffenses: item.total_offenses == null ? null : nonnegative(item.total_offenses, 'total offenses'),
     ...(typeof item.first_name==='string'?{firstName:item.first_name.trim()}:{}), ...(typeof item.last_name==='string'?{lastName:item.last_name.trim()}:{}),
     ...(item.created_at ? { createdAt: item.created_at } : {})
   };
@@ -59,9 +59,7 @@ export async function loadEmployeeDirectory(onChange = () => {}, { timeoutMs = 1
 
 export function suspendEmployeeDirectory(){requestSequence++;currentController?.abort();currentController=null;Object.assign(employeeDirectory,{status:'idle',items:[],total:0,error:''});}
 export function apiEmployeeSummary(employee) {
-  const points = employee?.totalPoints ?? 0;
-  const strikes = employee?.totalStrikes ?? 0;
-  return { points, strikes, total: null, violations: [], status: strikes >= 2 ? 'Needs attention' : points > 0 || strikes > 0 ? 'For monitoring' : 'Not available' };
+ return {activeCount:employee?.activeCount??null,total:employee?.activeCount??null,totalOffenses:employee?.totalOffenses??null,violations:[],status:employee?.activeCount?'For review':'No active violations'};
 }
 
 function createError(message, code = 'validation', extra = {}) {
