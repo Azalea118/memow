@@ -7,26 +7,22 @@ from typing import Optional
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     Enum as SAEnum,
     ForeignKey,
     Index,
     Integer,
+    JSON,
     String,
     Text,
+    UniqueConstraint,
     func,
-    false,
     select,
     true,
 )
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import (
-    DeclarativeBase,
-    Mapped,
-    mapped_column,
-    relationship,
-)
-from sqlalchemy import JSON, Date
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
@@ -38,20 +34,19 @@ class EmployeeStatus(str, enum.Enum):
     inactive = "inactive"
 
 
+# ============================================================================
+# EMPLOYEE
+# ============================================================================
+
 class Employee(Base):
     __tablename__ = "employees"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-
-    employee_code: Mapped[str] = mapped_column(
-        String(50), unique=True, index=True, nullable=False
-    )
+    employee_code: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
     first_name: Mapped[str] = mapped_column(String(100), nullable=False)
     last_name: Mapped[str] = mapped_column(String(100), nullable=False)
-
     department: Mapped[Optional[str]] = mapped_column(String(100))
     position: Mapped[Optional[str]] = mapped_column(String(100))
-
     status: Mapped[EmployeeStatus] = mapped_column(
         SAEnum(EmployeeStatus, name="employee_status", native_enum=False, length=20),
         default=EmployeeStatus.active,
@@ -59,15 +54,9 @@ class Employee(Base):
         nullable=False,
         index=True,
     )
-
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False,
     )
 
     violation_records: Mapped[list["ViolationRecord"]] = relationship(
@@ -77,11 +66,7 @@ class Employee(Base):
         order_by="ViolationRecord.issued_at.desc()",
     )
 
-    __table_args__ = (
-        Index("ix_employees_last_first", "last_name", "first_name"),
-    )
-
-    # ---- derived attributes -------------------------------------------------
+    __table_args__ = (Index("ix_employees_last_first", "last_name", "first_name"),)
 
     @hybrid_property
     def full_name(self) -> str:
@@ -90,171 +75,183 @@ class Employee(Base):
     @full_name.inplace.expression
     @classmethod
     def _full_name_expr(cls):
-        # SQLAlchemy renders `+` as || / concat depending on dialect
         return cls.first_name + " " + cls.last_name
 
     @hybrid_property
-    def total_points(self) -> int:
-        return sum(r.points for r in self.violation_records)
+    def active_violation_count(self) -> int:
+        """Currently-active violations (not removed)."""
+        return len(self.violation_records)
 
-    @total_points.inplace.expression
+    @active_violation_count.inplace.expression
     @classmethod
-    def _total_points_expr(cls):
+    def _active_violation_count_expr(cls):
         return (
-            select(func.coalesce(func.sum(ViolationRecord.points), 0))
+            select(func.count(ViolationRecord.id))
             .where(ViolationRecord.employee_id == cls.id)
             .correlate(cls)
             .scalar_subquery()
         )
 
-    @hybrid_property
-    def total_strikes(self) -> int:
-        return sum(1 for r in self.violation_records if r.is_strike)
 
-    @total_strikes.inplace.expression
-    @classmethod
-    def _total_strikes_expr(cls):
-        return (
-            select(func.count(ViolationRecord.id))
-            .where(
-                ViolationRecord.employee_id == cls.id,
-                ViolationRecord.is_strike.is_(True),
-            )
-            .correlate(cls)
-            .scalar_subquery()
-        )
-
+# ============================================================================
+# VIOLATION TYPE  (top-level category — "BREACH OF GENERAL SECURITY")
+# ============================================================================
 
 class ViolationType(Base):
     __tablename__ = "violation_types"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(150), unique=True, nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true(), index=True)
 
-    default_points: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, server_default="0"
-    )
-    is_strike: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default=false()
-    )
-    is_active: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=True, server_default=true(), index=True
+    subsections: Mapped[list["ViolationSubsection"]] = relationship(
+        back_populates="violation_type",
+        cascade="all, delete-orphan",
+        order_by="ViolationSubsection.name",
     )
 
-    violation_records: Mapped[list["ViolationRecord"]] = relationship(
-        back_populates="violation_type"
+
+# ============================================================================
+# VIOLATION SUBSECTION  (specific violation — "Carrying a weapon…")
+# ============================================================================
+
+class ViolationSubsection(Base):
+    __tablename__ = "violation_subsections"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    violation_type_id: Mapped[int] = mapped_column(
+        ForeignKey("violation_types.id", ondelete="CASCADE"), nullable=False, index=True,
     )
+    name: Mapped[str] = mapped_column(String(300), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true(), index=True)
+
+    violation_type: Mapped["ViolationType"] = relationship(back_populates="subsections")
+    penalties: Mapped[list["Penalty"]] = relationship(
+        back_populates="subsection",
+        cascade="all, delete-orphan",
+        order_by="Penalty.offense_number",
+    )
+    violation_records: Mapped[list["ViolationRecord"]] = relationship(back_populates="subsection")
 
     __table_args__ = (
-        CheckConstraint(
-            "default_points >= 0",
-            name="ck_violation_types_default_points_non_negative",
-        ),
+        UniqueConstraint("violation_type_id", "name", name="uq_violation_subsections_type_name"),
     )
 
 
-class ViolationRecord(Base):
-    """A single issued violation. A strike is simply is_strike == True."""
+# ============================================================================
+# PENALTY  (one row per offense_number on a subsection)
+# ============================================================================
 
+class Penalty(Base):
+    __tablename__ = "penalties"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    subsection_id: Mapped[int] = mapped_column(
+        ForeignKey("violation_subsections.id", ondelete="CASCADE"), nullable=False, index=True,
+    )
+    offense_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+
+    subsection: Mapped["ViolationSubsection"] = relationship(back_populates="penalties")
+
+    __table_args__ = (
+        UniqueConstraint("subsection_id", "offense_number", name="uq_penalties_subsection_offense"),
+        CheckConstraint("offense_number >= 1", name="ck_penalties_offense_number_positive"),
+    )
+
+
+# ============================================================================
+# VIOLATION RECORD  (one issued violation)
+# ============================================================================
+
+class ViolationRecord(Base):
     __tablename__ = "violation_records"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-
     employee_id: Mapped[int] = mapped_column(
-        ForeignKey("employees.id", ondelete="CASCADE"), nullable=False, index=True
+        ForeignKey("employees.id", ondelete="CASCADE"), nullable=False, index=True,
     )
-    violation_type_id: Mapped[int] = mapped_column(
-        ForeignKey("violation_types.id", ondelete="RESTRICT"),
-        nullable=False,
-        index=True,
+    subsection_id: Mapped[int] = mapped_column(
+        ForeignKey("violation_subsections.id", ondelete="RESTRICT"), nullable=False, index=True,
     )
-
     issued_by: Mapped[Optional[str]] = mapped_column(String(150))
     issued_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now(), index=True
+        DateTime(timezone=True), nullable=False, server_default=func.now(), index=True,
     )
     notes: Mapped[Optional[str]] = mapped_column(Text)
 
-    # Snapshots — copied from the violation type at issue time.
-    points: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    is_strike: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, index=True
-    )
+    # Snapshots taken at issue time — never rewritten
+    offense_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    penalty_description: Mapped[Optional[str]] = mapped_column(Text)
 
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     employee: Mapped["Employee"] = relationship(back_populates="violation_records")
-    violation_type: Mapped["ViolationType"] = relationship(
-        back_populates="violation_records"
-    )
+    subsection: Mapped["ViolationSubsection"] = relationship(back_populates="violation_records")
 
     __table_args__ = (
-        CheckConstraint("points >= 0", name="ck_violation_records_points_non_negative"),
         Index("ix_violation_records_employee_issued_at", "employee_id", "issued_at"),
+        Index("ix_violation_records_employee_subsection", "employee_id", "subsection_id"),
     )
 
+
+# ============================================================================
+# VIOLATION REMOVAL  (immutable audit log)
+# ============================================================================
+
 class ViolationRemoval(Base):
-    """Immutable audit log entry for a deleted violation record.
-
-    Deliberately has NO foreign keys to employees or violation_types —
-    the log must survive if either is later hard-deleted. All identifying
-    fields are snapshotted at removal time.
-    """
-
     __tablename__ = "violation_removals"
 
     id: Mapped[int] = mapped_column(primary_key=True)
 
-    # ---- snapshot of the removed violation record ----
+    # Snapshot of the removed record
     violation_record_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-    violation_type_id: Mapped[Optional[int]] = mapped_column(Integer)
-    violation_type_name: Mapped[str] = mapped_column(String(100), nullable=False)
-    points: Mapped[int] = mapped_column(Integer, nullable=False)
-    is_strike: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    subsection_id: Mapped[Optional[int]] = mapped_column(Integer)
+    subsection_name: Mapped[str] = mapped_column(String(300), nullable=False)
+    violation_type_name: Mapped[str] = mapped_column(String(150), nullable=False)
+    offense_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    penalty_description: Mapped[Optional[str]] = mapped_column(Text)
     original_notes: Mapped[Optional[str]] = mapped_column(Text)
     original_issued_by: Mapped[Optional[str]] = mapped_column(String(150))
     original_issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
-    # ---- to whom ----
+    # To whom
     employee_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     employee_code: Mapped[str] = mapped_column(String(50), nullable=False)
     employee_full_name: Mapped[str] = mapped_column(String(200), nullable=False)
 
-    # ---- by whom + why ----
+    # By whom + why
     removed_by: Mapped[str] = mapped_column(String(150), nullable=False)
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     removed_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=func.now(),
-        index=True,
+        DateTime(timezone=True), nullable=False, server_default=func.now(), index=True,
     )
 
     __table_args__ = (
         Index("ix_violation_removals_employee_removed_at", "employee_id", "removed_at"),
+        Index("ix_violation_removals_employee_subsection", "employee_id", "subsection_id"),
     )
 
-class ActivityEvent(Base):
-    """Append-only audit log. No FKs by design — events survive hard deletes."""
 
+# ============================================================================
+# ACTIVITY EVENT  (append-only audit log — unchanged shape)
+# ============================================================================
+
+class ActivityEvent(Base):
     __tablename__ = "activity_events"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-
     occurred_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, index=True, server_default=func.now()
+        DateTime(timezone=True), nullable=False, index=True, server_default=func.now(),
     )
     event_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
-
     actor: Mapped[str] = mapped_column(String(150), nullable=False, index=True)
     action: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     target_type: Mapped[str] = mapped_column(String(30), nullable=False)
     target_id: Mapped[Optional[int]] = mapped_column(Integer)
     employee_id: Mapped[Optional[int]] = mapped_column(Integer, index=True)
-
     summary: Mapped[str] = mapped_column(Text, nullable=False)
     metadata_json: Mapped[Optional[dict]] = mapped_column(JSON)
 

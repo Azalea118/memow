@@ -24,3 +24,8 @@ data/
 # Tests
 **/tests/
 **/test_*.py
+
+# Markdown
+*.md
+
+seed_rulebook.py
