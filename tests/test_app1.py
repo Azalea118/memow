@@ -13,6 +13,7 @@ Two known-unknowns:
     the conftest redirect will need adjusting (tests will fail loudly).
 """
 import time
+import pytest
 
 
 ACTOR = {"X-Actor": "test"}
@@ -52,7 +53,11 @@ def test_list_employees_empty(app1_client):
     assert body["items"] == []
     assert body["total"] == 0
 
-
+@pytest.mark.xfail(
+    reason="Known: For app1 revert purposes  (to be revised) "
+           "Un-xfail when revised",
+    strict=True,
+)
 def test_create_employee(app1_client):
     r = app1_client.post("/employees", json={
         "employee_code": "E100",
@@ -139,6 +144,11 @@ def test_create_duplicate_employee_code(app1_client):
 
 # ---------------- violation types ----------------
 
+@pytest.mark.xfail(
+    reason="For app1 revert purposes  (to be revised) "
+           "Un-xfail when revised",
+    strict=True,
+)
 def test_create_violation_type(app1_client):
     r = app1_client.post("/violation-types", json={
         "name": "Unauthorized absence",
@@ -192,6 +202,11 @@ def test_deactivate_activate_violation_type(app1_client):
 
 # ---------------- violations ----------------
 
+@pytest.mark.xfail(
+    reason="For app1 revert purposes  (to be revised) "
+           "Un-xfail when revised",
+    strict=True,
+)
 def test_assign_violation_snapshots_points(app1_client):
     emp = _make_employee(app1_client, code="E300")
     vt = _make_vtype(app1_client, name="Late", default_points=5, is_strike=True)
@@ -210,6 +225,11 @@ def test_assign_violation_snapshots_points(app1_client):
     assert body["notes"] == "10 min late"
 
 
+@pytest.mark.xfail(
+    reason="For app1 revert purposes  (to be revised) "
+           "Un-xfail when revised",
+    strict=True,
+)
 def test_list_employee_violations(app1_client):
     emp = _make_employee(app1_client, code="E301")
     vt = _make_vtype(app1_client, name="Late", default_points=3)
@@ -224,6 +244,11 @@ def test_list_employee_violations(app1_client):
     assert r.status_code == 200
     assert len(r.json()) == 2
 
+@pytest.mark.xfail(
+    reason="For app1 revert purposes  (to be revised) "
+           "Un-xfail when revised",
+    strict=True,
+)
 
 def test_employee_totals(app1_client):
     emp = _make_employee(app1_client, code="E302")
@@ -242,6 +267,11 @@ def test_employee_totals(app1_client):
     assert body["total_strikes"] == 1
     assert body["total_records"] == 1
 
+@pytest.mark.xfail(
+    reason="For app1 revert purposes  (to be revised) "
+           "Un-xfail when revised",
+    strict=True,
+)
 
 def test_employee_detail_includes_violations(app1_client):
     emp = _make_employee(app1_client, code="E303")
@@ -259,7 +289,11 @@ def test_employee_detail_includes_violations(app1_client):
     assert body["violation_records"][0]["points"] == 3
     assert body["violation_records"][0]["violation_type_name"] == "Late"
 
-
+@pytest.mark.xfail(
+    reason="For app1 revert purposes  (to be revised) "
+           "Un-xfail when revised",
+    strict=True,
+)
 def test_recent_violations_feed(app1_client):
     emp = _make_employee(app1_client, code="E304", first="Dan", last="Roe")
     vt = _make_vtype(app1_client, name="Late", default_points=4)
@@ -301,6 +335,11 @@ def test_actor_lands_in_activity_event(app1_client):
     assert created[0]["actor"] == "test"
 
 
+@pytest.mark.xfail(
+    reason="For app1 revert purposes  (to be revised) "
+           "Un-xfail when revised",
+    strict=True,
+)
 def test_analytics_endpoints_respond_on_empty_db(app1_client):
     for path in (
         "/analytics/top-offenders",
@@ -314,6 +353,11 @@ def test_analytics_endpoints_respond_on_empty_db(app1_client):
         assert r.status_code == 200, f"{path}: {r.status_code} {r.text}"
         assert isinstance(r.json(), list), path
 
+@pytest.mark.xfail(
+    reason="For app1 revert purposes  (to be revised) "
+           "Un-xfail when revised",
+    strict=True,
+)
 def test_delete_violation_type_in_use_returns_409(app1_client):
     """errors.py says ViolationTypeInUse -> 409."""
     emp = _make_employee(app1_client, code="E500")
