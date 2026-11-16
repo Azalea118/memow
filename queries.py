@@ -5,7 +5,10 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Optional, Sequence
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import case, delete, func, or_, select, union_all
+from sqlalchemy import (
+    String, Text, DateTime,       # ← add these
+    case, cast, delete, func, literal, null, or_, select, union_all,
+)
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from models import (
@@ -1398,3 +1401,115 @@ def violation_free_employees(session: Session, *, since: Optional[datetime] = No
         .order_by(Employee.last_name, Employee.first_name)
     )
     return session.execute(stmt).all()
+
+# ============================================================================
+# EMPLOYEE — full violation history (active + removed)
+# ============================================================================
+
+def list_employee_violation_history(
+    session: Session, employee_id: int, *,
+    status: Optional[str] = None,           # "active" | "removed" | None (both)
+    subsection_id: Optional[int] = None,
+    since: Optional[datetime] = None,       # inclusive, on original issued_at
+    until: Optional[datetime] = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> Sequence:
+    """
+    Union of current ViolationRecord rows and ViolationRemoval snapshots,
+    ordered by issued_at DESC so the history reads like a timeline.
+    Each row carries a `status` discriminator: "active" or "removed".
+    """
+    active_q = select(
+        literal("active", type_=String(10)).label("status"),
+        ViolationRecord.id.label("violation_record_id"),
+        ViolationRecord.subsection_id,
+        ViolationSubsection.name.label("subsection_name"),
+        ViolationType.name.label("violation_type_name"),
+        ViolationRecord.offense_number,
+        ViolationRecord.penalty_description,
+        ViolationRecord.notes,
+        ViolationRecord.issued_by,
+        ViolationRecord.issued_at,
+        cast(null(), String).label("removed_by"),
+        cast(null(), Text).label("removal_reason"),
+        cast(null(), DateTime()).label("removed_at"),
+    ).select_from(ViolationRecord).join(
+        ViolationSubsection, ViolationSubsection.id == ViolationRecord.subsection_id, isouter=True,
+    ).join(
+        ViolationType, ViolationType.id == ViolationSubsection.violation_type_id, isouter=True,
+    ).where(ViolationRecord.employee_id == employee_id)
+
+    removed_q = select(
+        literal("removed", type_=String(10)).label("status"),
+        ViolationRemoval.violation_record_id,
+        ViolationRemoval.subsection_id,
+        ViolationRemoval.subsection_name,
+        ViolationRemoval.violation_type_name,
+        ViolationRemoval.offense_number,
+        ViolationRemoval.penalty_description,
+        ViolationRemoval.original_notes.label("notes"),
+        ViolationRemoval.original_issued_by.label("issued_by"),
+        ViolationRemoval.original_issued_at.label("issued_at"),
+        ViolationRemoval.removed_by,
+        ViolationRemoval.reason.label("removal_reason"),
+        ViolationRemoval.removed_at,
+    ).where(ViolationRemoval.employee_id == employee_id)
+
+    if subsection_id is not None:
+        active_q = active_q.where(ViolationRecord.subsection_id == subsection_id)
+        removed_q = removed_q.where(ViolationRemoval.subsection_id == subsection_id)
+    if since is not None:
+        active_q = active_q.where(ViolationRecord.issued_at >= since)
+        removed_q = removed_q.where(ViolationRemoval.original_issued_at >= since)
+    if until is not None:
+        active_q = active_q.where(ViolationRecord.issued_at <= until)
+        removed_q = removed_q.where(ViolationRemoval.original_issued_at <= until)
+
+    parts = []
+    if status in (None, "active"):
+        parts.append(active_q)
+    if status in (None, "removed"):
+        parts.append(removed_q)
+    if not parts:
+        return []
+
+    if len(parts) == 1:
+        return session.execute(parts[0].limit(limit).offset(offset)).all()
+
+    union_q = union_all(*parts).subquery()
+    stmt = (
+        select(union_q)
+        .order_by(union_q.c.issued_at.desc(), union_q.c.violation_record_id.desc())
+        .limit(limit).offset(offset)
+    )
+    return session.execute(stmt).all()
+
+
+def count_employee_violation_history(
+    session: Session, employee_id: int, *,
+    status: Optional[str] = None,
+    subsection_id: Optional[int] = None,
+    since: Optional[datetime] = None,
+    until: Optional[datetime] = None,
+) -> int:
+    total = 0
+    if status in (None, "active"):
+        stmt = select(func.count(ViolationRecord.id)).where(ViolationRecord.employee_id == employee_id)
+        if subsection_id is not None:
+            stmt = stmt.where(ViolationRecord.subsection_id == subsection_id)
+        if since is not None:
+            stmt = stmt.where(ViolationRecord.issued_at >= since)
+        if until is not None:
+            stmt = stmt.where(ViolationRecord.issued_at <= until)
+        total += session.execute(stmt).scalar_one()
+    if status in (None, "removed"):
+        stmt = select(func.count(ViolationRemoval.id)).where(ViolationRemoval.employee_id == employee_id)
+        if subsection_id is not None:
+            stmt = stmt.where(ViolationRemoval.subsection_id == subsection_id)
+        if since is not None:
+            stmt = stmt.where(ViolationRemoval.original_issued_at >= since)
+        if until is not None:
+            stmt = stmt.where(ViolationRemoval.original_issued_at <= until)
+        total += session.execute(stmt).scalar_one()
+    return total
