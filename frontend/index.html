@@ -620,6 +620,10 @@
         font-family: var(--mono);
         font-size: 10.5px;
       }
+      .badge.removed {
+        background: rgba(136, 146, 166, 0.18);
+        color: #a0a9bf;
+      }
 
       .method {
         display: inline-block;
@@ -1658,6 +1662,109 @@
         line-height: 1.5;
       }
 
+      /* ---------- violation history (employee modal) ---------- */
+      .history-controls {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 10px;
+        flex-wrap: wrap;
+      }
+      .chips {
+        display: inline-flex;
+        background: var(--surface-2);
+        border: 1px solid var(--border-2);
+        border-radius: 7px;
+        padding: 2px;
+        gap: 2px;
+      }
+      .chip {
+        padding: 5px 12px;
+        border-radius: 5px;
+        font-size: 12px;
+        font-weight: 550;
+        color: var(--muted);
+        transition: 0.12s;
+        white-space: nowrap;
+      }
+      .chip:hover {
+        color: var(--text);
+      }
+      .chip.active {
+        background: var(--surface-3);
+        color: var(--text);
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+      }
+      .history-card {
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 11px 13px;
+        margin-bottom: 8px;
+        transition: 0.12s;
+      }
+      .history-card:last-child {
+        margin-bottom: 0;
+      }
+      .history-card.removed {
+        opacity: 0.62;
+        filter: grayscale(0.35);
+      }
+      .history-card.removed:hover {
+        opacity: 0.8;
+      }
+      .history-card-head {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        margin-bottom: 6px;
+        flex-wrap: wrap;
+      }
+      .history-card-title {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+        flex: 1;
+        min-width: 0;
+        font-size: 13px;
+      }
+      .history-card-title .who {
+        font-weight: 600;
+      }
+      .history-card-penalty {
+        font-size: 12.5px;
+        color: var(--text);
+        margin-bottom: 4px;
+        white-space: pre-wrap;
+        line-height: 1.5;
+      }
+      .history-card-meta {
+        font-size: 11.5px;
+        color: var(--muted);
+        line-height: 1.55;
+      }
+      .history-card-removal {
+        font-size: 11.5px;
+        color: var(--muted);
+        border-top: 1px dashed var(--border);
+        padding-top: 6px;
+        margin-top: 7px;
+        line-height: 1.55;
+      }
+      .history-card-removal strong {
+        color: var(--text);
+        font-weight: 600;
+      }
+      .history-pager {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding-top: 10px;
+        margin-top: 2px;
+        flex-wrap: wrap;
+      }
+
       @media (max-width: 1024px) {
         main {
           padding: 22px 22px 55px;
@@ -1973,6 +2080,15 @@
         }
         .actor-card {
           padding: 16px;
+        }
+        .chips {
+          width: 100%;
+          justify-content: space-between;
+        }
+        .chip {
+          flex: 1;
+          text-align: center;
+          padding: 5px 6px;
         }
       }
       @media (max-width: 420px) {
@@ -2472,9 +2588,6 @@
         }
       }
 
-      /* Every non-GET write on employees, violation-types, violations,
-   subsections and penalties carries X-Actor — including the two
-   removal endpoints (/remove and /violations/clear). */
       function pathNeedsActor(method, path) {
         if (method === "GET") return false;
         if (!/^\/(employees|violation-types|violations|subsections)/.test(path))
@@ -3182,9 +3295,26 @@ app.add_middleware(
 
       function renderEmployeeDetail(modal, emp, summary) {
         const isActive = emp.status === "active";
-        const records = emp.violation_records || [];
-        const activeCount = emp.active_violation_count ?? records.length;
-        const totalOffenses = emp.total_offenses ?? records.length;
+        const activeCount =
+          emp.active_violation_count ?? (emp.violation_records || []).length;
+        const totalOffenses = emp.total_offenses ?? activeCount;
+        const summaryRows = Array.isArray(summary) ? summary : [];
+
+        // Build counts for the history filter chips
+        const totalActiveFromSummary = summaryRows.reduce(
+          (s, r) => s + (r.active || 0),
+          0,
+        );
+        const totalRemovedFromSummary = summaryRows.reduce(
+          (s, r) => s + (r.removed || 0),
+          0,
+        );
+        const chipActive = Math.max(activeCount, totalActiveFromSummary);
+        const chipRemoved = Math.max(
+          totalOffenses - activeCount,
+          totalRemovedFromSummary,
+        );
+        const chipAll = chipActive + chipRemoved;
 
         modal.querySelector(".modal-head").innerHTML = `
     <div class="feed-avatar" style="width:38px;height:38px;font-size:13px">${esc(initials(emp.full_name))}</div>
@@ -3195,8 +3325,6 @@ app.add_middleware(
     <button class="close" data-close>✕</button>
   `;
         modal.querySelector(".close").addEventListener("click", closeModal);
-
-        const summaryRows = Array.isArray(summary) ? summary : [];
 
         modal.querySelector(".modal-body").innerHTML = `
     <div class="row-flex" style="gap:8px;margin-bottom:16px;flex-wrap:wrap">
@@ -3239,39 +3367,23 @@ app.add_middleware(
         : ""
     }
 
-    <div style="display:flex;align-items:center;margin-bottom:10px">
+    <div class="divider"></div>
+
+    <div class="row-flex" style="margin-bottom:10px">
       <strong style="font-size:13px">Violation history</strong>
-      <span class="right faint mono" style="font-size:11px">newest first</span>
+      <span class="right faint mono" style="font-size:11px">GET /employees/{id}/violation-history</span>
     </div>
 
-    ${
-      records.length
-        ? `<div style="border:1px solid var(--border);border-radius:9px;overflow:hidden">
-      ${records
-        .map(
-          (r) => `
-        <div class="feed-item" style="padding:11px 14px">
-          <div class="feed-body">
-            <div class="line1">
-              <span class="who">${esc(r.violation_type_name || "—")}</span>
-              ${r.subsection_name ? `<span class="faint">· ${esc(r.subsection_name)}</span>` : ""}
-              <span class="badge offense">offense #${r.offense_number ?? "—"}</span>
-            </div>
-            <div class="line2">
-              ${esc(r.penalty_description || "—")}<br>
-              ${esc(fmtDate(r.issued_at))}${r.issued_by ? " · by " + esc(r.issued_by) : ""}
-              ${r.notes ? "<br>" + esc(r.notes) : ""}
-            </div>
-          </div>
-          <div class="feed-meta">
-            <button class="btn sm danger" data-remove-rec="${r.id}" title="Remove violation (audited)">Remove</button>
-          </div>
-        </div>`,
-        )
-        .join("")}
-    </div>`
-        : '<div class="empty" style="padding:24px">Clean record — no violations.</div>'
-    }
+    <div class="history-controls">
+      <div class="chips" id="histFilter">
+        <button class="chip active" data-hstatus="">All (${chipAll})</button>
+        <button class="chip" data-hstatus="active">Active (${chipActive})</button>
+        <button class="chip" data-hstatus="removed">Removed (${chipRemoved})</button>
+      </div>
+      <span class="right faint mono" id="histCount" style="font-size:11px"></span>
+    </div>
+    <div id="histCards"><div class="loading" style="padding:20px"><span class="spinner"></span>Loading history…</div></div>
+    <div id="histPager"></div>
 
     <div class="divider"></div>
     <div class="row-flex modal-actions" style="flex-wrap:wrap;gap:8px">
@@ -3279,7 +3391,7 @@ app.add_middleware(
       ${isActive ? '<button class="btn" id="mDeactivate">Deactivate</button>' : '<button class="btn" id="mReactivate">Reactivate</button>'}
       <button class="btn" id="mEdit">Edit details</button>
       <span class="right"></span>
-      <button class="btn danger" id="mClearAll" ${records.length ? "" : "disabled"}>Clear all violations</button>
+      <button class="btn danger" id="mClearAll" ${activeCount ? "" : "disabled"}>Clear active violations</button>
       <button class="btn danger" id="mDelete">Delete employee</button>
     </div>
     <div class="faint" style="font-size:11px;margin-top:10px">
@@ -3288,6 +3400,24 @@ app.add_middleware(
   `;
 
         const body = modal.querySelector(".modal-body");
+
+        // History state + loader (kept in closure so pagination/filters can re-invoke)
+        const histState = { offset: 0, limit: 20, status: "" };
+        const reloadHistory = () =>
+          loadHistorySection(modal, emp, histState, reloadHistory);
+
+        body.querySelectorAll("[data-hstatus]").forEach((b) =>
+          b.addEventListener("click", () => {
+            body
+              .querySelectorAll("[data-hstatus]")
+              .forEach((x) => x.classList.toggle("active", x === b));
+            histState.status = b.dataset.hstatus;
+            histState.offset = 0;
+            reloadHistory();
+          }),
+        );
+        reloadHistory();
+
         body
           .querySelector("#mIssue")
           .addEventListener("click", () => issueViolationModal(emp));
@@ -3319,9 +3449,9 @@ app.add_middleware(
           );
 
         body.querySelector("#mClearAll").addEventListener("click", () => {
-          if (!records.length) return;
+          if (!activeCount) return;
           clearAllFormModal(emp, {
-            count: records.length,
+            count: activeCount,
             onDone: () => {
               if (state.view === "employees") loadEmployees();
               else openEmployee(emp.id);
@@ -3337,7 +3467,7 @@ app.add_middleware(
             body: `
         <div class="callout err" style="margin-bottom:14px">
           <div class="ic">⚠</div>
-          <div><strong>This bypasses the audit trail.</strong> All ${records.length} violation record${records.length === 1 ? "" : "s"} will be deleted <em>silently</em> — no <code>violation_removals</code> entries are written.</div>
+          <div><strong>This bypasses the audit trail.</strong> All ${activeCount} active violation record${activeCount === 1 ? "" : "s"} will be deleted <em>silently</em> — no <code>violation_removals</code> entries are written for these.</div>
         </div>
         <p style="font-size:13px;color:var(--muted)">Hard-deletes <strong>${esc(emp.full_name)}</strong> and cascades. Prefer <em>deactivate</em>.</p>
       `,
@@ -3354,21 +3484,143 @@ app.add_middleware(
             },
           });
         });
+      }
 
-        body.querySelectorAll("[data-remove-rec]").forEach((b) => {
-          b.addEventListener("click", () => {
-            const rec = records.find(
-              (r) => r.id === Number(b.dataset.removeRec),
-            );
-            if (!rec) return;
-            const enriched = {
-              ...rec,
-              employee_full_name: emp.full_name,
-              employee_code: emp.employee_code,
-            };
-            removalFormModal(enriched, { onDone: () => openEmployee(emp.id) });
+      /* ---------- Violation history section ---------- */
+
+      function renderHistoryCard(row) {
+        const isRemoved = row.status === "removed";
+        const typeName = row.violation_type_name || "—";
+        const subName = row.subsection_name || "";
+
+        return `<div class="history-card ${isRemoved ? "removed" : ""}">
+    <div class="history-card-head">
+      <div class="history-card-title">
+        <span class="who">${esc(typeName)}</span>
+        ${subName ? `<span class="faint">· ${esc(subName)}</span>` : ""}
+        <span class="badge offense">offense #${row.offense_number ?? "—"}</span>
+        ${isRemoved ? '<span class="badge removed">removed</span>' : '<span class="badge ok">active</span>'}
+      </div>
+      ${!isRemoved ? `<button class="btn sm danger" data-remove-id="${row.violation_record_id}" title="Remove violation (audited)">Remove</button>` : ""}
+    </div>
+    ${row.penalty_description ? `<div class="history-card-penalty">${esc(row.penalty_description)}</div>` : ""}
+    <div class="history-card-meta">
+      ${esc(fmtDate(row.issued_at))}${row.issued_by ? " · by " + esc(row.issued_by) : ""}
+      ${row.notes ? '<br><span class="faint">' + esc(row.notes) + "</span>" : ""}
+    </div>
+    ${
+      isRemoved
+        ? `
+      <div class="history-card-removal">
+        <span class="faint">Removed by</span> <strong>${esc(row.removed_by || "unknown")}</strong> <span class="faint">on</span> ${esc(fmtDate(row.removed_at))}
+        ${row.removal_reason ? `<div class="faint" style="margin-top:3px">"${esc(row.removal_reason)}"</div>` : ""}
+      </div>
+    `
+        : ""
+    }
+  </div>`;
+      }
+
+      async function loadHistorySection(modal, emp, histState, reloadFn) {
+        const cards = modal.querySelector("#histCards");
+        const pager = modal.querySelector("#histPager");
+        const countEl = modal.querySelector("#histCount");
+        if (!cards || !pager) return;
+
+        cards.innerHTML = `<div class="loading" style="padding:20px"><span class="spinner"></span>Loading history…</div>`;
+        pager.innerHTML = "";
+
+        try {
+          const data = await call(
+            "GET",
+            `/employees/${emp.id}/violation-history`,
+            {
+              query: {
+                status: histState.status,
+                limit: histState.limit,
+                offset: histState.offset,
+              },
+            },
+          );
+
+          const items = data.items || [];
+          const total =
+            typeof data.total === "number" ? data.total : items.length;
+
+          if (countEl) {
+            const label =
+              histState.status === "active"
+                ? "active"
+                : histState.status === "removed"
+                  ? "removed"
+                  : "total";
+            countEl.textContent = `${total} ${label} record${total === 1 ? "" : "s"}`;
+          }
+
+          if (!items.length) {
+            const msg =
+              histState.status === "active"
+                ? "No active violations."
+                : histState.status === "removed"
+                  ? "No removed violations."
+                  : "No violations recorded yet.";
+            cards.innerHTML = `<div class="empty" style="padding:24px">${msg}</div>`;
+            return;
+          }
+
+          cards.innerHTML = items.map(renderHistoryCard).join("");
+
+          cards.querySelectorAll("[data-remove-id]").forEach((b) => {
+            b.addEventListener("click", () => {
+              const row = items.find(
+                (x) => x.violation_record_id === Number(b.dataset.removeId),
+              );
+              if (!row) return;
+              removalFormModal(
+                {
+                  id: row.violation_record_id,
+                  violation_type_name: row.violation_type_name,
+                  subsection_name: row.subsection_name,
+                  employee_full_name: emp.full_name,
+                  employee_code: emp.employee_code,
+                  offense_number: row.offense_number,
+                  penalty_description: row.penalty_description,
+                  issued_at: row.issued_at,
+                  notes: row.notes,
+                },
+                { onDone: () => openEmployee(emp.id) },
+              );
+            });
           });
-        });
+
+          const shownEnd = histState.offset + items.length;
+          const hasNext = shownEnd < total && items.length === histState.limit;
+          pager.innerHTML = `
+      <div class="history-pager">
+        <span class="faint mono" style="font-size:11px">${histState.offset + 1}–${shownEnd} of ${total}</span>
+        <span style="margin-left:auto"></span>
+        <button class="btn sm" id="hpPrev" ${histState.offset === 0 ? "disabled" : ""}>← Prev</button>
+        <button class="btn sm" id="hpNext" ${!hasNext ? "disabled" : ""}>Next →</button>
+      </div>
+    `;
+          const prev = pager.querySelector("#hpPrev");
+          const next = pager.querySelector("#hpNext");
+          if (prev)
+            prev.addEventListener("click", () => {
+              histState.offset = Math.max(
+                0,
+                histState.offset - histState.limit,
+              );
+              reloadFn();
+            });
+          if (next)
+            next.addEventListener("click", () => {
+              histState.offset += histState.limit;
+              reloadFn();
+            });
+        } catch (e) {
+          cards.innerHTML = errorBanner(e);
+        }
       }
 
       async function simpleAction(method, path, okMsg, after) {
@@ -3557,7 +3809,7 @@ app.add_middleware(
       }
 
       /* ============================================================
-   ISSUE VIOLATION — two-step cascade with preview
+   ISSUE VIOLATION
    ============================================================ */
       async function issueViolationModal(emp) {
         let types = [];
@@ -4547,7 +4799,7 @@ app.add_middleware(
       }
 
       /* ============================================================
-   REMOVAL FORMS  (X-Actor header + {reason} body)
+   REMOVAL FORMS  (X-Actor + {reason})
    ============================================================ */
       function removalFormModal(record, opts = {}) {
         const typeName = record.violation_type_name || "Unknown";
@@ -4640,12 +4892,12 @@ app.add_middleware(
         const { count, onDone } = opts;
         openModal(
           `
-    <div class="modal-head"><h3>Clear all violations</h3><span class="badge audit">audited</span><button class="close" data-close>✕</button></div>
+    <div class="modal-head"><h3>Clear all active violations</h3><span class="badge audit">audited</span><button class="close" data-close>✕</button></div>
     <div class="modal-body">
       <div id="clErr"></div>
       <div class="callout err" style="margin-bottom:16px">
         <div class="ic">⚠</div>
-        <div>This permanently removes <strong>${count} violation record${count === 1 ? "" : "s"}</strong> for <strong>${esc(emp.full_name)}</strong> and writes one audit entry per removal.</div>
+        <div>This permanently removes <strong>${count} active violation record${count === 1 ? "" : "s"}</strong> for <strong>${esc(emp.full_name)}</strong> and writes one audit entry per removal. Previously removed records stay in the log untouched.</div>
       </div>
       <div class="callout info" style="margin-bottom:16px">
         <div class="ic">📝</div>
@@ -5646,8 +5898,22 @@ app.add_middleware(
         {
           group: "Employees",
           method: "GET",
+          path: "/employees/:employee_id/violation-history",
+          desc: "Full violation history incl. removed. Envelope response. Ordered newest-first.",
+          query: {
+            status: "",
+            subsection_id: "",
+            since: "",
+            until: "",
+            limit: 50,
+            offset: 0,
+          },
+        },
+        {
+          group: "Employees",
+          method: "GET",
           path: "/employees/:employee_id",
-          desc: "Full profile plus violation history.",
+          desc: "Full profile (active violation_records only).",
           query: {},
         },
         {
@@ -5835,7 +6101,7 @@ app.add_middleware(
           group: "Violation Records",
           method: "GET",
           path: "/employees/:employee_id/violations",
-          desc: "List one employee's violations. Bare array.",
+          desc: "List one employee's active violations. Bare array.",
           query: { since: "", until: "", limit: 50, offset: 0 },
         },
         {
@@ -5849,7 +6115,7 @@ app.add_middleware(
           group: "Violation Records",
           method: "POST",
           path: "/employees/:employee_id/violations/clear",
-          desc: "Clear all violations. Requires X-Actor header; body is {reason} only.",
+          desc: "Clear all active violations. Requires X-Actor header; body is {reason} only.",
           body: { reason: "Employee transferred" },
         },
         {
