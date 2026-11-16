@@ -7,7 +7,7 @@ from typing import List, Optional, Dict
 from pathlib import Path
 
 from fastapi import (
-    FastAPI, UploadFile, File, Form, Depends, HTTPException, Query, Header,
+    FastAPI, UploadFile, File, Form, Depends, HTTPException, Query, Header, Request,
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -49,6 +49,10 @@ class PhotoRecord(Base):
     __tablename__ = "photo_records"
 
     id = Column(Integer, primary_key=True, index=True)
+    title = Column(String)
+    location_name = Column(String)
+    mobile_metadata = Column(String)
+    upload_key = Column(String, unique=True)
     owner_name = Column(String, index=True, nullable=False)  # username at upload time
 
     # --- file info -------------------------------------------------------
@@ -81,6 +85,9 @@ class ActivityLog(Base):
     # Snapshot so the entry still makes sense if the photo is later deleted.
     photo_id = Column(Integer, index=True, nullable=True)
     photo_display_name = Column(String)
+    photo_title = Column(String)
+    author = Column(String)
+    source = Column(String)
 
     # Free-form JSON: change diffs, sizes, filenames, etc.
     details = Column(String)
@@ -88,6 +95,13 @@ class ActivityLog(Base):
     created_at = Column(
         DateTime, default=datetime.datetime.now, index=True, nullable=False
     )
+
+class PhotoTitleRevision(Base):
+    """Last accepted mobile edit, retained even if a photo is deleted."""
+    __tablename__ = "photo_title_revisions"
+    upload_key = Column(String, primary_key=True)
+    revision = Column(Integer, nullable=False)
+    title = Column(String, nullable=False)
 
 Base.metadata.create_all(bind=engine)
 
@@ -110,6 +124,10 @@ def ensure_schema() -> None:
             existing.add("owner_name")
 
         new_columns = {
+            "title": "VARCHAR",
+            "location_name": "VARCHAR",
+            "mobile_metadata": "VARCHAR",
+            "upload_key": "VARCHAR",
             "filename": "VARCHAR",
             "original_filename": "VARCHAR",
             "display_name": "VARCHAR",
@@ -124,6 +142,8 @@ def ensure_schema() -> None:
                 conn.execute(
                     text(f"ALTER TABLE photo_records ADD COLUMN {name} {ddl}")
                 )
+
+        conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ux_photo_upload_key ON photo_records(upload_key)"))
 
         # Backfill rows that predate the new columns.
         conn.execute(
@@ -145,6 +165,36 @@ def ensure_schema() -> None:
                     {"s": p.stat().st_size, "i": photo_id},
                 )
 
+        columns = {r[1] for r in conn.execute(text("PRAGMA table_info(activity_logs)"))}
+        for name in ("photo_title", "author", "source"):
+            if name not in columns:
+                conn.execute(text(f"ALTER TABLE activity_logs ADD COLUMN {name} VARCHAR"))
+        # Recover only supported values, never treat the old display name as a title.
+        # Follow upload generations: SQLite IDs may have been reused after deletion.
+        live = {r.id: r for r in conn.execute(text("SELECT id,title,owner_name,mobile_metadata FROM photo_records"))}
+        snapshots = {}
+        for row in conn.execute(text("SELECT id,photo_id,action,actor,details,photo_title,author,source FROM activity_logs ORDER BY id")).fetchall():
+            try:
+                detail = json.loads(row.details or '{}')
+                if not isinstance(detail, dict): detail = {}
+            except (ValueError, TypeError):
+                detail = {}
+            if row.action == 'upload':
+                title = detail.get('title') or 'Untitled Photo'
+                author = detail.get('full_name') or row.actor
+                source = detail.get('source')
+                current = live.get(row.photo_id)
+                if current:
+                    try: current_meta = json.loads(current.mobile_metadata or '{}')
+                    except (ValueError, TypeError): current_meta = {}
+                    if isinstance(current_meta, dict) and detail.get('upload_id') and detail.get('upload_id') == current_meta.get('upload_id'):
+                        title = current.title or title
+                        author = current.owner_name or author
+                snapshots[row.photo_id] = (title, author, source)
+            title, author, source = snapshots.get(row.photo_id, ('Untitled Photo', 'Unknown author', None))
+            conn.execute(text("UPDATE activity_logs SET photo_title=COALESCE(photo_title,:title),author=COALESCE(author,:author),source=COALESCE(source,:source) WHERE id=:id"),
+                         dict(id=row.id,title=title,author=author,source=source if source in ('camera','gallery') else None))
+
 
 ensure_schema()
 
@@ -153,6 +203,9 @@ ensure_schema()
 # Pydantic schemas
 # ---------------------------------------------------------------------------
 class PhotoOut(BaseModel):
+    title: str = "Untitled Photo"
+    location_name: Optional[str] = None
+    mobile_metadata: Optional[dict] = None
     id: int
     owner: str
     filename: Optional[str] = None
@@ -199,6 +252,9 @@ class DeleteResponse(BaseModel):
     missing_files: List[str] = Field(default_factory=list)
 
 class ActivityOut(BaseModel):
+    photo_title: str = "Untitled Photo"
+    author: str = "Unknown author"
+    source: Optional[str] = None
     id: int
     actor: str
     action: str
@@ -307,6 +363,9 @@ def dump_tags(tags: Optional[List[str]]) -> Optional[str]:
 
 def serialize(photo: PhotoRecord) -> dict:
     return {
+        "title": photo.title or "Untitled Photo",
+        "location_name": photo.location_name,
+        "mobile_metadata": json.loads(photo.mobile_metadata) if photo.mobile_metadata else None,
         "id": photo.id,
         "owner": photo.owner_name,
         "filename": photo.filename,
@@ -408,9 +467,12 @@ def serialize_activity(
     return {
         "id": log.id,
         "actor": log.actor,
-        "action": log.action,
+        "action": "edit" if log.action == "rename" else log.action,
         "photo_id": pid,
         "photo_display_name": log.photo_display_name,
+        "photo_title": log.photo_title or "Untitled Photo",
+        "author": log.author or "Unknown author",
+        "source": log.source,
         "photo_exists": exists,
         "photo_url": photo_url,
         "download_url": download_url,
@@ -427,7 +489,15 @@ def log_activity(
     *,
     details: Optional[dict] = None,
 ) -> ActivityLog:
+    try:
+        metadata = json.loads(photo.mobile_metadata or "{}") if photo is not None else {}
+    except (ValueError, TypeError):
+        metadata = {}
+    if not isinstance(metadata, dict): metadata = {}
     entry = ActivityLog(
+        photo_title=(photo.title or "Untitled Photo") if photo is not None else "Untitled Photo",
+        author=photo.owner_name if photo is not None else "Unknown author",
+        source=metadata.get("source") if metadata.get("source") in ("camera", "gallery") else None,
         actor=actor,
         action=action,
         photo_id=photo.id if photo is not None else None,
@@ -515,6 +585,17 @@ def summarize_actor_counts(action_counts: Dict[str, int]) -> str:
 def summarize_action_totals(action_counts: Dict[str, int]) -> str:
     """'25 uploads, 8 edits, 3 renames, and 1 deletion'"""
     return _join_naturally(_ordered_action_items(action_counts, _noun_phrase))
+
+
+def concise_activity_summary(rows):
+    labels = {"upload": ("upload", "uploads"), "edit": ("edit", "edits"), "delete": ("deletion", "deletions")}
+    parts = []
+    for action, (one, many) in labels.items():
+        count = sum(("edit" if r.action == "rename" else r.action) == action for r in rows)
+        if count: parts.append(f"{count} {one if count == 1 else many}")
+    authors = {r.author for r in rows if r.author and r.author != "Unknown author"}
+    parts.append(f"{len(authors)} {'author' if len(authors) == 1 else 'authors'}")
+    return " · ".join(parts) if rows else "No activity"
 
 
 def build_day_summary(actor_buckets: Dict[str, List["ActivityLog"]]) -> str:
@@ -627,69 +708,33 @@ async def serve_ui_app():
 # ---------------------------------------------------------------------------
 # UPLOAD
 # ---------------------------------------------------------------------------
-@pt_app.post("/upload", response_model=PhotoOut, status_code=201)
-async def upload_photo(
-    file: UploadFile = File(...),
-    user_id: Optional[str] = Form(None),  # ignored, kept so old clients don't break
-    display_name: Optional[str] = Form(None),
-    description: Optional[str] = Form(None),
-    tags: Optional[str] = Form(None),  # comma-separated
-    actor: str = Depends(get_actor),
-    db: Session = Depends(get_db),
-):
-    original_name = file.filename or "photo.jpg"
-    ext = os.path.splitext(original_name)[1].lower()
-    if ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(
-            status_code=415,
-            detail=f"Unsupported file type '{ext or 'unknown'}'. "
-                   f"Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
-        )
-    if not (file.content_type or "").startswith("image/"):
-        raise HTTPException(status_code=415, detail="Uploaded file must be an image")
-
-    timestamp_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    stored_name = (
-        f"{safe_component(actor, 'user')}_{timestamp_str}_"
-        f"{uuid.uuid4().hex[:8]}{ext}"
-    )
-    file_location = f"{UPLOAD_DIR}/{stored_name}"
-
-    size = save_upload(file, file_location, MAX_UPLOAD_BYTES)
-
-    record = PhotoRecord(
-        owner_name=actor,
-        filename=stored_name,
-        filepath=f"uploads/{stored_name}",
-        original_filename=original_name,
-        display_name=(display_name or "").strip()
-        or os.path.splitext(original_name)[0],
-        description=(description or "").strip() or None,
-        tags=dump_tags(parse_tags(tags)),
-        content_type=file.content_type,
-        size_bytes=size,
-    )
-    db.add(record)
-    db.flush()  # assign id so the log entry can reference it
-
-    log_activity(
-        db, actor, "upload", photo=record,
-        details={
-            "size_bytes": size,
-            "content_type": file.content_type,
-            "original_filename": original_name,
-        },
-    )
-
-    db.commit()
-    db.refresh(record)
-    return serialize(record)
+@pt_app.post("/upload")
+async def upload_photo():
+    """Legacy browser uploads are disabled; employee uploads use /mobile-upload."""
+    raise HTTPException(status_code=403, detail="Only employees can upload photos through the Northpoint Android app.")
 
 # ---------------------------------------------------------------------------
 # LIST / SEARCH  (paginated, filterable, sortable)
 # ---------------------------------------------------------------------------
+def photo_business_date():
+    """Library dates follow the existing Asia/Manila timestamp convention."""
+    from zoneinfo import ZoneInfo
+    return datetime.datetime.now(ZoneInfo("Asia/Manila")).date()
+
+
+def photo_time_bounds(timeframe, on_date=None):
+    day = on_date or photo_business_date()
+    if timeframe == "all":
+        return None
+    start_day = day if timeframe == "today" else day - datetime.timedelta(days=day.weekday())
+    return (datetime.datetime.combine(start_day, datetime.time.min),
+            datetime.datetime.combine(day + datetime.timedelta(days=1), datetime.time.min))
+
+
 @pt_app.get("/photos", response_model=PhotoListResponse)
 def list_photos(
+    timeframe: str = Query("all", pattern="^(today|week|all)$"),
+    on_date: Optional[datetime.date] = Query(None, description="Business date in Asia/Manila; defaults to today"),
     owner: Optional[str] = Query(None, description="Filter by owner name"),
     q: Optional[str] = Query(None, description="Search name/description/tags"),
     tag: Optional[str] = Query(None, description="Filter by a single tag"),
@@ -700,6 +745,9 @@ def list_photos(
     db: Session = Depends(get_db),
 ):
     filters = []
+    bounds = photo_time_bounds(timeframe, on_date)
+    if bounds:
+        filters.extend([PhotoRecord.timestamp >= bounds[0], PhotoRecord.timestamp < bounds[1]])
     if owner:
         filters.append(PhotoRecord.owner_name == owner)
     if tag:
@@ -708,7 +756,7 @@ def list_photos(
         like = f"%{q}%"
         filters.append(
             or_(
-                PhotoRecord.display_name.ilike(like),
+                PhotoRecord.owner_name.ilike(like),                PhotoRecord.display_name.ilike(like),
                 PhotoRecord.original_filename.ilike(like),
                 PhotoRecord.description.ilike(like),
                 PhotoRecord.tags.ilike(like),
@@ -723,7 +771,7 @@ def list_photos(
     photos = (
         db.query(PhotoRecord)
         .filter(*filters)
-        .order_by(ordering)
+        .order_by(ordering, PhotoRecord.id.asc() if order == "asc" else PhotoRecord.id.desc())
         .offset(offset)
         .limit(limit)
         .all()
@@ -742,6 +790,7 @@ def list_photos(
 # ---------------------------------------------------------------------------
 @pt_app.get("/stats")
 def get_stats(
+    include_employees: bool = Query(False, description="Include employee upload counters and Philippine business date"),
     owner: Optional[str] = Query(None),
     db: Session = Depends(get_db),
 ):
@@ -756,7 +805,35 @@ def get_stats(
     distinct_users = (
         db.query(func.count(func.distinct(PhotoRecord.owner_name))).scalar() or 0
     )
+    if not include_employees:
+        return {"total_photos": total, "total_bytes": int(total_bytes),
+                "total_megabytes": round(int(total_bytes) / (1024 * 1024), 2),
+                "distinct_users": distinct_users}
+    day = photo_business_date()
+    today_start, tomorrow = photo_time_bounds("today", day)
+    counts = {}
+    for name, metadata, timestamp in db.query(
+        PhotoRecord.owner_name, PhotoRecord.mobile_metadata, PhotoRecord.timestamp
+    ).filter(*filters).all():
+        try:
+            meta = json.loads(metadata or "{}")
+        except (ValueError, TypeError):
+            meta = {}
+        employee_id = meta.get("employee_id") if isinstance(meta, dict) else None
+        if not isinstance(employee_id, int) or isinstance(employee_id, bool) or employee_id < 1:
+            employee_id = None
+        key = (employee_id, "" if employee_id else name)
+        bucket = counts.setdefault(key, {"employee_id": employee_id, "owner": name,
+                                         "uploads_today": 0, "total_uploads": 0})
+        bucket["total_uploads"] += 1
+        bucket["uploads_today"] += int(timestamp is not None and today_start <= timestamp < tomorrow)
+    employee_counts = sorted(counts.values(), key=lambda row: (row["owner"].casefold(), row["employee_id"] or 0))
     return {
+        "business_date": day.isoformat(),
+        "timezone": "Asia/Manila",
+        "week_starts_on": "Monday",
+        "uploads_today": sum(row["uploads_today"] for row in employee_counts),
+        "employee_counts": employee_counts,
         "total_photos": total,
         "total_bytes": int(total_bytes),
         "total_megabytes": round(int(total_bytes) / (1024 * 1024), 2),
@@ -933,7 +1010,7 @@ def rename_photo(
 
     photo.display_name = new_display
     photo.updated_at = datetime.datetime.now()
-    log_activity(db, actor, "rename", photo=photo, details=details)
+    log_activity(db, actor, "edit", photo=photo, details=details)
     db.commit()
     db.refresh(photo)
     return serialize(photo)
@@ -973,6 +1050,7 @@ def delete_photo(
 # ---------------------------------------------------------------------------
 @pt_app.get("/activity", response_model=ActivityListResponse)
 def list_activity(
+    author: Optional[str] = Query(None),
     actor: Optional[str] = Query(None, description="Case-insensitive exact match"),
     action: Optional[str] = Query(
         None, pattern="^(upload|edit|rename|delete)$"
@@ -993,10 +1071,12 @@ def list_activity(
     db: Session = Depends(get_db),
 ):
     filters = []
+    if author:
+        filters.append(func.lower(ActivityLog.author) == author.lower())
     if actor:
         filters.append(func.lower(ActivityLog.actor) == actor.lower())
     if action:
-        filters.append(ActivityLog.action == action)
+        filters.append(ActivityLog.action.in_(("edit", "rename")) if action == "edit" else ActivityLog.action == action)
     if photo_id is not None:
         filters.append(ActivityLog.photo_id == photo_id)
     if photo_display_name:
@@ -1007,6 +1087,8 @@ def list_activity(
         like = f"%{q}%"
         filters.append(
             or_(
+                ActivityLog.author.ilike(like),
+                ActivityLog.photo_title.ilike(like),
                 ActivityLog.actor.ilike(like),
                 ActivityLog.photo_display_name.ilike(like),
                 ActivityLog.details.ilike(like),
@@ -1051,6 +1133,7 @@ def list_activity(
 # ---------------------------------------------------------------------------
 @pt_app.get("/activity/digest", response_model=DigestResponse)
 def get_activity_digest(
+    author: Optional[str] = Query(None),
     from_date: Optional[datetime.date] = Query(None),
     to_date: Optional[datetime.date] = Query(None),
     actor: Optional[str] = Query(None, description="Case-insensitive exact match"),
@@ -1079,10 +1162,12 @@ def get_activity_digest(
     end = datetime.datetime.combine(to_date, datetime.time.max)
 
     filters = [ActivityLog.created_at >= start, ActivityLog.created_at <= end]
+    if author:
+        filters.append(func.lower(ActivityLog.author) == author.lower())
     if actor:
         filters.append(func.lower(ActivityLog.actor) == actor.lower())
     if action:
-        filters.append(ActivityLog.action == action)
+        filters.append(ActivityLog.action.in_(("edit", "rename")) if action == "edit" else ActivityLog.action == action)
     if photo_display_name:
         filters.append(
             ActivityLog.photo_display_name.ilike(f"%{photo_display_name}%")
@@ -1091,6 +1176,8 @@ def get_activity_digest(
         like = f"%{q}%"
         filters.append(
             or_(
+                ActivityLog.author.ilike(like),
+                ActivityLog.photo_title.ilike(like),
                 ActivityLog.actor.ilike(like),
                 ActivityLog.photo_display_name.ilike(like),
                 ActivityLog.details.ilike(like),
@@ -1171,7 +1258,7 @@ def get_activity_digest(
             {
                 "date": day_key,
                 "total": len(day_items),
-                "summary": build_day_summary(actor_buckets),
+                "summary": concise_activity_summary(day_items),
                 "highlights": {
                     "top_actor": top_actor,
                     "top_action": top_action,
@@ -1196,7 +1283,7 @@ def get_activity_digest(
         "from_date": from_date.isoformat(),
         "to_date": to_date.isoformat(),
         "total": grand_total,
-        "summary": range_summary,
+        "summary": concise_activity_summary(rows),
         "totals_by_action": totals_by_action,
         "totals_by_actor": totals_by_actor,
         "days": days_out,
@@ -1232,10 +1319,10 @@ def get_photo_history(
 
     if photo_exists:
         display_name = (
-            photo.display_name or photo.original_filename or photo.filename
+            photo.title or "Untitled Photo"
         )
     else:
-        display_name = rows[0].photo_display_name if rows else None
+        display_name = (rows[0].photo_title or "Untitled Photo") if rows else "Untitled Photo"
 
     return {
         "photo_id": photo_id,
@@ -1244,6 +1331,11 @@ def get_photo_history(
         "total": total,
         "items": [serialize_activity(r, photo_exists) for r in rows],
     }
+
+@pt_app.get("/activity/authors", response_model=ActorListResponse)
+def list_activity_authors(_requester: str = Depends(get_actor), db: Session = Depends(get_db)):
+    rows = db.query(ActivityLog.author, func.count(ActivityLog.id), func.max(ActivityLog.created_at)).group_by(ActivityLog.author).all()
+    return {"actors": [{"actor": name or "Unknown author", "total": count, "last_seen": last, "actions": {}} for name,count,last in rows]}
 
 @pt_app.get("/activity/actors", response_model=ActorListResponse)
 def list_activity_actors(
@@ -1308,3 +1400,157 @@ def get_photos_batch(
     missing = [pid for pid in unique_ids if pid not in by_id]
 
     return {"found": found, "missing": missing}
+
+# Mobile uploads are separate from the existing browser upload contract.
+from auth.mobile_access import tracker_identity
+from pydantic import ConfigDict, AwareDatetime, model_validator
+from sqlalchemy.exc import IntegrityError
+from zoneinfo import ZoneInfo
+
+
+class MobileMetadata(BaseModel):
+    title: str | None = Field(default=None, max_length=120)
+    model_config = ConfigDict(extra='forbid', allow_inf_nan=False)
+    upload_id: uuid.UUID
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    accuracy_m: float = Field(ge=0, le=25)
+    location_at: AwareDatetime
+    selected_at: AwareDatetime
+    source: str = Field(pattern='^(camera|gallery)$')
+    # Optional for compatibility with older installed APKs. New outbox clients send all three.
+    expected_tracker_id: int | None = Field(default=None, gt=0)
+    expected_employee_id: int | None = Field(default=None, gt=0)
+    expected_employee_code: str | None = Field(default=None, min_length=1, max_length=200)
+
+    @model_validator(mode='after')
+    def validate_times(self):
+        now = datetime.datetime.now(datetime.timezone.utc)
+        if self.location_at > now + datetime.timedelta(minutes=5) or self.selected_at > now + datetime.timedelta(minutes=5):
+            raise ValueError('Check the date and time on the phone before uploading.')
+        if abs((self.location_at - self.selected_at).total_seconds()) > 120:
+            raise ValueError('Location must be recorded near the time the photo is selected.')
+        return self
+
+
+@pt_app.post('/mobile-upload', response_model=PhotoOut, status_code=201)
+def mobile_upload(request: Request, file: UploadFile = File(...),
+                  metadata: str = Form(..., max_length=3000), title: Optional[str] = Form(None, max_length=120), db: Session = Depends(get_db)):
+    info = tracker_identity(request)
+    try:
+        meta = MobileMetadata.model_validate_json(metadata)
+    except ValueError:
+        raise HTTPException(422, 'Photo location or time is invalid. Enable precise location and automatic date/time, then select the photo again.')
+    supplied_title = meta.title if meta.title is not None else title
+    if supplied_title is not None and not supplied_title.strip():
+        raise HTTPException(422, 'Please enter a photo title before sending.')
+    if meta.title is not None and title is not None and meta.title.strip() != title.strip():
+        raise HTTPException(422, 'Photo titles do not match. Please retry with the saved title.')
+    photo_title = supplied_title.strip() if supplied_title is not None else 'Untitled Photo'
+    expected = (meta.expected_tracker_id, meta.expected_employee_id, meta.expected_employee_code)
+    if any(value is not None for value in expected) and expected != (info['tracker_id'], info['employee_id'], info['employee_code']):
+        raise HTTPException(409, 'This photo was saved for a different employee account. Contact HR; the photo remains on this phone.')
+    # Original selection/GPS timestamps may be days old after an offline period.
+    # Validation compares them to each other, never to upload/receipt time.
+    key = f"{info['tracker_id']}:{meta.upload_id}"
+    previous = db.query(PhotoRecord).filter_by(upload_key=key).first()
+    if previous:
+        return serialize(previous)
+    ext = Path(file.filename or '').suffix.lower()
+    # Keep the mobile preview compatible with the browser; reject mislabeled data.
+    signatures = file.file.read(16)
+    file.file.seek(0)
+    valid = ((ext in ('.jpg', '.jpeg') and signatures.startswith(b'\xff\xd8\xff')) or
+             (ext == '.png' and signatures.startswith(b'\x89PNG\r\n\x1a\n')) or
+             (ext == '.webp' and signatures[:4] == b'RIFF' and signatures[8:12] == b'WEBP'))
+    if not valid:
+        raise HTTPException(415, 'Choose a JPG, PNG, or WebP photo, or take a new picture in the app.')
+    name = f'mobile_{uuid.uuid4().hex}{ext}'
+    path = UPLOAD_DIR / name
+    size = save_upload(file, str(path), MAX_UPLOAD_BYTES)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    local = meta.selected_at.astimezone(ZoneInfo('Asia/Manila'))
+    label = 'Camera photo selected' if meta.source == 'camera' else 'Gallery photo selected'
+    details = {**meta.model_dump(mode='json'), **info, 'uploaded_at': now.isoformat(), 'context_radius_m': 250}
+    description = (f"Uploaded by: {info['full_name']}\n{label}: {local:%d %b %Y, %I:%M:%S %p} (Philippine time)\n"
+                   f"Location when selected: {meta.latitude:.6f}, {meta.longitude:.6f}\n"
+                   f"GPS accuracy: ±{meta.accuracy_m:.0f} m. Context radius: 250 m.\n"
+                   f"Received: {now.astimezone(ZoneInfo('Asia/Manila')):%d %b %Y, %I:%M:%S %p} (Philippine time)")
+    record = PhotoRecord(title=photo_title, owner_name=info['full_name'], filename=name, filepath=f'uploads/{name}',
+                         original_filename=Path(file.filename).name, display_name=info['full_name'],
+                         description=description, tags='Mobile upload', size_bytes=size,
+                         content_type={'.jpg':'image/jpeg','.jpeg':'image/jpeg','.png':'image/png','.webp':'image/webp'}[ext],
+                         timestamp=now.astimezone(ZoneInfo('Asia/Manila')).replace(tzinfo=None),
+                         mobile_metadata=json.dumps(details, ensure_ascii=False), upload_key=key)
+    try:
+        db.add(record)
+        db.flush()
+        log_activity(db, info['full_name'], 'upload', record, details=details)
+        db.commit()
+        db.refresh(record)
+    except IntegrityError:
+        db.rollback()
+        path.unlink(missing_ok=True)
+        previous = db.query(PhotoRecord).filter_by(upload_key=key).first()
+        if previous:
+            return serialize(previous)
+        raise
+    except Exception:
+        db.rollback()
+        path.unlink(missing_ok=True)
+        raise
+    return serialize(record)
+
+
+class MobileTitleEdit(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    upload_id: uuid.UUID
+    revision: int = Field(gt=0, le=2147483647)
+    title: str = Field(min_length=1, max_length=120)
+    expected_tracker_id: int = Field(gt=0)
+    expected_employee_id: int = Field(gt=0)
+    expected_employee_code: str = Field(min_length=1, max_length=200)
+
+
+@pt_app.patch('/mobile-photos/{photo_id}/title')
+def edit_mobile_title(photo_id: int, payload: MobileTitleEdit, request: Request,
+                      db: Session = Depends(get_db)):
+    info = tracker_identity(request)
+    title = payload.title.strip()
+    if not title:
+        raise HTTPException(422, 'Please enter a photo title (up to 120 characters).')
+    identity = (info['tracker_id'], info['employee_id'], info['employee_code'])
+    if identity != (payload.expected_tracker_id, payload.expected_employee_id, payload.expected_employee_code):
+        raise HTTPException(403, 'Sign in with the employee account that uploaded this photo.')
+    # Serialize competing edits/retries. A late request cannot undo a newer title.
+    db.execute(text('BEGIN IMMEDIATE'))
+    photo = get_photo_or_404(db, photo_id)
+    key = f"{info['tracker_id']}:{payload.upload_id}"
+    try:
+        meta = json.loads(photo.mobile_metadata or '{}')
+    except (ValueError, TypeError):
+        meta = {}
+    if not isinstance(meta, dict) or photo.upload_key != key or identity != (
+        meta.get('tracker_id'), meta.get('employee_id'), meta.get('employee_code')
+    ):
+        raise HTTPException(403, 'Only the employee who uploaded this photo can edit its title.')
+    saved = db.get(PhotoTitleRevision, key)
+    if saved and payload.revision <= saved.revision:
+        if payload.revision == saved.revision and title != saved.title:
+            raise HTTPException(409, 'This title edit conflicts with a previously saved edit.')
+        return {'id': photo.id, 'upload_id': str(payload.upload_id), 'revision': saved.revision,
+                'title': saved.title, **{k: info[k] for k in ('tracker_id','employee_id','employee_code')}}
+    before = photo.title or 'Untitled Photo'
+    if before != title:
+        photo.title = title
+        log_activity(db, info['full_name'], 'edit', photo=photo,
+                     details={'changes': {'title': {'from': before, 'to': title}},
+                              'upload_id': str(payload.upload_id), 'revision': payload.revision})
+    # Keep original capture metadata, location, filenames and upload time unchanged.
+    if saved:
+        saved.revision, saved.title = payload.revision, title
+    else:
+        db.add(PhotoTitleRevision(upload_key=key, revision=payload.revision, title=title))
+    db.commit()
+    return {'id': photo.id, 'upload_id': str(payload.upload_id), 'revision': payload.revision,
+            'title': title, **{k: info[k] for k in ('tracker_id','employee_id','employee_code')}}

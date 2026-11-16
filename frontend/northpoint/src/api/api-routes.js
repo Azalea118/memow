@@ -14,10 +14,10 @@ const routes=[
  ['GET',/^\/violation-types(?:\/all|\/\d+)?$/],['POST',/^\/violation-types$/,true],['PATCH',/^\/violation-types\/\d+$/,true],['DELETE',/^\/violation-types\/\d+$/,true],['POST',/^\/violation-types\/\d+\/(?:activate|deactivate)$/,true]
 ];
 export function apiRoute(path,method,service='hr'){
- if(service==='session'&&path==='/me'&&method==='GET')return {actor:false};
+ if(service==='session'){if(path==='/me'&&method==='GET'||/^\/employees\/\d+\/mobile-access(?:\/link)?$/.test(path)&&['GET','POST','PATCH'].includes(method))return {actor:false};throw Error('Unknown session endpoint.');}
  if(service==='tracking'){if(method==='GET'&&/^\/(?:devices|(?:live|route)\/[^/?#\s]+)$/.test(path))return {actor:false};throw new Error('This action is not defined in the tracking API contract.');}
  if(service==='photos'){
-  const allowed=method==='GET'&&/^\/(?:photos(?:\/\d+(?:\/history)?)?|stats|activity(?:\/(?:digest|actors))?)$/.test(path)||method==='POST'&&['/upload','/photos/batch'].includes(path)||['PATCH','DELETE'].includes(method)&&/^\/photos\/\d+$/.test(path);
+  const allowed=method==='GET'&&/^\/(?:photos(?:\/\d+(?:\/(?:history|download))?)?|stats|activity(?:\/(?:digest|actors|authors))?)$/.test(path)||method==='POST'&&(['/upload','/photos/batch','/photos/bulk-delete'].includes(path)||/^\/photos\/\d+\/rename$/.test(path))||['PATCH','DELETE'].includes(method)&&/^\/photos\/\d+$/.test(path);
   if(allowed)return {actor:method!=='GET'};
   throw new Error('This action is not defined in the photo API contract.');
  }

@@ -53,10 +53,11 @@ script += `const {createCalendarService,calendarService}=(()=>{\n${withoutExport
 script += `const {invalidateHistoryCalendar,createCalendarLoader,renderHistoryCalendar,renderCalendarDigest,handleCalendarAction,handleCalendarKeydown}=(()=>{\n${withoutExports(read('features/history/calendar.js'))}\nreturn {invalidateHistoryCalendar,createCalendarLoader,renderHistoryCalendar,renderCalendarDigest,handleCalendarAction,handleCalendarKeydown};})();\n`;
 script += `const {sessionState,loadSession,signOut,displayActor}=(()=>{\n${withoutExports(read('auth/session.js'))}\nreturn {sessionState,loadSession,signOut,displayActor};})();\n`;
 script += `const {businessDate,todayChanges,renderTodayChange,yesterdayComparison,renderYesterdayChange}=(()=>{\n${withoutExports(read('features/reports/yesterday.js'))}\nreturn {businessDate,todayChanges,renderTodayChange,yesterdayComparison,renderYesterdayChange};})();\n`;
-script += `const {photoData,photoUpload,watchPhotos,notifyPhotos,photoFileUrl,photoRequest,loadPhotos,uploadPhoto,allowPhotoRetry}=(()=>{\n${withoutExports(read('features/photos/photo-service.js'))}\nreturn {photoData,photoUpload,watchPhotos,notifyPhotos,photoFileUrl,photoRequest,loadPhotos,uploadPhoto,allowPhotoRetry};})();\n`;
+script += `const {photoData,photoUpload,watchPhotos,notifyPhotos,photoFileUrl,normalizePhoto,readPhoto,photoDownloadUrl,photoRequest,loadPhotos,uploadPhoto,allowPhotoRetry}=(()=>{\n${withoutExports(read('features/photos/photo-service.js'))}\nreturn {photoData,photoUpload,watchPhotos,notifyPhotos,photoFileUrl,normalizePhoto,readPhoto,photoDownloadUrl,photoRequest,loadPhotos,uploadPhoto,allowPhotoRetry};})();\n`;
 script += `const {createPhotoActivity,photoActivityService,fetchPhotoHistory,fetchPhotoBatch}=(()=>{\n${withoutExports(read('features/photos/photo-activity.js'))}\nreturn {createPhotoActivity,photoActivityService,fetchPhotoHistory,fetchPhotoBatch};})();\n`;
 script += `const {renderPhotoActivity,handlePhotoActivityAction}=(()=>{\n${withoutExports(read('features/photos/photo-activity-view.js'))}\nreturn {renderPhotoActivity,handlePhotoActivityAction};})();\n`;
-script += `const {renderPhotoCamera,stampedPhoto,handleCameraAction,handleCameraChange}=(()=>{\n${withoutExports(read('features/photos/photo-camera.js'))}\nreturn {renderPhotoCamera,stampedPhoto,handleCameraAction,handleCameraChange};})();\n`;
+script += `const {photoManagement,handlePhotoManagementAction,handlePhotoManagementSubmit}=(()=>{\n${withoutExports(read('features/photos/photo-management.js'))}\nreturn {photoManagement,handlePhotoManagementAction,handlePhotoManagementSubmit};})();\n`;
+script += `const {mobileAccessPanel}=(()=>{\n${withoutExports(read('features/employees/mobile-access.js'))}\nreturn {mobileAccessPanel};})();\n`;
 script += `const {renderPhotoLibrary,handlePhotoAction,handlePhotoSubmit,handlePhotoChange,clearPhotoDraft}=(()=>{\n${withoutExports(read('features/photos/photo-library.js'))}\nreturn {renderPhotoLibrary,handlePhotoAction,handlePhotoSubmit,handlePhotoChange,clearPhotoDraft};})();\n`;
 script += `const {readTrackingDevices,readTrackingLocation,readTrackingRoute}=(()=>{\n${withoutExports(read('features/tracking/tracking-service.js'))}\nreturn {readTrackingDevices,readTrackingLocation,readTrackingRoute};})();\n`;
 script += `const {renderMapTracking,mountMapTracking,stopMapTracking,handleTrackingAction,handleTrackingSubmit,handleTrackingChange}=(()=>{\n${withoutExports(read('features/tracking/map-tracking.js'))}\nreturn {renderMapTracking,mountMapTracking,stopMapTracking,handleTrackingAction,handleTrackingSubmit,handleTrackingChange};})();\n`;
@@ -85,8 +86,8 @@ if (process.argv[2]) {
 }
 console.log('Northpoint rebuilt: API settings load from config.js');
 
-// Compatibility entrypoint: Camera now lives inside the main Northpoint shell.
-fs.writeFileSync(path.join(project,'camera.html'),'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="0;url=./index.html#camera"><title>Camera · Northpoint</title></head><body><a href="./index.html#camera">Open Camera in Northpoint</a></body></html>');
+// Legacy camera bookmarks now open Photo Library.
+fs.writeFileSync(path.join(project,'camera.html'),'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="0;url=./index.html#photos"><title>Photo Library · Northpoint</title></head><body><a href="./index.html#photos">Open Photo Library in Northpoint</a></body></html>');
 
 // A standalone sign-in page: its public GET route can be served by Nginx.
 let loginStyles=read('styles/login.css');

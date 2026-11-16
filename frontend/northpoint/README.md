@@ -31,11 +31,11 @@ Today indicators reconstruct the Manila-midnight baseline by matching employee, 
 
 Run node build.mjs after source edits, then node verify.mjs. The build regenerates index.html and login.html without reading or publishing the private policy document. The FE version remains v.FE-0.3a.
 
-## Photos, camera and sign-in
+## Photo Library and sign-in
 
-Photo Library is part of the main sidebar at `/#photos`, with Photos and Activity Log tabs. The activity tab contains the month calendar and newest-first logs. Camera is in the same sidebar at `/#camera`; `/camera.html` redirects there. Upload Photo sends multipart form data to the existing `/app2/upload` endpoint. Lists, statistics, files and activity use the existing Photo API. No photo records are cached locally or fabricated on errors.
+Photo Library is part of the main sidebar at `/#photos`, with Photos and Activity Log tabs. The activity tab contains the month calendar and newest-first logs. The Camera page and capture controls are removed. Existing `/#camera` and `/camera.html` bookmarks redirect to Photo Library. Upload Photo sends multipart form data to the existing `/app2/upload` endpoint. Lists, statistics, files and activity use the existing Photo API. No photo records are cached locally or fabricated on errors.
 
-Camera uses the phone’s native capture/image picker. When the timestamp is enabled, it is burned into a JPEG before upload. A desktop opens an image picker rather than a live webcam stream. The original photo stays on the device. Unknown upload outcomes are not automatically retried; refresh and review recent photos/activity before explicitly allowing another upload.
+Photo Details supports downloading the original, editing name/description/tags, renaming the title with an optional stored-file rename, and deleting a photo with confirmation. Select photos in grid or list view to delete selected images together. The controls use the same `/app2` endpoints and request formats as the standalone Photo Library in memow-main: PATCH `/photos/{id}`, POST `/photos/{id}/rename`, GET `/photos/{id}/download`, and POST `/photos/bulk-delete` with `{ids:[...]}`. Mutations are verified through fresh reads, and both the photo list and Photo Activity refresh after a confirmed change. Unknown upload outcomes are not automatically retried; refresh and review recent photos/activity before explicitly allowing another upload.
 
 The signed-in account comes from the existing read-only `/auth/me` endpoint. It uses the HTTP-only session cookie and returns the user ID, username and profile names; Northpoint displays `full_name`, using available first/last names or the username when profile names are missing. Successful responses are marked no-store, and missing/expired sessions return 401. Settings shows the signed-in name as read-only. Existing Nginx `/auth/` routing supports both session checks and logout; no backend change is needed for the frontend Sign Out button.
 
@@ -59,7 +59,7 @@ const BASE_URL = '';
 
 This makes both `http://localhost:8081/` and a tunnel address use their own `/app1/`, `/app2/`, and `/auth/` endpoints. Keep config.js beside index.html when copying or deploying the frontend. You may set an absolute API URL for a special deployment, but the browser needs an appropriate same-origin authentication and CORS setup. Save and reload after any configuration edit; no rebuild is needed. The older frontend/js/script.js configuration does not control Northpoint.
 
-For a phone, localhost refers to the phone. Open the tunnel address or `http://YOUR-PC-LAN-IP:8081/` from the phone and sign in there; the API follows that address automatically. Use HTTPS when camera access requires a secure connection.
+For a phone, localhost refers to the phone. Open the tunnel address or `http://YOUR-PC-LAN-IP:8081/` from the phone and sign in there; the API follows that address automatically.
 
 ## Run with the local backend
 
@@ -127,7 +127,7 @@ Edit source files in `src/`, then run `node build.mjs` to refresh the root `inde
 - `features/records/`: employee, violation and violation-type list views.
 - `features/history/`: calendar, daily summaries and history API contracts.
 - `features/reports/`: reports, analytics and yesterday comparisons.
-- `features/photos/`: photo library, activity, viewer, camera and API handling.
+- `features/photos/`: photo library, editing, renaming, downloads, selection, activity, viewer and API handling.
 - `features/settings/`: settings, help and secondary page routing.
 - `shared/`: reusable domain helpers, loading states, filters and mobile behavior.
 - `styles/`: shared, photo and compact-table styles.
@@ -174,7 +174,7 @@ Dashboard trends switch between six weekly or six monthly buckets, including the
 
 Employees show Total Violations from retained records, with eight employees per page. New labels retain their 24-hour creation-time rule. New and Strike use the compact tinted bordered badge style. Reports use compact horizontally scrollable directory tables, with totals added to Top Offenders and strikes shown in Watchlist.
 
-The desktop photo grid fits four cards per row with eight per page; smaller screens use two columns. Photo metadata shows a short date, uploader and file size on one line; the full date and uploader remain available in the title attributes. Photo Activity uses All Users. A captured/selected camera photo shows an optional description below its buttons. Blank descriptions submit the literal value None through the existing photo upload API. Draft descriptions persist through view refreshes and clear after a successful upload.
+The desktop photo grid fits four cards per row with eight per page; smaller screens use two columns. Photo metadata shows a short date, uploader and file size on one line; the full date and uploader remain available in the title attributes. Photo Activity uses All Users. Photo uploads keep their optional description and tags. The separate Camera entry is removed.
 
 Help includes Photo Library, photo activity, Timestamp Camera and Map Tracking tutorials plus expanded common questions. The keyboard-friendly promotional callout is removed, and Settings uses a red Sign out button.
 
