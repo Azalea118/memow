@@ -1,5 +1,6 @@
 // Allowed routes from the supplied references, plus the existing Calendar contract.
 const routes=[
+ ['GET',/^\/employees\/\d+\/violation-history$/],
  ['GET',/^\/employees\/\d+\/(?:offense-summary|totals)$/],
  ['GET',/^\/analytics\/(?:top-offenders|departments|subsections|activity|watchlist|clean-employees)$/],
  ['GET',/^\/violation-types\/\d+\/subsections$/],['POST',/^\/violation-types\/\d+\/subsections$/,true],

@@ -29,6 +29,7 @@ export async function fillSubsections(form,selected=''){
 // Page state stays in memory only. Never substitute local records for backend data.
 const categoryRules=new Map(),ruleDrafts=new Map(),categoryDeletions=new Map();
 let pageWriteBusy=false;
+export function invalidateRulebookCache(){categoryRules.clear();}
 function categoryPath(id){return 'category/'+apiId(id);}
 function editorPath(category,id){return categoryPath(category)+'/rule/'+(id==='new'?'new':apiId(id));}
 function listState(id){id=String(id);if(!categoryRules.has(id))categoryRules.set(id,{status:'idle',details:'idle',options:[],rows:[],error:''});return categoryRules.get(id);}

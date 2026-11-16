@@ -23,6 +23,7 @@ function settings(ctx) {
       <p class="muted" style="margin:0">Larger text increases the size of navigation, forms, and body text throughout the workspace.</p>
       <div class="settings-actions"><button type="submit" class="button primary">${icon('check')} Save Changes</button><button type="button" class="button danger" data-action="sign-out">Sign out</button></div>
     </form></section><div>
+      <section class="panel settings-rule-restore"><div class="panel-header"><h2>Company Violation Categories</h2></div><div class="panel-body"><p>Restore missing company categories, specific violations, and penalty schedules. Existing entries, penalties, and inactive settings are kept.</p><p class="muted">Categories are shared by all accounts. Your custom violation types stay alongside the company rules.</p><button type="button" class="button primary" data-action="restore-company-rules">Restore Violation Categories</button></div></section>
       <section class="panel"><div class="panel-header"><h2>About This Workspace</h2></div><div class="panel-body"><p><strong>Northpoint</strong><br>Violation Management System</p><p class="muted">A dedicated space for employee records, disciplinary cases, and clear reporting.</p><div class="callout" style="margin-top:20px"><div><strong>About this build</strong><p>Employee records, violations and history are connected to the hosted backend. Your signed-in full name is used automatically. Preferences reset when you reload.</p></div></div></div></section>
     </div></div>`;
 }
