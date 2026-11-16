@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Path, Query, status
 from pydantic import BaseModel
@@ -7,13 +7,15 @@ from pydantic import BaseModel
 from app.deps import ActorDep, DbSession, PaginationDep
 from app.schemas.removal import ViolationRemovalCreate, ViolationRemovalRead
 from app.schemas.violation import (
-    EmployeeOffenseSummaryRow, ViolationAssign,
+    EmployeeOffenseSummaryRow, ViolationAssign, ViolationHistoryRow,
     ViolationRecordFeedRead, ViolationRecordRead, ViolationRecordUpdate,
 )
+from app.schemas.common import Page
 from queries import (
     assign_violation, clear_employee_violations, get_employee_offense_summary,
     get_violation_record, list_employee_violations, list_recent_violations,
-    remove_violation_record, update_violation_record,
+    remove_violation_record, update_violation_record, count_employee_violation_history,
+    list_employee_violation_history,
 )
 
 router = APIRouter(tags=["violations"])
@@ -64,6 +66,36 @@ def list_for_employee(
 )
 def offense_summary(db: DbSession, employee_id: Annotated[int, Path(ge=1)]):
     return get_employee_offense_summary(db, employee_id)
+
+@router.get(
+    "/employees/{employee_id}/violation-history",
+    response_model=Page[ViolationHistoryRow],
+    summary="Full violation history — active and removed, chronological",
+)
+def violation_history(
+    db: DbSession,
+    employee_id: Annotated[int, Path(ge=1)],
+    page: PaginationDep,
+    status: Annotated[
+        Literal["active", "removed"] | None,
+        Query(description="Filter by status; omit for both"),
+    ] = None,
+    subsection_id: Annotated[int | None, Query(ge=1)] = None,
+    since: Annotated[datetime | None, Query(description="Inclusive, on issued_at (UTC)")] = None,
+    until: Annotated[datetime | None, Query(description="Inclusive, on issued_at (UTC)")] = None,
+):
+    items = list_employee_violation_history(
+        db, employee_id,
+        status=status, subsection_id=subsection_id,
+        since=since, until=until,
+        limit=page.limit, offset=page.offset,
+    )
+    total = count_employee_violation_history(
+        db, employee_id,
+        status=status, subsection_id=subsection_id,
+        since=since, until=until,
+    )
+    return Page(items=items, total=total, limit=page.limit, offset=page.offset)
 
 
 @router.post(

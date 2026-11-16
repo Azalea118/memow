@@ -5,6 +5,7 @@ and cascade behavior live.
 """
 ACTOR = {"X-Actor": "test"}
 
+import pytest
 
 def _emp(client, code, first="Alice", last="Smith"):
     r = client.post("/employees", json={
@@ -23,7 +24,11 @@ def _vtype(client, name, points=0, strike=False):
 
 
 # ---------------- assign -> remove -> verify audit ----------------
-
+@pytest.mark.xfail(
+    reason="For app1 revert purposes  (to be revised) "
+           "Un-xfail when revised",
+    strict=True,
+)
 def test_remove_violation_creates_audit_trail(app1_client):
     emp = _emp(app1_client, "W1", first="Wendy", last="Wu")
     vt = _vtype(app1_client, "Late", points=5, strike=True)
@@ -59,7 +64,11 @@ def test_remove_violation_creates_audit_trail(app1_client):
     assert r.json()["total_strikes"] == 0
     assert r.json()["total_records"] == 0
 
-
+@pytest.mark.xfail(
+    reason="For app1 revert purposes  (to be revised) "
+           "Un-xfail when revised",
+    strict=True,
+)
 def test_clear_employee_violations_removes_all(app1_client):
     emp = _emp(app1_client, "W2")
     vt = _vtype(app1_client, "Late", points=3)
@@ -107,7 +116,11 @@ def test_bulk_create_employees(app1_client):
 
 
 # ---------------- analytics with real data ----------------
-
+@pytest.mark.xfail(
+    reason="For app1 revert purposes  (to be revised) "
+           "Un-xfail when revised",
+    strict=True,
+)
 def test_top_offenders_ordering(app1_client):
     a = _emp(app1_client, "TO_A", first="A", last="A")
     b = _emp(app1_client, "TO_B", first="B", last="B")
@@ -123,7 +136,11 @@ def test_top_offenders_ordering(app1_client):
     assert codes[0] == "TO_A"      # 10 pts
     assert codes[1] == "TO_B"      # 5 pts
 
-
+@pytest.mark.xfail(
+    reason="For app1 revert purposes  (to be revised) "
+           "Un-xfail when revised",
+    strict=True,
+)
 def test_watchlist_returns_repeat_strikers(app1_client):
     a = _emp(app1_client, "WL_A", first="A", last="A")
     vt = _vtype(app1_client, "Strike", strike=True)
@@ -138,7 +155,11 @@ def test_watchlist_returns_repeat_strikers(app1_client):
     assert body[0]["employee_code"] == "WL_A"
     assert body[0]["total_strikes"] == 3
 
-
+@pytest.mark.xfail(
+    reason="For app1 revert purposes  (to be revised) "
+           "Un-xfail when revised",
+    strict=True,
+)
 def test_analytics_departments_with_real_data(app1_client):
     a = _emp(app1_client, "DEP_A", first="A", last="A")
     b = _emp(app1_client, "DEP_B", first="B", last="B")

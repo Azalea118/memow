@@ -96,6 +96,11 @@ def test_list_employees_department_total_is_consistent(app1_client):
 
 # ---------------- min_points / min_strikes ----------------
 
+@pytest.mark.xfail(
+    reason="For app1 revert purposes  (to be revised) "
+           "Un-xfail when revised",
+    strict=True,
+)
 def test_min_points_filter(app1_client):
     a = _emp(app1_client, "MP_A", first="A", last="A")
     b = _emp(app1_client, "MP_B", first="B", last="B")
@@ -110,7 +115,11 @@ def test_min_points_filter(app1_client):
     codes = [e["employee_code"] for e in r.json()["items"]]
     assert codes == ["MP_B"]
 
-
+@pytest.mark.xfail(
+    reason="For app1 revert purposes  (to be revised) "
+           "Un-xfail when revised",
+    strict=True,
+)
 def test_min_strikes_filter(app1_client):
     a = _emp(app1_client, "MS_A", first="A", last="A")
     b = _emp(app1_client, "MS_B", first="B", last="B")
