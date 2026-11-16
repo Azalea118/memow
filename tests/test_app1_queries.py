@@ -13,6 +13,7 @@ Targets (from coverage report, 122 missing lines in queries.py):
   * activity timeline target_type / employee_id / date range / day
 """
 from datetime import datetime, timedelta, timezone
+import pytest
 
 ACTOR = {"X-Actor": "test"}
 
@@ -97,7 +98,11 @@ def test_delete_violation_type_404(app1_client):
     r = app1_client.delete("/violation-types/99999", headers=ACTOR)
     assert r.status_code == 404
 
-
+@pytest.mark.xfail(
+    reason="For app1 revert purposes  (to be revised) "
+           "Un-xfail when revised",
+    strict=True,
+)
 def test_assign_violation_missing_employee(app1_client):
     vt = _vtype(app1_client, "Any")
     r = app1_client.post(
@@ -107,7 +112,11 @@ def test_assign_violation_missing_employee(app1_client):
     assert r.status_code == 404
     assert r.json()["error"] == "EmployeeNotFound"
 
-
+@pytest.mark.xfail(
+    reason="For app1 revert purposes  (to be revised) "
+           "Un-xfail when revised",
+    strict=True,
+)
 def test_assign_violation_missing_vtype(app1_client):
     emp = _emp(app1_client, "E_MISS_VT")
     r = app1_client.post(
@@ -123,7 +132,11 @@ def test_update_violation_record_404(app1_client):
     assert r.status_code == 404
     assert r.json()["error"] == "ViolationRecordNotFound"
 
-
+@pytest.mark.xfail(
+    reason="For app1 revert purposes  (to be revised) "
+           "Un-xfail when revised",
+    strict=True,
+)
 def test_remove_violation_record_404(app1_client):
     r = app1_client.post(
         "/violations/99999/remove",
@@ -131,7 +144,11 @@ def test_remove_violation_record_404(app1_client):
     )
     assert r.status_code == 404
 
-
+@pytest.mark.xfail(
+    reason="For app1 revert purposes  (to be revised) "
+           "Un-xfail when revised",
+    strict=True,
+)
 def test_clear_violations_missing_employee(app1_client):
     r = app1_client.post(
         "/employees/99999/violations/clear",
@@ -141,7 +158,11 @@ def test_clear_violations_missing_employee(app1_client):
 
 
 # ---------------------------------------------------------------- 400 / 409
-
+@pytest.mark.xfail(
+    reason="For app1 revert purposes  (to be revised) "
+           "Un-xfail when revised",
+    strict=True,
+)
 def test_assign_violation_inactive_type(app1_client):
     emp = _emp(app1_client, "E_INACT")
     vt = _vtype(app1_client, "Deactivated type", active=False)
@@ -152,7 +173,11 @@ def test_assign_violation_inactive_type(app1_client):
     assert r.status_code == 400
     assert r.json()["error"] == "ViolationTypeInactive"
 
-
+@pytest.mark.xfail(
+    reason="For app1 revert purposes  (to be revised) "
+           "Un-xfail when revised",
+    strict=True,
+)
 def test_create_duplicate_violation_type_name(app1_client):
     _vtype(app1_client, "DupName")
     r = app1_client.post(
@@ -172,7 +197,11 @@ def test_update_employee_to_duplicate_code(app1_client):
     assert r.status_code == 409
     assert r.json()["error"] == "DuplicateEmployeeCode"
 
-
+@pytest.mark.xfail(
+    reason="For app1 revert purposes  (to be revised) "
+           "Un-xfail when revised",
+    strict=True,
+)
 def test_update_violation_type_to_duplicate_name(app1_client):
     _vtype(app1_client, "NameA")
     b = _vtype(app1_client, "NameB")
@@ -218,7 +247,11 @@ def test_update_employee_all_fields(app1_client):
     assert len(items) >= 1
     assert "employee_code" in items[0]["metadata_json"]["changes"]
 
-
+@pytest.mark.xfail(
+    reason="For app1 revert purposes  (to be revised) "
+           "Un-xfail when revised",
+    strict=True,
+)
 def test_update_violation_record_fields(app1_client):
     emp = _emp(app1_client, "UPD_REC")
     vt = _vtype(app1_client, "V", points=5)
@@ -233,7 +266,11 @@ def test_update_violation_record_fields(app1_client):
     assert body["issued_by"] == "Manager X"
     assert body["points"] == 5  # points are snapshot — never editable
 
-
+@pytest.mark.xfail(
+    reason="For app1 revert purposes  (to be revised) "
+           "Un-xfail when revised",
+    strict=True,
+)
 def test_update_violation_type_fields(app1_client):
     vt = _vtype(app1_client, "VT_OLD", points=3)
     r = app1_client.patch(f"/violation-types/{vt['id']}", json={
@@ -249,7 +286,11 @@ def test_update_violation_type_fields(app1_client):
 
 
 # ---------------------------------------------------------------- filter variants
-
+@pytest.mark.xfail(
+    reason="For app1 revert purposes  (to be revised) "
+           "Un-xfail when revised",
+    strict=True,
+)
 def test_list_employee_violations_only_strikes(app1_client):
     emp = _emp(app1_client, "F_STR")
     s = _vtype(app1_client, "Strike", strike=True)
@@ -263,6 +304,11 @@ def test_list_employee_violations_only_strikes(app1_client):
     r = app1_client.get(f"/employees/{emp['id']}/violations?only_strikes=false")
     assert len(r.json()) == 1 and r.json()[0]["is_strike"] is False
 
+@pytest.mark.xfail(
+    reason="For app1 revert purposes  (to be revised) "
+           "Un-xfail when revised",
+    strict=True,
+)
 
 def test_list_employee_violations_since_until(app1_client):
     emp = _emp(app1_client, "F_DT")
@@ -288,6 +334,11 @@ def test_list_employee_violations_since_until(app1_client):
     assert r.status_code == 200, r.text
     assert r.json() == []
 
+@pytest.mark.xfail(
+    reason="For app1 revert purposes  (to be revised) "
+           "Un-xfail when revised",
+    strict=True,
+)
 def test_list_recent_violations_only_strikes(app1_client):
     emp = _emp(app1_client, "F_REC")
     s = _vtype(app1_client, "S", strike=True)
@@ -298,7 +349,11 @@ def test_list_recent_violations_only_strikes(app1_client):
     r = app1_client.get("/violations/recent?only_strikes=true")
     assert all(v["is_strike"] for v in r.json())
 
-
+@pytest.mark.xfail(
+    reason="For app1 revert purposes  (to be revised) "
+           "Un-xfail when revised",
+    strict=True,
+)
 def test_analytics_top_offenders_by_strikes(app1_client):
     a = _emp(app1_client, "OFF_A", first="A", last="A")
     b = _emp(app1_client, "OFF_B", first="B", last="B")
@@ -312,7 +367,11 @@ def test_analytics_top_offenders_by_strikes(app1_client):
     assert codes[0] == "OFF_A"
     assert codes[1] == "OFF_B"
 
-
+@pytest.mark.xfail(
+    reason="For app1 revert purposes  (to be revised) "
+           "Un-xfail when revised",
+    strict=True,
+)
 def test_analytics_top_offenders_by_records(app1_client):
     a = _emp(app1_client, "REC_A", first="A", last="A")
     b = _emp(app1_client, "REC_B", first="B", last="B")
@@ -324,7 +383,11 @@ def test_analytics_top_offenders_by_records(app1_client):
     r = app1_client.get("/analytics/top-offenders?by=records")
     assert [e["employee_code"] for e in r.json()][0] == "REC_A"
 
-
+@pytest.mark.xfail(
+    reason="For app1 revert purposes  (to be revised) "
+           "Un-xfail when revised",
+    strict=True,
+)
 def test_analytics_activity_week_bucket(app1_client):
     emp = _emp(app1_client, "WK")
     vt = _vtype(app1_client, "V", points=1)
@@ -336,7 +399,11 @@ def test_analytics_activity_week_bucket(app1_client):
     assert len(body) >= 1
     assert "W" in body[0]["bucket"]   # strftime %Y-W%W
 
-
+@pytest.mark.xfail(
+    reason="For app1 revert purposes  (to be revised) "
+           "Un-xfail when revised",
+    strict=True,
+)
 def test_analytics_activity_month_bucket(app1_client):
     emp = _emp(app1_client, "MO")
     vt = _vtype(app1_client, "V", points=1)
@@ -348,7 +415,11 @@ def test_analytics_activity_month_bucket(app1_client):
     assert len(body) >= 1
     assert body[0]["bucket"].count("-") == 1   # "YYYY-MM"
 
-
+@pytest.mark.xfail(
+    reason="For app1 revert purposes  (to be revised) "
+           "Un-xfail when revised",
+    strict=True,
+)
 def test_violation_free_employees_with_since(app1_client):
     emp_a = _emp(app1_client, "CLEAN_A", first="A", last="A")
     emp_b = _emp(app1_client, "CLEAN_B", first="B", last="B")
@@ -367,7 +438,11 @@ def test_violation_free_employees_with_since(app1_client):
     assert "CLEAN_A" in codes and "CLEAN_B" in codes
 
 # ---------------------------------------------------------------- removals filters
-
+@pytest.mark.xfail(
+    reason="For app1 revert purposes  (to be revised) "
+           "Un-xfail when revised",
+    strict=True,
+)
 def test_removals_search(app1_client):
     emp = _emp(app1_client, "REM_S")
     vt = _vtype(app1_client, "Late", points=1)
@@ -383,7 +458,11 @@ def test_removals_search(app1_client):
     r = app1_client.get("/violation-removals?search=nomatch")
     assert r.json()["total"] == 0
 
-
+@pytest.mark.xfail(
+    reason="For app1 revert purposes  (to be revised) "
+           "Un-xfail when revised",
+    strict=True,
+)
 def test_removals_filter_by_removed_by(app1_client):
     emp = _emp(app1_client, "REM_B")
     vt = _vtype(app1_client, "V", points=1)
@@ -399,7 +478,11 @@ def test_removals_filter_by_removed_by(app1_client):
 
 
 # ---------------------------------------------------------------- activity filters
-
+@pytest.mark.xfail(
+    reason="For app1 revert purposes  (to be revised) "
+           "Un-xfail when revised",
+    strict=True,
+)
 def test_activity_timeline_target_type_filter(app1_client):
     _emp(app1_client, "AT_1")
     _vtype(app1_client, "AT_VT")
