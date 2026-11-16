@@ -20,3 +20,94 @@
 @media(min-width:901px){.np-photo-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;padding:18px}.np-photo-card-body{padding:12px}.np-photo-tags span{font-size:10px;padding:2px 6px}}
 @media(max-width:900px){.np-photo-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:520px){.np-photo-card-body p.np-photo-meta{font-size:10px;gap:4px}.np-photo-meta-owner::before,.np-photo-meta-size::before{margin-right:4px}.np-photo-card-body{padding:10px}.np-photo-card-body>.text-button{font-size:13px}.np-camera-description label{font-size:15px}}
+
+.mobile-access {margin-bottom:24px;font-size:17px;line-height:1.6}
+.mobile-access label {display:block;font-weight:600;margin-top:14px}
+.mobile-access input:not([type=checkbox]) {display:block;width:100%;max-width:440px;min-height:52px;font-size:18px;padding:10px;border:1px solid #637186;border-radius:8px}
+.mobile-access .button {min-height:52px;font-size:17px;margin:12px 12px 0 0;white-space:normal}
+.mobile-access .mobile-show {font-size:16px;display:flex;align-items:center;gap:12px;min-height:48px}
+.mobile-access .mobile-show input {width:24px;height:24px}
+.mobile-access-message {font-weight:600;white-space:pre-line}
+.mobile-access details {margin-top:20px}
+.np-location-snapshot {padding:20px;border:1px solid #cbd5e2;border-radius:14px;background:#edf3fa;margin:18px 0;color:#1e3857}
+.np-location-radius {width:160px;height:160px;border:2px solid #285587;border-radius:50%;display:grid;place-items:center;text-align:center;margin:12px auto;background:#fff}
+.np-location-radius strong {font-size:24px}
+.np-location-snapshot a {display:inline-flex;align-items:center;min-height:48px;font-size:17px;text-decoration:underline}
+.np-photo-detail + h3 + p {white-space:pre-line;font-size:17px;line-height:1.6}
+
+/* Photo location street map: independent of live GPS tracking. */
+.np-photo-location-map{height:320px;width:100%;position:relative;z-index:0;border:1px solid #aebfd2;border-radius:10px;background:#e5edf4;overflow:hidden}
+.np-location-snapshot p{font-size:16px;line-height:1.65}
+.np-location-snapshot h3{font-size:19px;line-height:1.4}
+.np-photo-location-map .leaflet-control-zoom a{width:44px;height:44px;line-height:44px;font-size:25px}
+.np-photo-location-map .leaflet-control-attribution{font-size:11px;line-height:1.4}
+.np-photo-map-pin{background:transparent;border:0}
+.np-photo-map-pin span{display:block;width:32px;height:32px;background:#167cb6;border:3px solid white;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:0 2px 5px #17345180}
+.np-photo-map-pin span:after{content:'';display:block;width:10px;height:10px;background:white;border-radius:50%;margin:8px}
+.np-photo-map-status{color:#33465e}
+
+/* Accessible photo library refinements */
+.photo-library .np-photo-card-body>.text-button{font-size:20px;font-weight:750;line-height:1.4;white-space:normal;overflow-wrap:anywhere;min-height:44px}
+.photo-library .np-photo-card-body .np-photo-meta{display:flex;flex-direction:column;align-items:flex-start;gap:5px;font-size:16px;line-height:1.55;color:#40566e;font-weight:550}
+.photo-library .np-photo-meta time{display:block;white-space:normal}
+.photo-library .np-photo-meta span:before{content:none}
+.photo-library .np-photo-tags span{font-size:14px;font-weight:600}
+.photo-library .np-photo-table{font-size:16px}
+.photo-library .np-photo-table strong{font-size:19px;font-weight:750}
+.np-photo-detail-title{font-size:24px!important;line-height:1.4;font-weight:750;overflow-wrap:anywhere}
+.np-photo-detail-description{font-size:17px;line-height:1.65;font-weight:500;color:#344e68;white-space:pre-line}
+.np-photo-detail-meta dt{font-size:16px;font-weight:650;color:#40566e}
+.np-photo-detail-meta dd{font-size:18px;font-weight:600;line-height:1.6;color:#1e3857}
+.np-location-snapshot .np-map-details{margin:12px 0;padding:0;border:1px solid #9dafc5;border-radius:8px;background:white}
+.np-map-details summary{min-height:48px;box-sizing:border-box;padding:12px 14px;font-size:17px;font-weight:700;color:#1e3857;cursor:pointer}
+.np-map-details summary::marker{color:#285587}
+.np-map-details summary:focus-visible{outline:3px solid #285587;outline-offset:2px}
+.np-map-details>div{padding:0 14px 12px}
+.np-location-snapshot .np-photo-map-status:empty{display:none}
+.np-employee-upload-summary{padding:20px;border:1px solid #bacbdf;background:#edf3fa;border-radius:12px;margin:0 0 18px}
+.np-employee-upload-summary h2{font-size:21px;margin:0 0 8px;color:#1e3857}
+.np-employee-upload-summary p{font-size:15px;line-height:1.5;color:#40566e}
+.np-summary-scroll{overflow:auto;margin-top:12px}
+.np-employee-upload-summary table{width:100%;font-size:17px;background:white;border-collapse:collapse}
+.np-employee-upload-summary th,.np-employee-upload-summary td{padding:14px;text-align:left;border-bottom:1px solid #cbd5e2;white-space:normal}
+.np-employee-upload-summary thead th{font-size:16px;color:#1e3857;font-weight:700}
+.np-employee-upload-summary td{font-size:24px;font-weight:750;color:#173c63}
+.np-employee-upload-summary small{display:block;font-size:14px;font-weight:500}
+.np-photo-refresh{display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin:16px 0;font-size:15px;color:#40566e}
+.np-photo-refresh button{min-height:48px;font-size:16px}
+.np-refresh-spinner{display:inline-block;width:19px;height:19px;border:3px solid #cbd5e2;border-top-color:#285587;border-radius:50%;animation:np-refresh-spin .8s linear infinite}
+@keyframes np-refresh-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.np-refresh-spinner{animation:none}}
+.photo-library{overscroll-behavior-y:contain}
+@media(max-width:600px){.np-photo-detail-meta{grid-template-columns:1fr}.np-employee-upload-summary{padding:14px}.np-employee-upload-summary th,.np-employee-upload-summary td{padding:10px}.photo-library .record-filter-controls{flex-wrap:wrap}}
+
+/* Source labels use text as well as colour, and never infer missing metadata. */
+.np-photo-source{display:inline-flex;align-items:center;max-width:100%;padding:6px 10px;margin:0 0 10px;border:1px solid #b9c6d4;border-radius:7px;font-size:16px;font-weight:700;line-height:1.5;white-space:normal}
+.np-photo-source--camera{color:#173e68;background:#e6f0fc;border-color:#8eafd0}
+.np-photo-source--gallery{color:#3d3869;background:#eeedf8;border-color:#b3afd0}
+.np-photo-source--unknown{color:#465362;background:#f0f2f4}
+.np-photo-table .np-photo-source{margin:0}
+
+/* Full place labels wrap on narrow cards and remain below their timestamp. */
+.photo-library .np-photo-meta .np-photo-place,.np-photo-place{white-space:normal;overflow-wrap:anywhere;max-width:100%;color:#40566e;font-size:16px;line-height:1.55}
+.np-photo-table .np-photo-place{margin:5px 0 0}
+
+.np-photo-author{min-height:44px;padding:6px 0;font-size:16px;font-weight:600;line-height:1.5;text-align:left;text-decoration:underline;text-underline-offset:3px;white-space:normal;overflow-wrap:anywhere;color:#285587}
+.np-photo-author:focus-visible{outline:3px solid #285587;outline-offset:3px;border-radius:3px}
+
+.np-photo-card{position:relative}
+.np-photo-select{display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;margin:0;cursor:pointer}
+.np-photo-card>.np-photo-select{position:absolute;left:10px;top:10px;z-index:2;background:#ffffffed;border:1px solid #d9e2ec;border-radius:9px;box-shadow:0 2px 8px #203b5017}
+.np-photo-select input,.np-photo-selection-bar input{width:19px;height:19px;accent-color:#285587;cursor:pointer}
+.np-photo-selection-bar{display:flex;align-items:center;flex-wrap:wrap;gap:16px;padding:14px 22px;border-bottom:1px solid #e4eaf0;color:#536a81;font-size:14px}
+.np-photo-selection-bar>div{margin-left:auto;display:flex;gap:10px;flex-wrap:wrap}
+.np-photo-selection-bar .confirm-check{font-size:14px;align-items:center}
+.np-photo-selection-bar .confirm-check input{margin-top:0}
+.np-photo-table .np-photo-select{position:static}
+.np-photo-description{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.6;color:#61758c;margin:10px 0 18px}
+.np-photo-detail-meta dd{overflow-wrap:anywhere}
+dialog.photo-viewer-dialog .modal-footer{flex-wrap:wrap;gap:10px}
+dialog.photo-viewer-dialog .modal-footer .button{text-decoration:none;justify-content:center}
+@media(max-width:600px){.np-photo-selection-bar{padding:14px 16px;gap:12px}.np-photo-selection-bar>div{width:100%;margin-left:0}.np-photo-selection-bar>div .button{flex:1;justify-content:center}.np-photo-select{min-width:44px;min-height:44px}.np-photo-selection-bar .confirm-check{font-size:15px}}
+
+@media(max-width:600px){dialog.photo-management-dialog .modal-footer{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}dialog.photo-management-dialog .modal-footer .button{width:100%;min-width:0;min-height:48px}dialog.photo-management-dialog .modal-content{max-height:calc(90dvh - 280px)}}

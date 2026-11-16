@@ -1,18 +1,24 @@
 // Allowed routes from the supplied references, plus the existing Calendar contract.
 const routes=[
+ ['GET',/^\/employees\/\d+\/violation-history$/],
+ ['GET',/^\/employees\/\d+\/(?:offense-summary|totals)$/],
+ ['GET',/^\/analytics\/(?:top-offenders|departments|subsections|activity|watchlist|clean-employees)$/],
+ ['GET',/^\/violation-types\/\d+\/subsections$/],['POST',/^\/violation-types\/\d+\/subsections$/,true],
+ ['GET',/^\/subsections\/\d+$/],['PATCH',/^\/subsections\/\d+$/,true],['DELETE',/^\/subsections\/\d+$/,true],
+ ['POST',/^\/subsections\/\d+\/(?:activate|deactivate)$/,true],['PUT',/^\/subsections\/\d+\/penalties$/,true],
  ['GET',/^\/employees$/],['POST',/^\/employees$/,true],
  ['GET',/^\/employees\/\d+$/],['PATCH',/^\/employees\/\d+$/,true],['DELETE',/^\/employees\/\d+$/,true],
  ['POST',/^\/employees\/\d+\/(?:deactivate|reactivate)$/,true],
- ['GET',/^\/employees\/\d+\/violations$/],['POST',/^\/employees\/\d+\/violations$/,true],['POST',/^\/employees\/\d+\/violations\/clear$/],
- ['GET',/^\/violations\/recent$/],['GET',/^\/violations\/\d+$/],['PATCH',/^\/violations\/\d+$/,true],['POST',/^\/violations\/\d+\/remove$/],
+ ['GET',/^\/employees\/\d+\/violations$/],['POST',/^\/employees\/\d+\/violations$/,true],['POST',/^\/employees\/\d+\/violations\/clear$/,true],
+ ['GET',/^\/violations\/recent$/],['GET',/^\/violations\/\d+$/],['PATCH',/^\/violations\/\d+$/,true],['POST',/^\/violations\/\d+\/remove$/,true],
  ['GET',/^\/violation-removals(?:\/\d+)?$/],['GET',/^\/activity\/(?:timeline|calendar|digest\/\d{4}-\d{2}-\d{2})$/],
  ['GET',/^\/violation-types(?:\/all|\/\d+)?$/],['POST',/^\/violation-types$/,true],['PATCH',/^\/violation-types\/\d+$/,true],['DELETE',/^\/violation-types\/\d+$/,true],['POST',/^\/violation-types\/\d+\/(?:activate|deactivate)$/,true]
 ];
 export function apiRoute(path,method,service='hr'){
- if(service==='session'&&path==='/me'&&method==='GET')return {actor:false};
+ if(service==='session'){if(path==='/me'&&method==='GET'||/^\/employees\/\d+\/mobile-access(?:\/link)?$/.test(path)&&['GET','POST','PATCH'].includes(method))return {actor:false};throw Error('Unknown session endpoint.');}
  if(service==='tracking'){if(method==='GET'&&/^\/(?:devices|(?:live|route)\/[^/?#\s]+)$/.test(path))return {actor:false};throw new Error('This action is not defined in the tracking API contract.');}
  if(service==='photos'){
-  const allowed=method==='GET'&&/^\/(?:photos(?:\/\d+(?:\/history)?)?|stats|activity(?:\/(?:digest|actors))?)$/.test(path)||method==='POST'&&['/upload','/photos/batch'].includes(path)||['PATCH','DELETE'].includes(method)&&/^\/photos\/\d+$/.test(path);
+  const allowed=method==='GET'&&/^\/(?:photos(?:\/\d+(?:\/(?:history|download))?)?|stats|activity(?:\/(?:digest|actors|authors))?)$/.test(path)||method==='POST'&&(['/upload','/photos/batch','/photos/bulk-delete'].includes(path)||/^\/photos\/\d+\/rename$/.test(path))||['PATCH','DELETE'].includes(method)&&/^\/photos\/\d+$/.test(path);
   if(allowed)return {actor:method!=='GET'};
   throw new Error('This action is not defined in the photo API contract.');
  }

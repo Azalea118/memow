@@ -9,7 +9,7 @@ function candidates(form,c){
  case 'global-search':return [...c.visibleEmployees().map(employee),...c.visibleViolations().map(record)];
  case 'employee-filters':return c.visibleEmployees().map(employee);
  case 'violation-filters':return c.visibleViolations().map(record);
- case 'type-filters':return c.store.types.map(t=>({label:t.name,detail:t.description,value:t.name}));
+ case 'type-filters':return c.store.types.map(t=>({label:t.name,detail:'',value:t.name}));
  case 'photo-filters':return photoData.items.map(p=>({label:p.name,detail:p.owner,value:p.name}));
  case 'photo-activity-filters':return photoActivityService.state.items.filter(e=>e.photo_display_name).map(e=>({label:e.photo_display_name,detail:e.actor,value:e.photo_display_name}));
  case 'secondary-filter':return c.getFilters('history').tab==='removals'?c.store.removals.map(e=>({label:e.employeeName,detail:e.typeName,value:e.employeeName})):c.store.activities.map(e=>({label:e.detail||e.actor,detail:e.actor,value:e.detail||e.actor}));

@@ -23,6 +23,7 @@ function settings(ctx) {
       <p class="muted" style="margin:0">Larger text increases the size of navigation, forms, and body text throughout the workspace.</p>
       <div class="settings-actions"><button type="submit" class="button primary">${icon('check')} Save Changes</button><button type="button" class="button danger" data-action="sign-out">Sign out</button></div>
     </form></section><div>
+      <section class="panel settings-rule-restore"><div class="panel-header"><h2>Company Violation Categories</h2></div><div class="panel-body"><p>Restore missing company categories, specific violations, and penalty schedules. Existing entries, penalties, and inactive settings are kept.</p><p class="muted">Categories are shared by all accounts. Your custom violation types stay alongside the company rules.</p><button type="button" class="button primary" data-action="restore-company-rules">Restore Violation Categories</button></div></section>
       <section class="panel"><div class="panel-header"><h2>About This Workspace</h2></div><div class="panel-body"><p><strong>Northpoint</strong><br>Violation Management System</p><p class="muted">A dedicated space for employee records, disciplinary cases, and clear reporting.</p><div class="callout" style="margin-top:20px"><div><strong>About this build</strong><p>Employee records, violations and history are connected to the hosted backend. Your signed-in full name is used automatically. Preferences reset when you reload.</p></div></div></div></section>
     </div></div>`;
 }
@@ -32,13 +33,13 @@ function help(ctx){
  const steps=[
   ['Find an Employee','Open Employees, search for a name or employee ID, then select View Profile.'],
   ['Issue a Violation','On the employee’s profile, choose Record violation to open the form.'],
-  ['Select a Violation','Choose the violation type. Points and strike settings fill automatically. Add optional incident details.'],
+  ['Select a Violation','Choose a category and specific violation. Review the offense number, company-rule conditions, and penalty. Add optional incident details.'],
   ['Record','Review the summary, tick the confirmation checkbox, then confirm the record.']
  ];
  const questions=[
-  ['What is a demerit point?','Each violation type has a points value. An employee’s total adds the points from their retained violations. Removed violations are excluded.'],
-  ['What is a strike?','A strike marks a violation that counts toward follow-up. Whether a violation is a strike comes from its violation type.'],
-  ['What is Watchlist?','Watchlist shows employees with 2 or more retained strikes. Open Reports & Analytics, then select Watchlist to view them. Select a name to open the employee’s profile.'],
+  ['What is an offense number?','An employee has a separate offense sequence for each specific violation. The backend counts active and removed records when assigning the next offense.'],
+  ['How is the penalty selected?','Each specific violation has penalty tiers. The backend uses its offense number to select and store the penalty. Review alternatives and conditions in the company rules before recording. Existing records retain their penalty snapshot.'],
+  ['What is Watchlist?','Watchlist shows employees who reached offense 3 or later on any specific violation, including removed records. Open Reports & Analytics, then select Watchlist to view them. Select a name to open the employee’s profile.'],
   ['Accidentally removed a user?','If an employee was deactivated, filter Employees by Inactive, open their profile, choose Edit Employee, then Reactivate. A permanently deleted employee cannot be restored through this website. Contact your administrator for assistance.'],
   ['Can I make the text larger?','Open Settings, choose Larger under Text size and select Save Changes. This preference applies to the current tab and resets on reload.'],
   ['How do I sign out?','Select your account name or avatar at the top right, then choose Sign out. You can also use the red Sign out button in Settings.']

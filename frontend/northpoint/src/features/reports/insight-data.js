@@ -1,5 +1,5 @@
 import {businessDate} from './yesterday.js';
-import { dashboardSummary, localDate } from '../../shared/domain.js';
+import { dashboardSummary, localDate, WATCHLIST_OFFENSE } from '../../shared/domain.js';
 
 export function sortEmployeeRecords(employees, summary, order = 'newest') {
   const created = employee => Date.parse(employee.createdAt || '') || Number(employee.apiId ?? String(employee.id).match(/(\d+)$/)?.[1] ?? 0);
@@ -7,23 +7,23 @@ export function sortEmployeeRecords(employees, summary, order = 'newest') {
   const compare = {
     newest: (a, b) => created(b) - created(a) || name(a, b),
     oldest: (a, b) => created(a) - created(b) || name(a, b),
-    points: (a, b) => summary(b.id).points - summary(a.id).points || name(a, b),
-    'points-low': (a, b) => summary(a.id).points - summary(b.id).points || name(a, b),
-    strikes: (a, b) => summary(b.id).strikes - summary(a.id).strikes || name(a, b),
+    offenses: (a, b) => summary(b.id).totalOffenses - summary(a.id).totalOffenses || name(a, b),
+    'offenses-low': (a, b) => summary(a.id).totalOffenses - summary(b.id).totalOffenses || name(a, b),
+    repeats: (a, b) => summary(b.id).maxOffense - summary(a.id).maxOffense || name(a, b),
     name,
     'name-desc': (a, b) => name(b, a)
   };
   return employees.slice().sort(compare[order] || compare.newest);
 }
 
-export function analyticsData(employees, violations, types, days = 30, today = businessDate()) {
+export function analyticsData(employees, violations, types, days = 30, today = businessDate(), removals = []) {
   days = [7, 30, 90].includes(Number(days)) ? Number(days) : 30;
-  const summary = dashboardSummary(employees, violations, []);
+  const summary = dashboardSummary(employees, violations, removals);
   const ids = new Set(employees.map(employee => employee.id));
   const records = violations.filter(record => ids.has(record.employeeId) && record.status !== 'Removed' && !record.removed && !record.removedAt);
   const ranked = employees.map(employee => {
     const own = records.filter(record => record.employeeId === employee.id);
-    return { ...employee, total: own.length, points: employee.totalPoints ?? own.reduce((sum, record) => sum + Number(record.points || 0), 0), strikes: employee.totalStrikes ?? own.filter(record => record.strike).length };
+    return { ...employee,total:employee.activeCount,totalOffenses:employee.totalOffenses,maxOffense:Math.max(0,...own.map(r=>r.offenseNumber),...removals.filter(r=>r.employeeId===employee.id).map(r=>r.offenseNumber)) };
   });
   const start = new Date(`${today}T00:00:00Z`);
   start.setUTCDate(start.getUTCDate() - days + 1);
@@ -41,18 +41,13 @@ export function analyticsData(employees, violations, types, days = 30, today = b
   const typeNames = [...new Set(period.map(record => record.typeName))];
   const byType = typeNames.map(label => ({ label, value: period.filter(record => record.typeName === label).length })).sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
   const employeeStatus = ['Active', 'Inactive'].map(label => ({ label, value: employees.filter(employee => employee.status === label).length }));
-  const ruleTypes = [...types];
-  for (const record of records) if (!ruleTypes.some(type => type.id === record.typeId)) ruleTypes.push({ id: record.typeId, name: record.typeName, points: null, strike: record.strike });
-  const usage = ruleTypes.map(type => {
-    const issued = records.filter(record => record.typeId === type.id);
-    return { ...type, issued: issued.length, totalPoints: issued.reduce((sum, record) => sum + Number(record.points || 0), 0) };
-  }).sort((a, b) => b.issued - a.issued || a.name.localeCompare(b.name));
+  const usage=[...new Set(records.map(r=>r.subsectionId))].map(id=>{const own=records.filter(r=>r.subsectionId===id);return {id,name:own[0].typeName,category:own[0].categoryName,issued:own.length,maxOffense:Math.max(...own.map(r=>r.offenseNumber))};}).sort((a,b)=>b.issued-a.issued);
   return {
-    days, from, today, events: period.length, points: period.reduce((sum, record) => sum + Number(record.points || 0), 0),
+    days, from, today, events: period.length, repeated: period.filter(r=>r.offenseNumber>=2).length,
     dailyAverage: period.length / days, daily, byDepartment, byType, employeeStatus,
-    topOffenders: ranked.filter(employee => employee.total).sort((a, b) => b.points - a.points || a.name.localeCompare(b.name)),
-    watchlist: ranked.filter(employee => employee.strikes >= 2).sort((a, b) => a.name.localeCompare(b.name)),
-    cleanEmployees: ranked.filter(employee => employee.total === 0).sort((a, b) => a.name.localeCompare(b.name)),
+    topOffenders: ranked.filter(employee => employee.total).sort((a, b) => b.total - a.total || a.name.localeCompare(b.name)),
+    watchlist: ranked.filter(employee => employee.maxOffense >= WATCHLIST_OFFENSE).sort((a, b) => a.name.localeCompare(b.name)),
+    cleanEmployees: ranked.filter(employee => employee.totalOffenses === 0).sort((a, b) => a.name.localeCompare(b.name)),
     departments: summary.departments, usage
   };
 }

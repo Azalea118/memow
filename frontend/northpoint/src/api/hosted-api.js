@@ -10,7 +10,7 @@ function serverMessage(raw,status){
 export function createHostedApiProvider({fetchImpl=(...args)=>globalThis.fetch(...args),timeoutMs=15000}={}){
  return {mode:'api',async request({path,method='GET',query={},body,actor,signal,service='hr'}={}){
   const rule=apiRoute(path,method,service),write=method!=='GET';
-  const headers={Accept:'application/json'};
+  const headers={Accept:'application/json'};if(service==='session'&&write)headers['X-Requested-With']='Northpoint';
   if(rule.actor)headers['X-Actor']=validateActor(actor);
   const multipart=typeof FormData!=='undefined'&&body instanceof FormData;
   if(body!==undefined&&!multipart)headers['Content-Type']='application/json';

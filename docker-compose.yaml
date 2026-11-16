@@ -40,7 +40,7 @@ services:
 
   app2:
     <<: *app
-    environment: [TZ=Asia/Manila, PT_DB_PATH=/app/data/app2/photos.db, PT_UPLOAD_DIR=/app/data/app2/uploads]
+    environment: [TZ=Asia/Manila, PT_DB_PATH=/app/data/app2/photos.db, PT_UPLOAD_DIR=/app/data/app2/uploads, AUTH_DB_PATH=/app/data/auth/auth.db, APP1_DB_PATH=/app/data/app1/app.db]
     command: uv run --no-sync uvicorn pt_service.main:pt_app --host 0.0.0.0 --port 8000 --proxy-headers
 
   app3:

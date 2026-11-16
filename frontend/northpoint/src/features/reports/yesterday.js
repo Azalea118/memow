@@ -1,52 +1,48 @@
 import {dashboardSummary} from '../../shared/domain.js';
 export function businessDate(value=new Date()){const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(value));return ['year','month','day'].map(type=>parts.find(p=>p.type===type).value).join('-');}
-const shift=(date,days)=>{const d=new Date(date+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+days);return d.toISOString().slice(0,10);};
-const issuedDay=value=>businessDate(/(?:Z|[+-]\d{2}:?\d{2})$/i.test(value)?value:value+'Z');
-const safe=value=>Number.isSafeInteger(value)&&value>=0;
-function midnightActivity({employees,records,events,removals=[],today=businessDate(),scoped=false}){
- const current=dashboardSummary(employees,records,[]),models=new Map(),rows=new Map(records.map(v=>[String(v.id),{employee:String(v.employeeApiId||v.employeeId),date:v.date}]));
- for(const employee of employees){const own=records.filter(r=>String(r.employeeApiId||r.employeeId)===String(employee.apiId||employee.id));models.set(String(employee.apiId||employee.id),{code:employee.id,department:employee.department,count:own.length,points:employee.totalPoints??own.reduce((s,r)=>s+r.points,0),strikes:employee.totalStrikes??own.filter(r=>r.strike).length});}
- let incomplete=false,averageUnknown=false;
- const todayEvents=events.filter(e=>businessDate(e.date)===today).sort((a,b)=>Date.parse(b.date)-Date.parse(a.date)||Number(b.id)-Number(a.id));
- function removeEmployee(id){models.delete(id);for(const [key,row] of rows)if(row.employee===id)rows.delete(key);}
- for(const e of todayEvents){const m=e.metadata||{},id=String(e.employeeApiId||e.targetId||''),action=e.action;
-  if(action==='employee.updated'&&m.changes?.employee_code&&todayEvents.some(row=>row.action==='employees.bulk_created'))incomplete=true;
-  if(scoped&&action==='employee.updated'&&Object.hasOwn(m.changes||{},'department')){incomplete=true;continue;}
-  if(action==='employee.deleted'){
-   if(scoped&&!Object.hasOwn(m,'department')){incomplete=true;continue;}
-   if(scoped&&!employees.some(emp=>emp.department===m.department))continue;
-   models.set(String(e.targetId||e.employeeApiId),{code:m.employee_code,department:m.department,count:safe(m.violation_count)?m.violation_count:null,points:safe(m.total_points)?m.total_points:m.violation_count===0?0:null,strikes:safe(m.total_strikes)?m.total_strikes:m.violation_count===0?0:null});
-   if(Array.isArray(m.violation_records))for(const r of m.violation_records)rows.set(String(r.id),{employee:String(e.targetId||e.employeeApiId),date:issuedDay(String(r.issued_at))});else if(m.violation_count)averageUnknown=true;
-  }else if(action==='employee.created')removeEmployee(String(e.targetId||e.employeeApiId));
-  else if(action==='employees.bulk_created'){
-   if(!Array.isArray(m.codes)){incomplete=true;continue;}
-   for(const [key,employee] of models)if(m.codes.includes(employee.code))removeEmployee(key);
-  }else if(action==='violation.assigned'||action==='violation.removed'){
-   const employeeId=String(e.employeeApiId||''),employee=models.get(employeeId);if(!employee)continue;
-   const direction=action==='violation.assigned'?-1:1;
-   employee.count=employee.count===null?null:employee.count+direction;
-   employee.points=employee.points===null||!safe(m.points)?null:employee.points+direction*m.points;
-   employee.strikes=employee.strikes===null||typeof m.is_strike!=='boolean'?null:employee.strikes+direction*Number(m.is_strike);
-   if(direction===-1)rows.delete(String(e.targetId));else{const removal=removals.find(r=>String(r.violationId)===String(e.targetId));if(removal?.originalIssuedAt)rows.set(String(e.targetId),{employee:employeeId,date:issuedDay(removal.originalIssuedAt)});else averageUnknown=true;}
-  }else if(action==='violation.updated'&&m.changes?.issued_at)averageUnknown=true;
+
+function midnightActivity({employees,records,events,removals=[],today=businessDate()}){
+ const current=dashboardSummary(employees,records,removals),models=new Map(employees.map(e=>[e.apiId,{...e}]));
+ const uncertain={employees:false,violations:false,offenses:false,watchlist:false};let dailyUnknown=false;
+ const rows=[...records.map(r=>({...r,removed:false})),...removals.map(r=>({...r,id:r.violationId,issuedAt:r.originalIssuedAt,date:businessDate(r.originalIssuedAt),removedAt:r.date,removed:true}))];
+ const relevant=events.filter(e=>businessDate(e.date)===today);
+ const createdToday=new Set(relevant.filter(e=>e.action==='employee.created').map(e=>String(e.targetId||e.employeeApiId)));
+ const markRecordsUnknown=()=>{uncertain.violations=uncertain.offenses=uncertain.watchlist=true;};
+ function matchingRow(event,removed){
+  const m=event.metadata||{},employee=String(event.employeeApiId||''),target=String(event.targetId);
+  // SQLite can reuse a deleted record ID. Match the actual offense instance,
+  // including its employee, rule, sequence and timing, rather than the ID alone.
+  return rows.filter(r=>r.removed===removed&&String(r.id)===target&&(!employee||String(r.employeeApiId)===employee)&&(!m.offense_number||r.offenseNumber===m.offense_number)&&(!m.subsection_id||String(r.subsectionId)===String(m.subsection_id))&&(!m.subsection_name||r.typeName===m.subsection_name))
+   .sort((a,b)=>Math.abs(Date.parse(removed?a.removedAt:a.issuedAt)-Date.parse(event.date))-Math.abs(Date.parse(removed?b.removedAt:b.issuedAt)-Date.parse(event.date)))[0];
  }
- const values=[...models.values()],sum=key=>values.some(e=>e[key]===null||e[key]<0)?null:values.reduce((s,e)=>s+e[key],0);
- const baseline={employees:models.size,violations:sum('count'),points:sum('points'),watchlist:values.some(e=>e.strikes===null||e.strikes<0)?null:values.filter(e=>e.strikes>=2).length};
- const result={};for(const key of ['employees','violations','points','watchlist'])result[key]=incomplete||baseline[key]===null?null:(key==='watchlist'?current.watchlist.length:current[key])-baseline[key];
- return {result,models,rows,incomplete,averageUnknown};
+ for(const event of relevant.sort((a,b)=>Date.parse(b.date)-Date.parse(a.date)||Number(b.id)-Number(a.id))){
+  const id=String(event.employeeApiId||event.targetId||''),e=models.get(id),m=event.metadata||{};
+  if(event.action==='employee.created')models.delete(String(event.targetId||event.employeeApiId));
+  else if(event.action==='employees.bulk_created'){if(!Array.isArray(m.codes))uncertain.employees=true;else for(const [key,employee] of models)if(m.codes.includes(employee.id))models.delete(key);}
+  else if(event.action==='employee.deleted'){if(!createdToday.has(id))markRecordsUnknown();}
+  else if(event.action==='violation.updated'&&m.changes?.issued_at)dailyUnknown=true;
+  else if(event.action==='violation.assigned'){
+   if(!e&&createdToday.has(id))continue;
+   const row=matchingRow(event,false);if(row){rows.splice(rows.indexOf(row),1);if(e){e.activeCount--;e.totalOffenses--;}}else markRecordsUnknown();
+  }else if(event.action==='violation.removed'){
+   if(!e&&createdToday.has(id))continue;
+   const row=matchingRow(event,true);if(row){row.removed=false;if(e)e.activeCount++;}else markRecordsUnknown();
+  }
+ }
+ const members=[...models.values()];if(members.some(e=>e.activeCount<0))uncertain.violations=true;if(members.some(e=>e.totalOffenses<0))uncertain.offenses=true;
+ const base=dashboardSummary(members,rows.filter(r=>!r.removed),rows.filter(r=>r.removed));
+ const employeeDelta=relevant.reduce((count,event)=>count+(event.action==='employee.created'?1:event.action==='employee.deleted'?-1:event.action==='employees.bulk_created'&&Array.isArray(event.metadata?.codes)?event.metadata.codes.length:0),0);
+ const result={};for(const key of ['employees','violations','offenses','watchlist'])result[key]=uncertain[key]?null:key==='employees'?employeeDelta:key==='watchlist'?current[key].length-base[key].length:current[key]===null||base[key]===null?null:current[key]-base[key];
+ return {result,unknown:dailyUnknown||uncertain.violations,members,rows};
 }
-// Dashboard counters describe net activity since 00:00 in Asia/Manila.
-export function todayChanges(options){
- const {result}=midnightActivity(options);
- return {...result,reason:'The audit history does not contain enough information to determine the change since midnight today.'};
-}
-export function yesterdayComparison({employees,records,events,removals=[],days=30,today=businessDate(),scoped=false}){
- const {result,models,rows,incomplete,averageUnknown}=midnightActivity({employees,records,events,removals,today,scoped});
- const previous=shift(today,-1),from=shift(today,-days+1),previousFrom=shift(previous,-days+1);
- const currentCount=records.filter(r=>r.date>=from&&r.date<=today).length,previousCount=[...rows.values()].filter(r=>models.has(r.employee)&&r.date>=previousFrom&&r.date<=previous).length;
- result.dailyAverage=incomplete||averageUnknown?null:(currentCount-previousCount)/days;
- result.reason='The audit history does not contain enough information to reconstruct yesterday’s total.';
- return result;
+export function todayChanges(options){const {result}=midnightActivity(options);return {...result,reason:Object.values(result).some(value=>value===null)?'Some audit details are unavailable, so this change cannot be calculated reliably.':''};}
+export function yesterdayComparison(options){
+ const {result,unknown,rows,members}=midnightActivity(options),today=options.today||businessDate(),days=options.days||30;
+ const from=new Date(today+'T12:00:00Z');from.setUTCDate(from.getUTCDate()-days+1);const currentFrom=from.toISOString().slice(0,10);from.setUTCDate(from.getUTCDate()-1);const previousFrom=from.toISOString().slice(0,10);
+ const previous=new Date(today+'T12:00:00Z');previous.setUTCDate(previous.getUTCDate()-1);const previousTo=previous.toISOString().slice(0,10);
+ const count=options.records.filter(r=>r.date>=currentFrom&&r.date<=today).length;
+ const baseline=rows.filter(r=>!r.removed&&members.some(e=>e.id===r.employeeId)&&r.date>=previousFrom&&r.date<=previousTo).length;
+ return {...result,dailyAverage:unknown?null:(count-baseline)/days,reason:'Yesterday’s audit history cannot be reconstructed reliably.'};
 }
 function renderMetricChange(value,icon,reason,decimals,label,loading,fallback){
  if(value===undefined)return '<div class="metric-change neutral"><span>'+loading+'</span></div>';
