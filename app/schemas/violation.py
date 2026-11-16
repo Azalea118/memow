@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
+from typing import Literal
 
 
 # ---------- violation types ----------
@@ -145,6 +146,33 @@ class ViolationRecordFeedRead(ViolationRecordRead):
     """Used by /violations/recent — includes employee."""
 
     employee: EmployeeRef | None = None
+
+class ViolationHistoryRow(BaseModel):
+    """One row in an employee's full violation history — active or removed.
+
+    `status` is the discriminator. On "active" rows, `removed_by`,
+    `removal_reason`, and `removed_at` are null. On "removed" rows, all
+    original fields are still populated (snapshot from removal time).
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    status: Literal["active", "removed"]
+    violation_record_id: int
+
+    subsection_id: int | None = None
+    subsection_name: str
+    violation_type_name: str
+    offense_number: int
+    penalty_description: str | None = None
+    notes: str | None = None
+    issued_by: str | None = None
+    issued_at: datetime
+
+    # Removal details — populated only when status == "removed"
+    removed_by: str | None = None
+    removal_reason: str | None = None
+    removed_at: datetime | None = None
 
 
 # ---------- employee offense summary (bonus view) ----------
