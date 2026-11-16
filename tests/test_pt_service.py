@@ -1,4 +1,5 @@
 """Tier-1 tests for pt_service (app2)."""
+from tests.photo_fixtures import seed_photo
 import io
 
 
@@ -11,63 +12,39 @@ def _png_bytes():
     )
 
 
-def test_upload_requires_actor(pt_client):
-    r = pt_client.post(
-        "/upload",
-        files={"file": ("a.png", io.BytesIO(_png_bytes()), "image/png")},
-    )
-    assert r.status_code == 401  # REQUIRE_ACTOR defaults to 1
+def test_browser_upload_is_disabled(pt_client, actor_headers):
+    for headers in ({}, actor_headers):
+        r = pt_client.post("/upload", files={"file": ("a.png", _png_bytes(), "image/png")}, headers=headers)
+        assert r.status_code == 403
+    assert pt_client.get("/photos").json()["total"] == 0
 
 
-def test_upload_and_get(pt_client, actor_headers):
-    r = pt_client.post(
-        "/upload",
-        files={"file": ("a.png", io.BytesIO(_png_bytes()), "image/png")},
-        data={"display_name": "Test photo"},
-        headers=actor_headers,
-    )
-    assert r.status_code == 201
-    body = r.json()
-    assert body["owner"] == "test-actor"
-    assert body["display_name"] == "Test photo"
-    pid = body["id"]
-
-    r = pt_client.get(f"/photos/{pid}")
+def test_get_historical_photo(pt_client, actor_headers):
+    body = seed_photo(display_name="Test photo")
+    r = pt_client.get(f"/photos/{body['id']}")
     assert r.status_code == 200
-    assert r.json()["id"] == pid
+    assert r.json()["owner"] == "test-actor"
+    assert r.json()["display_name"] == "Test photo"
 
 
 def test_list_photos(pt_client, actor_headers):
-    pt_client.post(
-        "/upload",
-        files={"file": ("b.png", io.BytesIO(_png_bytes()), "image/png")},
-        headers=actor_headers,
-    )
+    seed_photo(name="b.png")
     r = pt_client.get("/photos")
     assert r.status_code == 200
-    assert r.json()["total"] >= 1
+    assert r.json()["total"] == 1
 
 
 def test_delete_photo(pt_client, actor_headers):
-    r = pt_client.post(
-        "/upload",
-        files={"file": ("c.png", io.BytesIO(_png_bytes()), "image/png")},
-        headers=actor_headers,
-    )
-    pid = r.json()["id"]
+    pid = seed_photo(name="c.png")["id"]
     r = pt_client.delete(f"/photos/{pid}", headers=actor_headers)
     assert r.status_code == 200
     assert r.json()["status"] == "deleted"
+    assert pt_client.get(f"/photos/{pid}").status_code == 404
 
 
-def test_activity_log_records_upload(pt_client, actor_headers):
-    pt_client.post(
-        "/upload",
-        files={"file": ("d.png", io.BytesIO(_png_bytes()), "image/png")},
-        headers=actor_headers,
-    )
+def test_activity_log_preserves_historical_upload(pt_client, actor_headers):
+    seed_photo(name="d.png")
     r = pt_client.get("/activity", headers=actor_headers)
     assert r.status_code == 200
-    body = r.json()
-    assert body["total"] >= 1
-    assert body["items"][0]["action"] == "upload"
+    assert r.json()["total"] == 1
+    assert r.json()["items"][0]["action"] == "upload"

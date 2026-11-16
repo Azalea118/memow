@@ -1,3 +1,5 @@
+from zoneinfo import ZoneInfo
+import os
 """
 Activity timeline / calendar / digest with real data.
 Tests the audit-log read side, not just the "empty DB" case.
@@ -16,7 +18,7 @@ def _emp(client, code, first="Alice", last="Smith"):
 
 
 def _today_utc() -> str:
-    return datetime.now(timezone.utc).date().isoformat()
+    return datetime.now(ZoneInfo(os.getenv("LOG_TIMEZONE", "UTC"))).date().isoformat()
 
 
 def test_calendar_shows_today_activity(app1_client):
@@ -61,3 +63,16 @@ def test_timeline_filters_by_actor(app1_client):
     assert r.status_code == 200
     actors = {e["actor"] for e in r.json()["items"]}
     assert actors == {"alice"}
+
+
+def test_calendar_counts_type_and_subsection_changes(app1_client):
+    from tests.violation_fixtures import make_type
+    make_type(app1_client, "Calendar category")
+    day = _today_utc()
+    timeline = app1_client.get(f"/activity/timeline?day={day}")
+    assert timeline.status_code == 200
+    expected = sum(e["target_type"] in ("violation_type", "subsection") for e in timeline.json()["items"])
+    assert expected >= 2
+    calendar = app1_client.get(f"/activity/calendar?start={day}&end={day}")
+    assert calendar.status_code == 200
+    assert calendar.json()[0]["violation_types"] == expected

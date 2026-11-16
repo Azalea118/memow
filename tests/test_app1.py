@@ -12,6 +12,7 @@ Two known-unknowns:
   * app/deps.py isn't yet in hand; if DbSession bypasses app.db.SessionLocal,
     the conftest redirect will need adjusting (tests will fail loudly).
 """
+from tests.violation_fixtures import make_type
 import time
 
 
@@ -28,12 +29,8 @@ def _make_employee(client, code="E001", first="Alice", last="Smith", **kw):
     return r.json()
 
 
-def _make_vtype(client, name="Lateness", **kw):
-    body = {"name": name}
-    body.update(kw)
-    r = client.post("/violation-types", json=body, headers=ACTOR)
-    assert r.status_code == 201, r.text
-    return r.json()
+def _make_vtype(client, name="Lateness", is_active=True):
+    return make_type(client, name, is_active=is_active)
 
 
 # ---------------- meta ----------------
@@ -66,8 +63,7 @@ def test_create_employee(app1_client):
     assert body["employee_code"] == "E100"
     assert body["full_name"] == "Alice Smith"
     assert body["status"] == "active"
-    assert body["total_points"] == 0
-    assert body["total_strikes"] == 0
+    assert body["active_violation_count"] == 0
     assert body["id"] > 0
 
 
@@ -140,18 +136,11 @@ def test_create_duplicate_employee_code(app1_client):
 # ---------------- violation types ----------------
 
 def test_create_violation_type(app1_client):
-    r = app1_client.post("/violation-types", json={
-        "name": "Unauthorized absence",
-        "description": "Missing without notice",
-        "default_points": 10,
-        "is_strike": True,
-    }, headers=ACTOR)
+    r = app1_client.post("/violation-types", json={"name": "Unauthorized absence", "description": "Attendance"}, headers=ACTOR)
     assert r.status_code == 201
-    body = r.json()
-    assert body["name"] == "Unauthorized absence"
-    assert body["default_points"] == 10
-    assert body["is_strike"] is True
-    assert body["is_active"] is True
+    assert r.json()["name"] == "Unauthorized absence"
+    assert r.json()["description"] == "Attendance"
+    assert r.json()["is_active"] is True
 
 
 def test_active_violation_types_excludes_inactive(app1_client):
@@ -192,31 +181,29 @@ def test_deactivate_activate_violation_type(app1_client):
 
 # ---------------- violations ----------------
 
-def test_assign_violation_snapshots_points(app1_client):
+def test_assign_violation_snapshots_penalty(app1_client):
     emp = _make_employee(app1_client, code="E300")
-    vt = _make_vtype(app1_client, name="Late", default_points=5, is_strike=True)
-
-    r = app1_client.post(
-        f"/employees/{emp['id']}/violations",
-        json={"violation_type_id": vt["id"], "notes": "10 min late"},
-        headers=ACTOR,
-    )
+    vt = _make_vtype(app1_client, name="Late")
+    r = app1_client.post(f"/employees/{emp['id']}/violations", json={"subsection_id": vt["subsection_id"], "notes": "10 min late"}, headers=ACTOR)
     assert r.status_code == 201, r.text
     body = r.json()
     assert body["employee_id"] == emp["id"]
-    assert body["violation_type_id"] == vt["id"]
-    assert body["points"] == 5          # snapshotted from vtype
-    assert body["is_strike"] is True    # snapshotted from vtype
+    assert body["subsection_id"] == vt["subsection_id"]
+    assert body["offense_number"] == 1
+    assert body["penalty_description"] == "Written warning"
     assert body["notes"] == "10 min late"
+    r = app1_client.put(f"/subsections/{vt['subsection_id']}/penalties", json={"penalties": [{"offense_number": 1, "description": "Changed policy"}]}, headers=ACTOR)
+    assert r.status_code == 200
+    assert app1_client.get(f"/violations/{body['id']}").json()["penalty_description"] == "Written warning"
 
 
 def test_list_employee_violations(app1_client):
     emp = _make_employee(app1_client, code="E301")
-    vt = _make_vtype(app1_client, name="Late", default_points=3)
+    vt = _make_vtype(app1_client, name="Late")
     for _ in range(2):
         app1_client.post(
             f"/employees/{emp['id']}/violations",
-            json={"violation_type_id": vt["id"]},
+            json={"subsection_id": vt["subsection_id"]},
             headers=ACTOR,
         )
 
@@ -227,10 +214,10 @@ def test_list_employee_violations(app1_client):
 
 def test_employee_totals(app1_client):
     emp = _make_employee(app1_client, code="E302")
-    vt = _make_vtype(app1_client, name="Late", default_points=5, is_strike=True)
+    vt = _make_vtype(app1_client, name="Late")
     app1_client.post(
         f"/employees/{emp['id']}/violations",
-        json={"violation_type_id": vt["id"]},
+        json={"subsection_id": vt["subsection_id"]},
         headers=ACTOR,
     )
 
@@ -238,17 +225,16 @@ def test_employee_totals(app1_client):
     assert r.status_code == 200
     body = r.json()
     assert body["employee_id"] == emp["id"]
-    assert body["total_points"] == 5
-    assert body["total_strikes"] == 1
-    assert body["total_records"] == 1
+    assert body["active_violation_count"] == 1
+    assert body["total_offenses"] == 1
 
 
 def test_employee_detail_includes_violations(app1_client):
     emp = _make_employee(app1_client, code="E303")
-    vt = _make_vtype(app1_client, name="Late", default_points=3)
+    vt = _make_vtype(app1_client, name="Late")
     app1_client.post(
         f"/employees/{emp['id']}/violations",
-        json={"violation_type_id": vt["id"]},
+        json={"subsection_id": vt["subsection_id"]},
         headers=ACTOR,
     )
 
@@ -256,16 +242,16 @@ def test_employee_detail_includes_violations(app1_client):
     assert r.status_code == 200
     body = r.json()
     assert len(body["violation_records"]) == 1
-    assert body["violation_records"][0]["points"] == 3
-    assert body["violation_records"][0]["violation_type_name"] == "Late"
+    assert body["violation_records"][0]["penalty_description"] == "Written warning"
+    assert body["violation_records"][0]["subsection"]["name"] == "Late"
 
 
 def test_recent_violations_feed(app1_client):
     emp = _make_employee(app1_client, code="E304", first="Dan", last="Roe")
-    vt = _make_vtype(app1_client, name="Late", default_points=4)
+    vt = _make_vtype(app1_client, name="Late")
     app1_client.post(
         f"/employees/{emp['id']}/violations",
-        json={"violation_type_id": vt["id"]},
+        json={"subsection_id": vt["subsection_id"]},
         headers=ACTOR,
     )
 
@@ -305,7 +291,7 @@ def test_analytics_endpoints_respond_on_empty_db(app1_client):
     for path in (
         "/analytics/top-offenders",
         "/analytics/departments",
-        "/analytics/violation-types",
+        "/analytics/subsections",
         "/analytics/activity",
         "/analytics/watchlist",
         "/analytics/clean-employees",
@@ -320,7 +306,7 @@ def test_delete_violation_type_in_use_returns_409(app1_client):
     vt = _make_vtype(app1_client, name="Locked")
     app1_client.post(
         f"/employees/{emp['id']}/violations",
-        json={"violation_type_id": vt["id"]},
+        json={"subsection_id": vt["subsection_id"]},
         headers=ACTOR,
     )
 

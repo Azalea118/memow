@@ -56,7 +56,7 @@ def calendar(
     return [
         CalendarDay(
             date=r.event_date, total=r.total, employees=r.employees,
-            violations=r.violations, violation_types=r.violation_types,
+            violations=r.violations, violation_types=r.config_changes,
             removals=r.removals,
         )
         for r in rows

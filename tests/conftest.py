@@ -127,6 +127,8 @@ def app1_client():
         ViolationRecord,
         ViolationRemoval,
         ViolationType,
+        ViolationSubsection,
+        Penalty,
     )
 
     # The app never calls create_all() at import — do it here so the temp
@@ -138,9 +140,19 @@ def app1_client():
         db.query(ActivityEvent).delete()
         db.query(ViolationRemoval).delete()
         db.query(ViolationRecord).delete()
+        db.query(Penalty).delete()
+        db.query(ViolationSubsection).delete()
         db.query(ViolationType).delete()
         db.query(Employee).delete()
         db.commit()
 
     with TestClient(app) as c:
         yield c
+
+
+@pytest.fixture
+def mobile_validation_identity(monkeypatch):
+    # Auth behavior has separate mobile-access tests. Keep upload byte validation isolated.
+    from pt_service import main as pt
+    monkeypatch.setattr(pt, "tracker_identity", lambda request: dict(
+        tracker_id=1, employee_id=1, employee_code="TEST", full_name="test-actor"))

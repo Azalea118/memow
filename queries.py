@@ -358,7 +358,7 @@ def search_employees(
     if min_active_violations is not None:
         stmt = stmt.where(Employee.active_violation_count >= min_active_violations)
     if min_total_offenses is not None:
-        stmt = stmt.where(total_offenses >= min_total_offenses)
+        stmt = stmt.where(total_offenses_sq >= min_total_offenses)
     stmt = stmt.order_by(Employee.last_name, Employee.first_name, Employee.id).limit(limit).offset(offset)
     return session.execute(stmt).all()
 

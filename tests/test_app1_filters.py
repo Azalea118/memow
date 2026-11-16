@@ -6,6 +6,7 @@ If `test_list_employees_search_total_is_consistent` or
 `count_employees` in queries.py doesn't mirror the filters that
 `search_employees` applies. That's a real app bug, not a test bug.
 """
+from tests.violation_fixtures import make_type
 import pytest
 
 ACTOR = {"X-Actor": "test"}
@@ -20,12 +21,8 @@ def _emp(client, code, first="Alice", last="Smith", dept=None):
     return r.json()
 
 
-def _vtype(client, name, points=0, strike=False):
-    r = client.post("/violation-types", json={
-        "name": name, "default_points": points, "is_strike": strike,
-    }, headers=ACTOR)
-    assert r.status_code == 201, r.text
-    return r.json()
+def _vtype(client, name="Lateness", is_active=True):
+    return make_type(client, name, is_active=is_active)
 
 
 # ---------------- search ----------------
@@ -94,34 +91,32 @@ def test_list_employees_department_total_is_consistent(app1_client):
     )
 
 
-# ---------------- min_points / min_strikes ----------------
+# ---------------- minimum active violations / total offenses ----------------
 
-def test_min_points_filter(app1_client):
-    a = _emp(app1_client, "MP_A", first="A", last="A")
-    b = _emp(app1_client, "MP_B", first="B", last="B")
-    vt5 = _vtype(app1_client, "V5", points=5)
-    vt10 = _vtype(app1_client, "V10", points=10)
-    app1_client.post(f"/employees/{a['id']}/violations",
-                     json={"violation_type_id": vt5["id"]}, headers=ACTOR)
-    app1_client.post(f"/employees/{b['id']}/violations",
-                     json={"violation_type_id": vt10["id"]}, headers=ACTOR)
-
-    r = app1_client.get("/employees?min_points=8")
-    codes = [e["employee_code"] for e in r.json()["items"]]
-    assert codes == ["MP_B"]
+def test_min_active_violations_filter(app1_client):
+    a = _emp(app1_client, "MP_A")
+    b = _emp(app1_client, "MP_B")
+    vt = _vtype(app1_client, "Attendance")
+    for emp, count in ((a, 1), (b, 2)):
+        for _ in range(count):
+            r = app1_client.post(f"/employees/{emp['id']}/violations", json={"subsection_id": vt["subsection_id"]}, headers=ACTOR)
+            assert r.status_code == 201, r.text
+    r = app1_client.get("/employees?min_active_violations=2")
+    assert r.status_code == 200
+    assert [e["employee_code"] for e in r.json()["items"]] == ["MP_B"]
 
 
-def test_min_strikes_filter(app1_client):
+def test_min_total_offenses_filter(app1_client):
     a = _emp(app1_client, "MS_A", first="A", last="A")
     b = _emp(app1_client, "MS_B", first="B", last="B")
-    vt = _vtype(app1_client, "STR", strike=True)
+    vt = _vtype(app1_client, "STR")
     for _ in range(2):
         app1_client.post(f"/employees/{a['id']}/violations",
-                         json={"violation_type_id": vt["id"]}, headers=ACTOR)
+                         json={"subsection_id": vt["subsection_id"]}, headers=ACTOR)
     app1_client.post(f"/employees/{b['id']}/violations",
-                     json={"violation_type_id": vt["id"]}, headers=ACTOR)
+                     json={"subsection_id": vt["subsection_id"]}, headers=ACTOR)
 
-    r = app1_client.get("/employees?min_strikes=2")
+    r = app1_client.get("/employees?min_total_offenses=2")
     assert [e["employee_code"] for e in r.json()["items"]] == ["MS_A"]
 
 
@@ -136,3 +131,23 @@ def test_deactivated_excluded_from_default_search(app1_client):
 
     r = app1_client.get("/employees?include_inactive=true")
     assert "INACT" in [e["employee_code"] for e in r.json()["items"]]
+
+
+def test_total_offenses_filter_includes_removed_records(app1_client):
+    employee = _emp(app1_client, "REMOVED_HISTORY")
+    _emp(app1_client, "NO_HISTORY")
+    vt = _vtype(app1_client, "Attendance")
+    for _ in range(2):
+        response = app1_client.post(f"/employees/{employee['id']}/violations",
+            json={"subsection_id": vt["subsection_id"]}, headers=ACTOR)
+        assert response.status_code == 201, response.text
+    response = app1_client.post(f"/employees/{employee['id']}/violations/clear",
+        json={"reason": "Amnesty"}, headers=ACTOR)
+    assert response.status_code == 200
+    assert response.json()["deleted"] == 2
+    response = app1_client.get("/employees?min_total_offenses=2")
+    assert response.status_code == 200
+    assert [e["employee_code"] for e in response.json()["items"]] == ["REMOVED_HISTORY"]
+    assert response.json()["items"][0]["active_violation_count"] == 0
+    assert response.json()["items"][0]["total_offenses"] == 2
+    assert app1_client.get("/employees?min_active_violations=1").json()["items"] == []

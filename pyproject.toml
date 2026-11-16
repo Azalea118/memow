@@ -9,6 +9,7 @@ dependencies = [
     "msgpack>=1.2.3",
     "python-multipart>=0.0.32",
     "sqlalchemy>=2.0.52",
+    "tzdata>=2026.6",
     "uvicorn>=0.52.4",
 ]
 
