@@ -9,7 +9,7 @@ Priority-2 (rename/history/digest/batch/bulk-delete):
     * GET   /photos/{id}/download   — Content-Disposition, sanitized filename
     * GET   /activity               — filter/pagination matrix
     * GET   /activity/actors        — aggregation, sorting
-    * POST  /upload validation      — 415 ext, 415 content-type, 413 size
+    * POST  /mobile-upload validation — 415 ext, 415 signature, 413 size
     * GET   /camera, /ui            — route presence
 
 TUNING SURFACE
@@ -19,7 +19,6 @@ TUNING SURFACE
 IMPORT RULE (from conftest):
     Never import pt_service.main at module top.
 """
-import io
 from datetime import datetime, timedelta
 
 import pytest
@@ -43,33 +42,14 @@ def _png_bytes():
     )
 
 
-def _upload(client, actor_headers, *, name="test.png", display_name=None,
-            description=None, tags=None):
-    data = {}
-    if display_name is not None:
-        data["display_name"] = display_name
-    if description is not None:
-        data["description"] = description
-    if tags is not None:
-        data["tags"] = tags
-    r = client.post(
-        "/upload",
-        files={"file": (name, io.BytesIO(_png_bytes()), "image/png")},
-        data=data,
-        headers=actor_headers,
-    )
-    assert r.status_code == 201, r.text
-    return r.json()
+def _upload(upload, *, name="test.png", display_name=None, description=None,
+            tags=None):
+    return upload(name, display_name=display_name, description=description,
+                  tags=tags)
 
 
-def _upload_as(client, actor_name, name="x.png"):
-    r = client.post(
-        "/upload",
-        files={"file": (name, io.BytesIO(_png_bytes()), "image/png")},
-        headers={"X-Actor": actor_name},
-    )
-    assert r.status_code == 201, r.text
-    return r.json()
+def _upload_as(upload, actor_name, name="x.png"):
+    return upload(name, employee=actor_name)
 
 
 def _upload_dir():
@@ -85,8 +65,8 @@ def _require_actor_on() -> bool:
 # ============================================================
 # PATCH /photos/{id} — the edit path
 # ============================================================
-def test_patch_display_name_only(pt_client, actor_headers):
-    up = _upload(pt_client, actor_headers, display_name="Before")
+def test_patch_display_name_only(pt_client, actor_headers, mobile_upload):
+    up = _upload(mobile_upload, display_name="Before")
     r = pt_client.patch(
         f"/photos/{up['id']}",
         json={"display_name": "After"},
@@ -96,9 +76,9 @@ def test_patch_display_name_only(pt_client, actor_headers):
     assert r.json()["display_name"] == "After"
 
 
-def test_patch_partial_leaves_other_fields_alone(pt_client, actor_headers):
+def test_patch_partial_leaves_other_fields_alone(pt_client, actor_headers, mobile_upload):
     up = _upload(
-        pt_client, actor_headers,
+        mobile_upload,
         display_name="Orig", description="Desc", tags="a,b",
     )
     r = pt_client.patch(
@@ -112,8 +92,8 @@ def test_patch_partial_leaves_other_fields_alone(pt_client, actor_headers):
     assert body["tags"] == ["a", "b"]
 
 
-def test_patch_empty_display_name_422(pt_client, actor_headers):
-    up = _upload(pt_client, actor_headers)
+def test_patch_empty_display_name_422(pt_client, actor_headers, mobile_upload):
+    up = _upload(mobile_upload)
     r = pt_client.patch(
         f"/photos/{up['id']}",
         json={"display_name": "   "},  # route strips to "" -> 422
@@ -122,8 +102,8 @@ def test_patch_empty_display_name_422(pt_client, actor_headers):
     assert r.status_code == 422
 
 
-def test_patch_whitespace_description_becomes_none(pt_client, actor_headers):
-    up = _upload(pt_client, actor_headers, description="Original")
+def test_patch_whitespace_description_becomes_none(pt_client, actor_headers, mobile_upload):
+    up = _upload(mobile_upload, description="Original")
     r = pt_client.patch(
         f"/photos/{up['id']}",
         json={"description": "   "},
@@ -133,8 +113,8 @@ def test_patch_whitespace_description_becomes_none(pt_client, actor_headers):
     assert r.json()["description"] is None
 
 
-def test_patch_tags_dedupes_and_cleans(pt_client, actor_headers):
-    up = _upload(pt_client, actor_headers)
+def test_patch_tags_dedupes_and_cleans(pt_client, actor_headers, mobile_upload):
+    up = _upload(mobile_upload)
     r = pt_client.patch(
         f"/photos/{up['id']}",
         json={"tags": ["a", " b ", "a", "c,d"]},
@@ -145,8 +125,8 @@ def test_patch_tags_dedupes_and_cleans(pt_client, actor_headers):
     assert r.json()["tags"] == ["a", "b", "c d"]
 
 
-def test_patch_tags_empty_list_clears(pt_client, actor_headers):
-    up = _upload(pt_client, actor_headers, tags="old")
+def test_patch_tags_empty_list_clears(pt_client, actor_headers, mobile_upload):
+    up = _upload(mobile_upload, tags="old")
     r = pt_client.patch(
         f"/photos/{up['id']}",
         json={"tags": []},
@@ -156,9 +136,9 @@ def test_patch_tags_empty_list_clears(pt_client, actor_headers):
     assert r.json()["tags"] == []
 
 
-def test_patch_tags_as_string_422(pt_client, actor_headers):
+def test_patch_tags_as_string_422(pt_client, actor_headers, mobile_upload):
     """Upload takes a comma-string via Form; PATCH requires List[str] via JSON."""
-    up = _upload(pt_client, actor_headers)
+    up = _upload(mobile_upload)
     r = pt_client.patch(
         f"/photos/{up['id']}",
         json={"tags": "urgent,work"},  # string, not list
@@ -167,9 +147,9 @@ def test_patch_tags_as_string_422(pt_client, actor_headers):
     assert r.status_code == 422
 
 
-def test_patch_no_changes_no_edit_log(pt_client, actor_headers):
+def test_patch_no_changes_no_edit_log(pt_client, actor_headers, mobile_upload):
     """Unchanged payload -> no `edit` activity entry."""
-    up = _upload(pt_client, actor_headers, display_name="Same")
+    up = _upload(mobile_upload, display_name="Same")
     pt_client.patch(
         f"/photos/{up['id']}",
         json={"display_name": "Same"},
@@ -180,8 +160,8 @@ def test_patch_no_changes_no_edit_log(pt_client, actor_headers):
     assert "edit" not in actions
 
 
-def test_patch_logs_edit_with_diff(pt_client, actor_headers):
-    up = _upload(pt_client, actor_headers, display_name="Before")
+def test_patch_logs_edit_with_diff(pt_client, actor_headers, mobile_upload):
+    up = _upload(mobile_upload, display_name="Before")
     pt_client.patch(
         f"/photos/{up['id']}",
         json={"display_name": "After", "tags": ["new"]},
@@ -195,7 +175,7 @@ def test_patch_logs_edit_with_diff(pt_client, actor_headers):
     assert "tags" in changes
 
 
-def test_patch_404(pt_client, actor_headers):
+def test_patch_404(pt_client, actor_headers, mobile_upload):
     r = pt_client.patch(
         "/photos/99999",
         json={"display_name": "X"},
@@ -204,7 +184,7 @@ def test_patch_404(pt_client, actor_headers):
     assert r.status_code == 404
 
 
-def test_patch_requires_actor_before_404(pt_client):
+def test_patch_requires_actor_before_404(pt_client, mobile_upload):
     """Auth dependency resolves before the 404 check."""
     if not _require_actor_on():
         pytest.skip("REQUIRE_ACTOR=0 in this env")
@@ -215,7 +195,7 @@ def test_patch_requires_actor_before_404(pt_client):
 # ============================================================
 # GET /stats
 # ============================================================
-def test_stats_empty(pt_client):
+def test_stats_empty(pt_client, mobile_upload):
     r = pt_client.get("/stats")
     assert r.status_code == 200
     assert r.json() == {
@@ -226,9 +206,9 @@ def test_stats_empty(pt_client):
     }
 
 
-def test_stats_counts_and_bytes(pt_client, actor_headers):
-    up1 = _upload(pt_client, actor_headers)
-    up2 = _upload(pt_client, actor_headers)
+def test_stats_counts_and_bytes(pt_client, actor_headers, mobile_upload):
+    up1 = _upload(mobile_upload)
+    up2 = _upload(mobile_upload)
     r = pt_client.get("/stats")
     body = r.json()
     assert body["total_photos"] == 2
@@ -236,19 +216,19 @@ def test_stats_counts_and_bytes(pt_client, actor_headers):
     assert isinstance(body["total_megabytes"], float)
 
 
-def test_stats_owner_filter(pt_client):
-    _upload_as(pt_client, "alice", "a1.png")
-    _upload_as(pt_client, "alice", "a2.png")
-    _upload_as(pt_client, "bob", "b1.png")
+def test_stats_owner_filter(pt_client, mobile_upload):
+    _upload_as(mobile_upload, "alice", "a1.png")
+    _upload_as(mobile_upload, "alice", "a2.png")
+    _upload_as(mobile_upload, "bob", "b1.png")
     r = pt_client.get("/stats?owner=alice")
     assert r.json()["total_photos"] == 2
 
 
-def test_stats_distinct_users_is_global(pt_client):
+def test_stats_distinct_users_is_global(pt_client, mobile_upload):
     """Quirk: `owner=` filter applies to counts/bytes but NOT to distinct_users."""
-    _upload_as(pt_client, "alice", "a1.png")
-    _upload_as(pt_client, "bob", "b1.png")
-    _upload_as(pt_client, "carol", "c1.png")
+    _upload_as(mobile_upload, "alice", "a1.png")
+    _upload_as(mobile_upload, "bob", "b1.png")
+    _upload_as(mobile_upload, "carol", "c1.png")
     r = pt_client.get("/stats?owner=alice")
     body = r.json()
     assert body["total_photos"] == 1
@@ -258,21 +238,21 @@ def test_stats_distinct_users_is_global(pt_client):
 # ============================================================
 # GET /photos — filter / sort / paginate
 # ============================================================
-def test_list_owner_filter(pt_client):
-    _upload_as(pt_client, "alice", "a.png")
-    _upload_as(pt_client, "bob", "b.png")
+def test_list_owner_filter(pt_client, mobile_upload):
+    _upload_as(mobile_upload, "alice", "a.png")
+    _upload_as(mobile_upload, "bob", "b.png")
     r = pt_client.get("/photos?owner=alice")
     body = r.json()
     assert body["total"] == 1
     assert body["items"][0]["owner"] == "alice"
 
 
-def test_list_q_search(pt_client, actor_headers):
-    _upload(pt_client, actor_headers, name="cat.png",
+def test_list_q_search(pt_client, actor_headers, mobile_upload):
+    _upload(mobile_upload, name="cat.png",
             display_name="Zebra", description="striped")
-    _upload(pt_client, actor_headers, name="dog.png",
+    _upload(mobile_upload, name="dog.png",
             display_name="Apple", description="red")
-    _upload(pt_client, actor_headers, name="fish.png",
+    _upload(mobile_upload, name="fish.png",
             display_name="Mango", tags="tropical")
 
     assert pt_client.get("/photos?q=Zebra").json()["total"] == 1
@@ -281,17 +261,17 @@ def test_list_q_search(pt_client, actor_headers):
     assert pt_client.get("/photos?q=dog").json()["total"] == 1
 
 
-def test_list_tag_filter(pt_client, actor_headers):
-    _upload(pt_client, actor_headers, tags="urgent,work")
-    _upload(pt_client, actor_headers, tags="personal")
+def test_list_tag_filter(pt_client, actor_headers, mobile_upload):
+    _upload(mobile_upload, tags="urgent,work")
+    _upload(mobile_upload, tags="personal")
     r = pt_client.get("/photos?tag=urgent")
     assert r.json()["total"] == 1
 
 
-def test_list_sort(pt_client, actor_headers):
-    _upload(pt_client, actor_headers, display_name="Zebra")
-    _upload(pt_client, actor_headers, display_name="Apple")
-    _upload(pt_client, actor_headers, display_name="Mango")
+def test_list_sort(pt_client, actor_headers, mobile_upload):
+    _upload(mobile_upload, display_name="Zebra")
+    _upload(mobile_upload, display_name="Apple")
+    _upload(mobile_upload, display_name="Mango")
 
     r = pt_client.get("/photos?sort_by=display_name&order=asc")
     names = [p["display_name"] for p in r.json()["items"]]
@@ -302,9 +282,9 @@ def test_list_sort(pt_client, actor_headers):
     assert names == ["Zebra", "Mango", "Apple"]
 
 
-def test_list_pagination(pt_client, actor_headers):
+def test_list_pagination(pt_client, actor_headers, mobile_upload):
     for i in range(5):
-        _upload(pt_client, actor_headers, name=f"p{i}.png")
+        _upload(mobile_upload, name=f"p{i}.png")
 
     r = pt_client.get("/photos?limit=2&offset=0")
     assert len(r.json()["items"]) == 2
@@ -313,9 +293,9 @@ def test_list_pagination(pt_client, actor_headers):
     assert len(r.json()["items"]) == 1  # last page
 
 
-def test_list_total_ignores_pagination(pt_client, actor_headers):
+def test_list_total_ignores_pagination(pt_client, actor_headers, mobile_upload):
     for _ in range(5):
-        _upload(pt_client, actor_headers)
+        _upload(mobile_upload)
     r = pt_client.get("/photos?limit=2")
     body = r.json()
     assert body["total"] == 5
@@ -325,8 +305,8 @@ def test_list_total_ignores_pagination(pt_client, actor_headers):
 # ============================================================
 # GET /photos/{id}/file  &  /download
 # ============================================================
-def test_file_serves_bytes_with_cache_header(pt_client, actor_headers):
-    up = _upload(pt_client, actor_headers)
+def test_file_serves_bytes_with_cache_header(pt_client, actor_headers, mobile_upload):
+    up = _upload(mobile_upload)
     r = pt_client.get(f"/photos/{up['id']}/file")
     assert r.status_code == 200
     assert r.content == _png_bytes()
@@ -334,19 +314,19 @@ def test_file_serves_bytes_with_cache_header(pt_client, actor_headers):
     assert "max-age" in r.headers.get("cache-control", "").lower()
 
 
-def test_file_404(pt_client):
+def test_file_404(pt_client, mobile_upload):
     r = pt_client.get("/photos/99999/file")
     assert r.status_code == 404
 
 
-def test_file_410_when_missing_on_disk(pt_client, actor_headers):
-    up = _upload(pt_client, actor_headers)
+def test_file_410_when_missing_on_disk(pt_client, actor_headers, mobile_upload):
+    up = _upload(mobile_upload)
     (_upload_dir() / up["filename"]).unlink()
     r = pt_client.get(f"/photos/{up['id']}/file")
     assert r.status_code == 410
 
 
-def test_file_endpoint_resists_traversal(pt_client):
+def test_file_endpoint_resists_traversal(pt_client, mobile_upload):
     """resolve_stored_path uses Path(name).name — any directory parts are stripped."""
     from pt_service import main as pt_main
     with pt_main.SessionLocal() as db:
@@ -367,8 +347,8 @@ def test_file_endpoint_resists_traversal(pt_client):
     assert r.status_code == 410
 
 
-def test_download_content_disposition(pt_client, actor_headers):
-    up = _upload(pt_client, actor_headers,
+def test_download_content_disposition(pt_client, actor_headers, mobile_upload):
+    up = _upload(mobile_upload,
                  name="photo.png", display_name="My Nice Photo")
     r = pt_client.get(f"/photos/{up['id']}/download")
     assert r.status_code == 200
@@ -377,8 +357,8 @@ def test_download_content_disposition(pt_client, actor_headers):
     assert "my_nice_photo" in cd
 
 
-def test_download_sanitizes_weird_display_name(pt_client, actor_headers):
-    up = _upload(pt_client, actor_headers,
+def test_download_sanitizes_weird_display_name(pt_client, actor_headers, mobile_upload):
+    up = _upload(mobile_upload,
                  display_name="../../etc/passwd")
     r = pt_client.get(f"/photos/{up['id']}/download")
     assert r.status_code == 200
@@ -391,16 +371,16 @@ def test_download_sanitizes_weird_display_name(pt_client, actor_headers):
 # ============================================================
 # GET /activity
 # ============================================================
-def test_activity_actor_filter_case_insensitive(pt_client):
-    _upload_as(pt_client, "Alice")
-    _upload_as(pt_client, "bob")
+def test_activity_actor_filter_case_insensitive(pt_client, mobile_upload):
+    _upload_as(mobile_upload, "Alice")
+    _upload_as(mobile_upload, "bob")
     r = pt_client.get("/activity?actor=ALICE", headers={"X-Actor": "test"})
     actors = {e["actor"] for e in r.json()["items"]}
     assert actors == {"Alice"}
 
 
-def test_activity_action_filter(pt_client, actor_headers):
-    up = _upload(pt_client, actor_headers)
+def test_activity_action_filter(pt_client, actor_headers, mobile_upload):
+    up = _upload(mobile_upload)
     pt_client.patch(
         f"/photos/{up['id']}",
         json={"display_name": "X"},
@@ -411,9 +391,9 @@ def test_activity_action_filter(pt_client, actor_headers):
     assert actions == {"edit"}
 
 
-def test_activity_photo_id_filter(pt_client, actor_headers):
-    up1 = _upload(pt_client, actor_headers)
-    _upload(pt_client, actor_headers)
+def test_activity_photo_id_filter(pt_client, actor_headers, mobile_upload):
+    up1 = _upload(mobile_upload)
+    _upload(mobile_upload)
     r = pt_client.get(
         f"/activity?photo_id={up1['id']}", headers=actor_headers,
     )
@@ -421,16 +401,14 @@ def test_activity_photo_id_filter(pt_client, actor_headers):
     assert pids == {up1["id"]}
 
 
-def test_activity_q_matches_details_json(pt_client, actor_headers):
-    """`q` also searches the raw details JSON — verify via original_filename."""
-    _upload(pt_client, actor_headers, name="unicorn.png",
-            display_name="NotUnicorn")
-    r = pt_client.get("/activity?q=unicorn", headers=actor_headers)
-    # Match comes from details.original_filename, not photo_display_name.
+def test_activity_q_matches_details_json(pt_client, actor_headers, mobile_upload):
+    """`q` also searches the raw details JSON, not just the snapshot fields."""
+    mobile_upload(source="gallery")
+    r = pt_client.get("/activity?q=context_radius_m", headers=actor_headers)
     assert r.json()["total"] >= 1
 
 
-def test_activity_date_range_filter(pt_client, actor_headers):
+def test_activity_date_range_filter(pt_client, actor_headers, mobile_upload):
     from pt_service import main as pt_main
     today = datetime.now()
     yesterday = today - timedelta(days=1)
@@ -457,9 +435,9 @@ def test_activity_date_range_filter(pt_client, actor_headers):
     assert {"yesterday", "today"} <= names
 
 
-def test_activity_pagination(pt_client, actor_headers):
+def test_activity_pagination(pt_client, actor_headers, mobile_upload):
     for i in range(5):
-        _upload(pt_client, actor_headers, name=f"p{i}.png")
+        _upload(mobile_upload, name=f"p{i}.png")
     r1 = pt_client.get("/activity?limit=2&offset=0", headers=actor_headers)
     r2 = pt_client.get("/activity?limit=2&offset=2", headers=actor_headers)
     assert r1.json()["total"] >= 5
@@ -469,7 +447,7 @@ def test_activity_pagination(pt_client, actor_headers):
     }
 
 
-def test_activity_requires_actor(pt_client):
+def test_activity_requires_actor(pt_client, mobile_upload):
     if not _require_actor_on():
         pytest.skip("REQUIRE_ACTOR=0 in this env")
     r = pt_client.get("/activity")
@@ -479,10 +457,10 @@ def test_activity_requires_actor(pt_client):
 # ============================================================
 # GET /activity/actors
 # ============================================================
-def test_actors_aggregates_per_actor(pt_client):
-    _upload_as(pt_client, "alice", "a1.png")
-    _upload_as(pt_client, "alice", "a2.png")
-    _upload_as(pt_client, "bob", "b1.png")
+def test_actors_aggregates_per_actor(pt_client, mobile_upload):
+    _upload_as(mobile_upload, "alice", "a1.png")
+    _upload_as(mobile_upload, "alice", "a2.png")
+    _upload_as(mobile_upload, "bob", "b1.png")
 
     r = pt_client.get("/activity/actors", headers={"X-Actor": "test"})
     assert r.status_code == 200
@@ -494,12 +472,12 @@ def test_actors_aggregates_per_actor(pt_client):
     assert by_actor["bob"]["total"] == 1
 
 
-def test_actors_sorted_by_total_desc(pt_client):
-    _upload_as(pt_client, "alice", "a1.png")
-    _upload_as(pt_client, "alice", "a2.png")
-    _upload_as(pt_client, "bob", "b1.png")
-    _upload_as(pt_client, "bob", "b2.png")
-    _upload_as(pt_client, "bob", "b3.png")
+def test_actors_sorted_by_total_desc(pt_client, mobile_upload):
+    _upload_as(mobile_upload, "alice", "a1.png")
+    _upload_as(mobile_upload, "alice", "a2.png")
+    _upload_as(mobile_upload, "bob", "b1.png")
+    _upload_as(mobile_upload, "bob", "b2.png")
+    _upload_as(mobile_upload, "bob", "b3.png")
 
     r = pt_client.get("/activity/actors", headers={"X-Actor": "test"})
     actors = [a["actor"] for a in r.json()["actors"]]
@@ -507,46 +485,30 @@ def test_actors_sorted_by_total_desc(pt_client):
     assert actors.index("bob") < actors.index("alice")
 
 
-def test_actors_q_filter(pt_client):
-    _upload_as(pt_client, "alice", "a.png")
-    _upload_as(pt_client, "bob", "b.png")
+def test_actors_q_filter(pt_client, mobile_upload):
+    _upload_as(mobile_upload, "alice", "a.png")
+    _upload_as(mobile_upload, "bob", "b.png")
     r = pt_client.get("/activity/actors?q=ali", headers={"X-Actor": "test"})
     actors = {a["actor"] for a in r.json()["actors"]}
     assert actors == {"alice"}
 
 
 # ============================================================
-# POST /upload — validation
+# POST /mobile-upload — validation
 # ============================================================
-def test_upload_bad_extension_415(pt_client, actor_headers):
-    r = pt_client.post(
-        "/upload",
-        files={"file": ("evil.exe", io.BytesIO(_png_bytes()), "image/png")},
-        headers=actor_headers,
-    )
-    assert r.status_code == 415
+def test_upload_bad_extension_415(mobile_upload):
+    mobile_upload("evil.exe", status=415)
 
 
-def test_upload_bad_content_type_415(pt_client, actor_headers):
-    r = pt_client.post(
-        "/upload",
-        files={"file": ("a.png", io.BytesIO(_png_bytes()), "text/plain")},
-        headers=actor_headers,
-    )
-    assert r.status_code == 415
+def test_upload_bad_signature_415(mobile_upload):
+    mobile_upload("a.jpg", content=_png_bytes(), status=415)
 
 
-def test_upload_oversize_413_and_cleanup(pt_client, actor_headers, monkeypatch):
+def test_upload_oversize_413_and_cleanup(pt_client, mobile_upload, monkeypatch):
     from pt_service import main as pt_main
     monkeypatch.setattr(pt_main, "MAX_UPLOAD_BYTES", 100)
 
-    payload = b"x" * 200  # > 100 bytes
-    r = pt_client.post(
-        "/upload",
-        files={"file": ("big.png", io.BytesIO(payload), "image/png")},
-        headers=actor_headers,
-    )
-    assert r.status_code == 413
+    mobile_upload("big.png", content=_png_bytes() + b"x" * 200, status=413)
 
     # Partial file cleaned up, no DB record created.
     assert list(pt_main.UPLOAD_DIR.iterdir()) == []
@@ -556,12 +518,12 @@ def test_upload_oversize_413_and_cleanup(pt_client, actor_headers, monkeypatch):
 # ============================================================
 # UI routes
 # ============================================================
-def test_camera_route_registered(pt_client):
+def test_camera_route_registered(pt_client, mobile_upload):
     paths = {route.path for route in pt_client.app.routes}
     assert "/camera" in paths
 
 
-def test_ui_route_registered(pt_client):
+def test_ui_route_registered(pt_client, mobile_upload):
     paths = {route.path for route in pt_client.app.routes}
     assert "/ui" in paths
 
@@ -569,7 +531,7 @@ def test_ui_route_registered(pt_client):
 # ============================================================
 # Documented behavior: reads are unauthenticated in standalone
 # ============================================================
-def test_read_endpoints_are_public_in_standalone(pt_client, actor_headers):
+def test_read_endpoints_are_public_in_standalone(pt_client, actor_headers, mobile_upload):
     """Standalone pt_service has NO auth gate on reads.
 
     In production nginx fronts everything with /verify — this test
@@ -577,7 +539,7 @@ def test_read_endpoints_are_public_in_standalone(pt_client, actor_headers):
     auth to a read endpoint without updating this file. Flip it
     when we do.
     """
-    up = _upload(pt_client, actor_headers)
+    up = _upload(mobile_upload)
     for path in (
         "/photos",
         "/stats",
