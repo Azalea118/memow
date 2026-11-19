@@ -10,6 +10,8 @@ RULE: never `from pt_service.main import ...` (or gps_service.main, app.main)
 at the top of a test file. Import inside fixtures/tests only.
 """
 
+import io
+import json
 import os
 import secrets
 import shutil
@@ -17,6 +19,8 @@ import sqlite3
 import sys
 import tempfile
 import time
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -98,6 +102,80 @@ def pt_client(tmp_path, monkeypatch):
 
     with TestClient(pt_main.pt_app) as c:
         yield c
+
+
+@pytest.fixture
+def mobile_upload(pt_client, monkeypatch):
+    """Upload through /mobile-upload with a stubbed mobile identity."""
+    from pt_service import main as pt_main
+
+    def fake_identity(request):
+        name = request.headers.get("x-test-employee", "Default Employee")
+        return {
+            "employee_id": 1,
+            "employee_code": "EMP-001",
+            "full_name": name,
+            "status": "active",
+            "tracker_id": 1,
+            "username": "mobile1",
+        }
+
+    monkeypatch.setattr(pt_main, "tracker_identity", fake_identity)
+
+    def upload(filename="a.png", *, title=None, display_name=None,
+               description=None, tags=None, employee=None, content=None,
+               content_type="image/png", status=201, **meta_overrides):
+        if content is None:
+            content = bytes.fromhex(
+                "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+                "0000000a49444154789c6300010000050001"
+                "0d0a2db40000000049454e44ae426082"
+            )
+        now = datetime.now(timezone.utc).isoformat()
+        metadata = {
+            "upload_id": str(uuid.uuid4()),
+            "latitude": 14.5995,
+            "longitude": 120.9842,
+            "accuracy_m": 10.0,
+            "location_at": now,
+            "selected_at": now,
+            "source": "camera",
+        }
+        metadata.update(meta_overrides)
+        data = {"metadata": json.dumps(metadata)}
+        if title is not None:
+            data["title"] = title
+        headers = {"Authorization": "Bearer test-token"}
+        if employee is not None:
+            headers["X-Test-Employee"] = employee
+        r = pt_client.post(
+            "/mobile-upload",
+            files={"file": (filename, io.BytesIO(content), content_type)},
+            data=data,
+            headers=headers,
+        )
+        assert r.status_code == status, r.text
+        if status >= 400:
+            return r
+
+        photo = r.json()
+        overrides = {}
+        if display_name is not None:
+            overrides["display_name"] = display_name
+        if description is not None:
+            overrides["description"] = description
+        if tags is not None:
+            overrides["tags"] = tags if isinstance(tags, str) else ",".join(tags)
+        if overrides:
+            with pt_main.SessionLocal() as db:
+                record = db.get(pt_main.PhotoRecord, photo["id"])
+                for key, value in overrides.items():
+                    setattr(record, key, value)
+                db.commit()
+            photo = pt_client.get(f"/photos/{photo['id']}").json()
+        return photo
+
+    return upload
 
 
 @pytest.fixture
