@@ -16,14 +16,15 @@ if ROLE == "auth":
         cookie = request.headers.get("cookie", "")
         authz = request.headers.get("authorization", "")
         method = request.headers.get("x-original-method", "").upper()
-        uri = request.headers.get("x-original-uri", "")
-        if "auth_session=good" in cookie:
+        uri = request.headers.get("x-original-uri", "").split("?")[0]
+        device_only = method == "POST" and uri.startswith("/app3/")
+        if "auth_session=good" in cookie and not device_only:
             return JSONResponse({"ok": True}, headers={
                 "X-User": "Test User",
                 "X-Username": "testuser",
             })
         if authz == "Bearer device-good":
-            if method == "POST" and uri.startswith("/app3/"):
+            if device_only:
                 return JSONResponse({"ok": True}, headers={
                     "X-Device": "testuser:phone-1",
                 })
