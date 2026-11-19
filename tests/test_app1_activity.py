@@ -3,7 +3,6 @@ Activity timeline / calendar / digest with real data.
 Tests the audit-log read side, not just the "empty DB" case.
 """
 from datetime import datetime, timezone
-import pytest
 
 ACTOR = {"X-Actor": "test"}
 
@@ -20,11 +19,6 @@ def _today_utc() -> str:
     return datetime.now(timezone.utc).date().isoformat()
 
 
-@pytest.mark.xfail(
-    reason="For app1 revert purposes  (to be revised) "
-           "Un-xfail when revised",
-    strict=True,
-)
 def test_calendar_shows_today_activity(app1_client):
     _emp(app1_client, "CAL1")
     today = _today_utc()
