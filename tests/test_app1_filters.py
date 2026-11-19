@@ -1,13 +1,6 @@
 """
-Filter correctness for /employees — including two KNOWN BUGS.
-
-If `test_list_employees_search_total_is_consistent` or
-`test_list_employees_department_total_is_consistent` fail, it's because
-`count_employees` in queries.py doesn't mirror the filters that
-`search_employees` applies. That's a real app bug, not a test bug.
+Filter correctness for /employees.
 """
-import pytest
-
 ACTOR = {"X-Actor": "test"}
 
 
@@ -20,12 +13,37 @@ def _emp(client, code, first="Alice", last="Smith", dept=None):
     return r.json()
 
 
-def _vtype(client, name, points=0, strike=False):
-    r = client.post("/violation-types", json={
-        "name": name, "default_points": points, "is_strike": strike,
-    }, headers=ACTOR)
+def _vtype(client, name):
+    r = client.post("/violation-types", json={"name": name}, headers=ACTOR)
     assert r.status_code == 201, r.text
     return r.json()
+
+
+def _punishable_subsection(client, vtype):
+    r = client.post(
+        f"/violation-types/{vtype['id']}/subsections",
+        json={"name": "Default"}, headers=ACTOR,
+    )
+    assert r.status_code == 201, r.text
+    subsection = r.json()
+    r = client.put(
+        f"/subsections/{subsection['id']}/penalties",
+        json={"penalties": [
+            {"offense_number": 1, "description": "Warning"},
+            {"offense_number": 2, "description": "Reprimand"},
+        ]},
+        headers=ACTOR,
+    )
+    assert r.status_code == 200, r.text
+    return subsection
+
+
+def _assign(client, employee_id, subsection_id):
+    r = client.post(
+        f"/employees/{employee_id}/violations",
+        json={"subsection_id": subsection_id}, headers=ACTOR,
+    )
+    assert r.status_code == 201, r.text
 
 
 # ---------------- search ----------------
@@ -45,19 +63,10 @@ def test_search_by_code(app1_client):
     assert [e["employee_code"] for e in r.json()["items"]] == ["CODE_X"]
 
 
-# ---------------- KNOWN BUG: total ignores `search` ----------------
+# ---------------- total mirrors the applied filters ----------------
 
-@pytest.mark.xfail(
-    reason="Bug: count_employees ignores `search` — see app/routers/employees.py line 30. "
-           "Un-xfail when queries.count_employees accepts the same filter set.",
-    strict=True,
-)
 def test_list_employees_search_total_is_consistent(app1_client):
-    """If 1 employee matches the search, total must be 1.
-
-    Currently FAILS: count_employees doesn't accept `search`, so total
-    reflects all employees. Frontend pagination will be wrong.
-    """
+    """If 1 employee matches the search, total must be 1."""
     _emp(app1_client, "A1", first="Alice", last="Anderson")
     _emp(app1_client, "B1", first="Bob", last="Brown")
     _emp(app1_client, "C1", first="Carol", last="Clark")
@@ -70,19 +79,10 @@ def test_list_employees_search_total_is_consistent(app1_client):
     )
 
 
-# ---------------- KNOWN BUG: department substring vs exact ----------------
+# ---------------- department substring consistency ----------------
 
-@pytest.mark.xfail(
-    reason="Bug: search_employees uses ilike('%dept%'), count_employees uses ==. "
-           "Un-xfail when count_employees matches substring semantics.",
-    strict=True,
-)
 def test_list_employees_department_total_is_consistent(app1_client):
-    """If items match `department=Engin` (substring), total must agree.
-
-    Currently FAILS: search_employees uses ilike('%Engin%'), but
-    count_employees uses exact equality. So items=1, total=0.
-    """
+    """If items match `department=Engin` (substring), total must agree."""
     _emp(app1_client, "D1", dept="Engineering")
     _emp(app1_client, "D2", dept="Sales")
 
@@ -94,43 +94,31 @@ def test_list_employees_department_total_is_consistent(app1_client):
     )
 
 
-# ---------------- min_points / min_strikes ----------------
+# ---------------- active / all-time offense thresholds ----------------
 
-@pytest.mark.xfail(
-    reason="For app1 revert purposes  (to be revised) "
-           "Un-xfail when revised",
-    strict=True,
-)
 def test_min_points_filter(app1_client):
     a = _emp(app1_client, "MP_A", first="A", last="A")
     b = _emp(app1_client, "MP_B", first="B", last="B")
-    vt5 = _vtype(app1_client, "V5", points=5)
-    vt10 = _vtype(app1_client, "V10", points=10)
-    app1_client.post(f"/employees/{a['id']}/violations",
-                     json={"violation_type_id": vt5["id"]}, headers=ACTOR)
-    app1_client.post(f"/employees/{b['id']}/violations",
-                     json={"violation_type_id": vt10["id"]}, headers=ACTOR)
+    subsection = _punishable_subsection(app1_client, _vtype(app1_client, "V"))
+    _assign(app1_client, a["id"], subsection["id"])
+    _assign(app1_client, b["id"], subsection["id"])
+    _assign(app1_client, b["id"], subsection["id"])
 
-    r = app1_client.get("/employees?min_points=8")
+    r = app1_client.get("/employees?min_active_violations=2")
     codes = [e["employee_code"] for e in r.json()["items"]]
     assert codes == ["MP_B"]
+    assert r.json()["total"] == 1
 
-@pytest.mark.xfail(
-    reason="For app1 revert purposes  (to be revised) "
-           "Un-xfail when revised",
-    strict=True,
-)
+
 def test_min_strikes_filter(app1_client):
     a = _emp(app1_client, "MS_A", first="A", last="A")
     b = _emp(app1_client, "MS_B", first="B", last="B")
-    vt = _vtype(app1_client, "STR", strike=True)
-    for _ in range(2):
-        app1_client.post(f"/employees/{a['id']}/violations",
-                         json={"violation_type_id": vt["id"]}, headers=ACTOR)
-    app1_client.post(f"/employees/{b['id']}/violations",
-                     json={"violation_type_id": vt["id"]}, headers=ACTOR)
+    subsection = _punishable_subsection(app1_client, _vtype(app1_client, "V"))
+    _assign(app1_client, a["id"], subsection["id"])
+    _assign(app1_client, a["id"], subsection["id"])
+    _assign(app1_client, b["id"], subsection["id"])
 
-    r = app1_client.get("/employees?min_strikes=2")
+    r = app1_client.get("/employees?min_total_offenses=2")
     assert [e["employee_code"] for e in r.json()["items"]] == ["MS_A"]
 
 
