@@ -1,7 +1,7 @@
 # Deploy Runbook
 
 Manual deploy loop: **build → registry holds → VPS runs**.
-No CI.
+There is no deployment CI; tests and security scans still run in GitHub Actions.
 
 > **The only thing that changes per deploy is `<TAG>`.**
 > Everything else in this file is literal — copy it as-is.
@@ -60,7 +60,7 @@ docker run --rm ghcr.io/jooecoodes/cs317-swe:$TAG sh -c \
 docker run --rm ghcr.io/jooecoodes/cs317-swe:$TAG ls /usr/share/nginx/html/
 ```
 
-**Do not skip the first check.** If it prints a path, your `.dockerignore` failed and you are about to push dev data (password hashes, GPS traces) to a public registry. Fix `.dockerignore`, rebuild, re-verify.
+**Do not skip the first check.** If it prints a path, your `.dockerignore` failed and you are about to push dev data (password hashes, GPS traces) to the registry. Fix `.dockerignore`, rebuild, re-verify.
 
 ---
 
