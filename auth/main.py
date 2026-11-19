@@ -181,10 +181,13 @@ def verify(request: Request):
     """Called by nginx (auth_request) before every protected request."""
     method = request.headers.get("x-original-method", "").upper()
     path = request.headers.get("x-original-uri", "").split("?")[0]
+    device_only = (
+        method == DEVICE_ALLOWED_METHOD and path.startswith(DEVICE_ALLOWED_PREFIX)
+    )
     now = int(time.time())
     with closing(db()) as c:
         token = request.cookies.get(COOKIE)
-        if token:
+        if token and not device_only:
             row = c.execute(
                 "SELECT u.username, u.first_name, u.last_name "
                 "FROM sessions s JOIN users u ON u.id=s.user_id "
