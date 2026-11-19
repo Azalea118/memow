@@ -361,19 +361,50 @@ def search_employees(
     if min_active_violations is not None:
         stmt = stmt.where(Employee.active_violation_count >= min_active_violations)
     if min_total_offenses is not None:
-        stmt = stmt.where(total_offenses >= min_total_offenses)
+        stmt = stmt.where(total_offenses_sq >= min_total_offenses)
     stmt = stmt.order_by(Employee.last_name, Employee.first_name, Employee.id).limit(limit).offset(offset)
     return session.execute(stmt).all()
 
 
 def count_employees(
-    session: Session, *, include_inactive: bool = False, department: Optional[str] = None,
+    session: Session,
+    *,
+    search: Optional[str] = None,
+    include_inactive: bool = False,
+    department: Optional[str] = None,
+    position: Optional[str] = None,
+    min_active_violations: Optional[int] = None,
+    min_total_offenses: Optional[int] = None,
 ) -> int:
+    total_offenses = (
+        select(func.count(ViolationRecord.id))
+        .where(ViolationRecord.employee_id == Employee.id)
+        .correlate(Employee)
+        .scalar_subquery()
+        + select(func.count(ViolationRemoval.id))
+        .where(ViolationRemoval.employee_id == Employee.id)
+        .correlate(Employee)
+        .scalar_subquery()
+    )
     stmt = select(func.count(Employee.id))
+    if search and (term := search.strip()):
+        pattern = f"%{term}%"
+        stmt = stmt.where(or_(
+            Employee.first_name.ilike(pattern),
+            Employee.last_name.ilike(pattern),
+            Employee.employee_code.ilike(pattern),
+            Employee.full_name.ilike(pattern),
+        ))
+    if department:
+        stmt = stmt.where(Employee.department.ilike(f"%{department}%"))
+    if position:
+        stmt = stmt.where(Employee.position.ilike(f"%{position}%"))
     if not include_inactive:
         stmt = stmt.where(Employee.status == EmployeeStatus.active)
-    if department:
-        stmt = stmt.where(Employee.department == department)
+    if min_active_violations is not None:
+        stmt = stmt.where(Employee.active_violation_count >= min_active_violations)
+    if min_total_offenses is not None:
+        stmt = stmt.where(total_offenses >= min_total_offenses)
     return session.execute(stmt).scalar_one()
 
 
@@ -1210,7 +1241,7 @@ def get_activity_calendar(session: Session, *, start: date, end: date) -> Sequen
             func.count(ActivityEvent.id).label("total"),
             func.sum(case((ActivityEvent.target_type == "employee", 1), else_=0)).label("employees"),
             func.sum(case((ActivityEvent.target_type == "violation", 1), else_=0)).label("violations"),
-            func.sum(case((ActivityEvent.target_type.in_(["violation_type", "subsection"]), 1), else_=0)).label("config_changes"),
+            func.sum(case((ActivityEvent.target_type.in_(["violation_type", "subsection"]), 1), else_=0)).label("violation_types"),
             func.sum(case((ActivityEvent.action == "violation.removed", 1), else_=0)).label("removals"),
         )
         .where(ActivityEvent.event_date >= start, ActivityEvent.event_date <= end)
