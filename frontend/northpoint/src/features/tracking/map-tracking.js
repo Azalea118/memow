@@ -84,9 +84,11 @@ export function mountMapTracking(c){
  const root=document.querySelector('#tracking-map');if(!root)return;
  if(!window.L){root.innerHTML='<div class="tracking-empty" role="alert"><strong>Couldn’t open the map</strong><p>Reload Northpoint and try again.</p></div>';return;}
  const L=window.L;map=L.map(root,{scrollWheelZoom:false}).setView(view?.center||[8.4803,124.6498],view?.zoom||13);map.attributionControl.setPrefix(false);
- const attribution=document.createElement('a');attribution.setAttribute('href','https://www.openstreetmap.org/copyright');attribution.setAttribute('target','_blank');attribution.setAttribute('rel','noopener noreferrer');attribution.textContent='OpenStreetMap contributors';
- tiles=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© '+attribution.outerHTML}).addTo(map);
- tiles.on('tileerror',()=>{if(active&&token===epoch)document.querySelector('#tracking-tile-error').hidden=false;});
+ if (!globalThis.NORTHPOINT_CONFIG?.READ_ONLY_PREVIEW) {
+  const attribution=document.createElement('a');attribution.setAttribute('href','https://www.openstreetmap.org/copyright');attribution.setAttribute('target','_blank');attribution.setAttribute('rel','noopener noreferrer');attribution.textContent='OpenStreetMap contributors';
+  tiles=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© '+attribution.outerHTML}).addTo(map);
+  tiles.on('tileerror',()=>{if(active&&token===epoch)document.querySelector('#tracking-tile-error').hidden=false;});
+ }
  line=L.polyline([],{color:'#285587',weight:4,opacity:.85}).addTo(map);
  tracking.status='loading';tracking.devices=[];tracking.updated=0;
  if(tracking.selected){tracking.locationStatus='loading';tracking.location=null;tracking.routeStatus='loading';tracking.segments=[];tracking.routeUpdated=0;}

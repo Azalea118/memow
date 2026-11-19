@@ -5,7 +5,7 @@ let generation=0,controller;
 export async function readProfileHistory(id,options={},request=apiRequest){
  id=apiId(id);const items=[],seen=new Set();let offset=0,total=null;
  for(let page=0;page<2000;page++){
-  let data;try{data=await request('/employees/'+id+'/violation-history',{...options,query:{limit:50,offset}});}catch(error){if(error.status===404)throw Error('The server has not loaded the employee history endpoint yet. Restart app1, then try again.');throw error;}
+  let data;try{data=await request('/employees/'+id+'/violation-history',{...options,query:{limit:50,offset}});}catch(error){if(error.status===404)throw Error('This employee’s violation history could not be found. Contact your administrator if the problem continues.');throw error;}
   if(!data||!Array.isArray(data.items)||!Number.isSafeInteger(data.total)||data.total<0||data.offset!==offset||data.limit!==50||total!==null&&total!==data.total)throw Error('Violation history changed or returned an incomplete page. Please try again.');
   total=data.total;
   for(const raw of data.items){

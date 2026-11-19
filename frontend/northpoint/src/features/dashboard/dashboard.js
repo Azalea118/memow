@@ -34,25 +34,25 @@ export function renderDashboard(ctx) {
     ['Active Violations', summary.violations, 'shield', 'rose', 'Total active records', 'violations'],
     ['Total Offenses', summary.offenses??'—', 'clipboard', 'amber', 'Active and removed records', 'offenses'],
     ['Watchlist', summary.watchlist.length, 'alert', 'purple', 'Reached a 3rd or later offense', 'watchlist']
-  ];
+  ].filter(card=>ctx.canOpen('reports')||!['watchlist','offenses'].includes(card[5]));
   const directoryReady=ctx.employeeDirectory?.status==='ready';
   const quickActions=[
     {label:'Issue Violation',icon:'shield',action:'record',disabled:!directoryReady,hint:'Load employees before issuing a violation.'},
     {label:'Add Employee',icon:'users',action:'add-employee',disabled:!directoryReady,hint:'Load employees before adding an employee.'},
     {label:'Photo Library',icon:'image',action:'navigate',page:'photos',disabled:false},
     {label:'Map Tracking',icon:'map',action:'navigate',page:'tracking',disabled:false}
-  ];
+  ].filter(item=>item.page?ctx.canOpen(item.page):item.action==='record'?ctx.canRecord():ctx.canManage());
   return `<div class="dashboard-simple">
     <section class="metrics-grid" aria-label="Workplace overview"><h2 class="dashboard-summary-heading">Workplace overview</h2>${cards.map(card => `<article class="metric-card"><div class="metric-top"><span class="metric-title">${card[0]}</span><span class="metric-icon ${card[3]}">${icon(card[2], 20)}</span></div><div class="metric-number">${card[1]}</div>${ctx.renderTodayChange?ctx.renderTodayChange(ctx.dailyChanges?.[card[5]==='employees'?'employees':card[5]==='violations'?'violations':card[5]],icon,ctx.dailyChanges?.reason):''}<div class="metric-bottom">${card[4]}</div><button class="metric-card-link" data-action="dashboard-card" data-target="${card[5]}" aria-label="View ${card[0].toLowerCase()}"></button></article>`).join('')}</section>
-    <section class="dashboard-quick-actions" aria-labelledby="dashboard-quick-title"><h2 id="dashboard-quick-title">What would you like to do?</h2><div class="dashboard-action-grid">${quickActions.map(item=>`<button class="dashboard-action-tile" data-action="${item.action}" ${item.page?'data-page="'+item.page+'"':''} ${item.disabled?'disabled title="'+item.hint+'"':''}><span class="dashboard-action-icon">${icon(item.icon,25)}</span><span>${item.label}</span></button>`).join('')}</div></section>
+    ${quickActions.length?`<section class="dashboard-quick-actions" aria-labelledby="dashboard-quick-title"><h2 id="dashboard-quick-title">What would you like to do?</h2><div class="dashboard-action-grid">${quickActions.map(item=>`<button class="dashboard-action-tile" data-action="${item.action}" ${item.page?'data-page="'+item.page+'"':''} ${item.disabled?'disabled title="'+item.hint+'"':''}><span class="dashboard-action-icon">${icon(item.icon,25)}</span><span>${item.label}</span></button>`).join('')}</div></section>`:''}
     <div class="dashboard-main-row">
       <section class="panel weekly-panel"><div class="panel-header"><div><h2>Violation Trends</h2><p>${monthly?'Monthly totals':'Weekly totals · Monday to Sunday'} · Last 6 ${period}s</p></div><div class="trend-period-toggle" role="group" aria-label="Violation trends period">${[['week','Weekly'],['month','Monthly']].map(([id,label])=>`<button type="button" data-action="dashboard-trend" data-period="${id}" aria-pressed="${period===id}">${label}</button>`).join('')}</div></div><div class="weekly-chart-body">${trendChart(weeks, esc,monthly)}</div><div class="weekly-chart-footer"><span><i class="legend-dot light"></i> ${monthly?'Monthly':'Weekly'} violations</span><span><i class="legend-dot"></i> Current ${period} (last bar)</span></div></section>
-      <section class="panel dashboard-activity-panel"><div class="panel-header"><div><h2>Recent Activity</h2><p>Last 14 days · Latest 5 violations</p></div></div>${ctx.recentState || (recentActivity.length ? `<div class="dashboard-activity-list">${recentActivity.map(violation => {
+      <section class="panel dashboard-activity-panel"><div class="panel-header"><div><h2>${ctx.canOpen('history')?'Recent Activity':'Recent Violations'}</h2><p>Last 14 days · Latest 5 violations</p></div></div>${ctx.recentState || (recentActivity.length ? `<div class="dashboard-activity-list">${recentActivity.map(violation => {
         const employee = employees.find(employee => employee.apiId ? employee.apiId === violation.employeeApiId : employee.id === violation.employeeId) || violation.employee;
         const initials = employee.name.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('');
         return `<button class="dashboard-activity-item" data-action="case-details" data-id="${esc(violation.id)}"><span class="avatar" aria-hidden="true">${esc(initials)}</span><span class="dashboard-activity-content"><span class="dashboard-activity-title"><strong>${esc(employee.name)}</strong><span class="bordered-badge">Offense ${violation.offenseNumber}</span></span><span class="dashboard-activity-detail">was issued <strong>${esc(violation.typeName)}</strong></span></span><span class="dashboard-activity-time">${relativeActivityTime(violation.issuedAt||violation.date)}</span></button>`;
-      }).join('')}</div>` : `<div class="empty-state">${icon('clock', 28)}<h3>No recent violations</h3><p>Violations issued in the last 14 days will appear here.</p></div>`)}<div class="panel-link-footer"><button class="button ghost" data-action="navigate" data-page="history">View History ${icon('arrow', 17)}</button></div></section>
+      }).join('')}</div>` : `<div class="empty-state">${icon('clock', 28)}<h3>No recent violations</h3><p>Violations issued in the last 14 days will appear here.</p></div>`)}${ctx.canOpen('history')?`<div class="panel-link-footer"><button class="button ghost" data-action="navigate" data-page="history">View History ${icon('arrow', 17)}</button></div>`:''}</section>
     </div>
-    <p class="dashboard-totals-note">Active violations exclude removed records. Total offenses and Watchlist include removed history; removal does not reset the offense sequence.</p>
+    <p class="dashboard-totals-note">Active violations exclude removed records.${ctx.canOpen('reports')?' Total offenses and Watchlist include removed history; removal does not reset the offense sequence.':''}</p>
   </div>`;
 }

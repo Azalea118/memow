@@ -1,3 +1,4 @@
+import {canOpen} from '../../scripts/shared/permissions.js';
 import {businessDate} from '../features/reports/yesterday.js';
 import { apiRequest, paginatedApi, apiId } from '../api/api-client.js';
 import { employeeDirectory, loadEmployeeDirectory, suspendEmployeeDirectory } from '../features/employees/employee-api.js';
@@ -77,16 +78,17 @@ export function loadRemovals(force = false) { return load('removals', async () =
 export function loadTimeline(force = false) { return load('timeline', async () => (await paginatedApi('/activity/timeline')).map(normalizeActivity), force); }
 export function loadRecent(force = false) { const employees = store.employees.slice(); return load('recent', async signal => { const raw = await apiRequest('/violations/recent', { query: { days: 14, limit: 5 }, signal }); if (!Array.isArray(raw)) throw new Error('The API returned an unexpected recent activity list.'); return raw.map(item => normalizeViolation(item, employees, true)); }, force); }
 export async function refreshWorkspace() {
-  const independent = Promise.all([loadTypes(true), loadRemovals(true), loadTimeline(true)]);
+  const independent = Promise.all([loadTypes(true), ...(canOpen('history') ? [loadRemovals(true), loadTimeline(true)] : [])]);
   await refreshEmployees();
   if (employeeDirectory.status === 'ready') await Promise.all([loadRecords(true), loadRecent(true)]);
   await independent;
 }
 export function ensurePageData(page) {
+  if (!canOpen(page) || page === 'mine') return;
   if (['dashboard', 'violations', 'profile', 'reports', 'employees'].includes(page) && resources.records.status === 'idle' && employeeDirectory.status === 'ready') void loadRecords();
   if (page === 'dashboard' && resources.recent.status === 'idle' && employeeDirectory.status === 'ready') void loadRecent();
   if (['types', 'violations', 'reports'].includes(page) && resources.types.status === 'idle') void loadTypes();
-  if (['dashboard','reports'].includes(page)&&resources.timeline.status==='idle')void loadTimeline();
-  if (['dashboard','reports','employees','profile'].includes(page)&&resources.removals.status==='idle')void loadRemovals();
+  if (canOpen('history')&&['dashboard','reports'].includes(page)&&resources.timeline.status==='idle')void loadTimeline();
+  if (canOpen('history')&&['dashboard','reports','employees','profile'].includes(page)&&resources.removals.status==='idle')void loadRemovals();
   if (page === 'history') { if (resources.timeline.status === 'idle') void loadTimeline(); if (resources.removals.status === 'idle') void loadRemovals(); }
 }
