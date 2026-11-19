@@ -29,3 +29,6 @@ data/
 *.md
 
 seed_rulebook.py
+
+data_bak/
+*.db.bak
