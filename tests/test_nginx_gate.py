@@ -135,25 +135,15 @@ def test_device_token_blocked_on_post_app1():
 
 # ---------- the app3 cookie-session gap ----------
 
-def test_app3_cookie_session_behavior_today():
-    """CURRENT behavior: cookie sessions CAN POST to /app3/ with empty X-Device.
-    This documents the gap. If a fix lands, this test will fail — update it."""
-    r = _post("/app3/", json={"id": "any-device", "points": []},
-              cookies={"auth_session": "good"})
+def test_app3_cookie_session_allowed_for_reads():
+    """Cookie sessions still work for read-only requests under /app3/."""
+    r = _get("/app3/devices", cookies={"auth_session": "good"})
     assert r.status_code == 200
     assert r.json()["x_device"] in (None, "")
 
 
-@pytest.mark.xfail(
-    reason="KNOWN GAP: cookie session posts to /app3/ reach the app with empty "
-           "X-Device, so gps_service device binding is skipped. Fix: either "
-           "(a) auth returns X-Device for sessions on /app3/* paths, or "
-           "(b) nginx blocks cookie sessions on /app3/, or "
-           "(c) gps_service requires non-empty X-Device on POST. "
-           "Un-xfail when fixed.",
-    strict=True,
-)
 def test_app3_cookie_session_should_be_blocked():
+    """Ingest is device-token only: a session has no X-Device to bind to."""
     r = _post("/app3/", json={"id": "any-device", "points": []},
               cookies={"auth_session": "good"})
     assert r.status_code in (401, 403)
