@@ -50,7 +50,12 @@ def list_employees(
         min_total_offenses=min_total_offenses,
         limit=page.limit, offset=page.offset,
     )
-    total = count_employees(db, include_inactive=include_inactive, department=department)
+    total = count_employees(
+        db, search=search, include_inactive=include_inactive,
+        department=department, position=position,
+        min_active_violations=min_active_violations,
+        min_total_offenses=min_total_offenses,
+    )
     return Page(items=items, total=total, limit=page.limit, offset=page.offset)
 
 @router.get("/by-code/{code}", response_model=EmployeeRead, summary="Look up by employee code")
