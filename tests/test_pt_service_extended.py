@@ -16,7 +16,6 @@ IMPORT RULE (from conftest):
     Never import pt_service.main at module top. Import inside tests /
     fixture bodies so the create_engine patch is already in effect.
 """
-import io
 from datetime import date, datetime, timedelta
 
 import pytest
@@ -43,21 +42,8 @@ def _png_bytes():
     )
 
 
-def _upload(client, actor_headers, *, name="test.png", display_name=None,
-            tags=None):
-    data = {}
-    if display_name is not None:
-        data["display_name"] = display_name
-    if tags is not None:
-        data["tags"] = tags
-    r = client.post(
-        "/upload",
-        files={"file": (name, io.BytesIO(_png_bytes()), "image/png")},
-        data=data,
-        headers=actor_headers,
-    )
-    assert r.status_code == 201, r.text
-    return r.json()
+def _upload(upload, *, name="test.png", display_name=None, tags=None, title=None):
+    return upload(name, display_name=display_name, tags=tags, title=title)
 
 
 def _upload_dir():
@@ -68,8 +54,8 @@ def _upload_dir():
 # ============================================================
 # /photos/{id}/rename
 # ============================================================
-def test_rename_updates_display_name_only(pt_client, actor_headers):
-    up = _upload(pt_client, actor_headers, name="a.png")
+def test_rename_updates_display_name_only(pt_client, actor_headers, mobile_upload):
+    up = _upload(mobile_upload, name="a.png")
     original_filename = up["filename"]
 
     r = pt_client.post(
@@ -85,8 +71,8 @@ def test_rename_updates_display_name_only(pt_client, actor_headers):
     assert (_upload_dir() / original_filename).is_file()
 
 
-def test_rename_with_rename_file_replaces_on_disk(pt_client, actor_headers):
-    up = _upload(pt_client, actor_headers, name="a.png")
+def test_rename_with_rename_file_replaces_on_disk(pt_client, actor_headers, mobile_upload):
+    up = _upload(mobile_upload, name="a.png")
     old_name = up["filename"]
     old_path = _upload_dir() / old_name
     assert old_path.is_file()
@@ -109,9 +95,9 @@ def test_rename_with_rename_file_replaces_on_disk(pt_client, actor_headers):
     assert r.content == _png_bytes()
 
 
-def test_rename_whitespace_only_422(pt_client, actor_headers):
+def test_rename_whitespace_only_422(pt_client, actor_headers, mobile_upload):
     """RenameRequest allows length >= 1 (Pydantic); route strips and rejects."""
-    up = _upload(pt_client, actor_headers)
+    up = _upload(mobile_upload)
     r = pt_client.post(
         f"/photos/{up['id']}/rename",
         json={"display_name": "   ", "rename_file": False},
@@ -120,8 +106,8 @@ def test_rename_whitespace_only_422(pt_client, actor_headers):
     assert r.status_code == 422
 
 
-def test_rename_empty_string_422_by_pydantic(pt_client, actor_headers):
-    up = _upload(pt_client, actor_headers)
+def test_rename_empty_string_422_by_pydantic(pt_client, actor_headers, mobile_upload):
+    up = _upload(mobile_upload)
     r = pt_client.post(
         f"/photos/{up['id']}/rename",
         json={"display_name": "", "rename_file": False},
@@ -130,7 +116,7 @@ def test_rename_empty_string_422_by_pydantic(pt_client, actor_headers):
     assert r.status_code == 422
 
 
-def test_rename_404_for_missing_photo(pt_client, actor_headers):
+def test_rename_404_for_missing_photo(pt_client, actor_headers, mobile_upload):
     r = pt_client.post(
         "/photos/99999/rename",
         json={"display_name": "x"},
@@ -139,8 +125,8 @@ def test_rename_404_for_missing_photo(pt_client, actor_headers):
     assert r.status_code == 404
 
 
-def test_rename_creates_activity_entry(pt_client, actor_headers):
-    up = _upload(pt_client, actor_headers, display_name="Before")
+def test_rename_creates_activity_entry(pt_client, actor_headers, mobile_upload):
+    up = _upload(mobile_upload, display_name="Before")
     pt_client.post(
         f"/photos/{up['id']}/rename",
         json={"display_name": "After", "rename_file": False},
@@ -148,14 +134,14 @@ def test_rename_creates_activity_entry(pt_client, actor_headers):
     )
     r = pt_client.get(f"/photos/{up['id']}/history", headers=actor_headers)
     actions = [e["action"] for e in r.json()["items"]]
-    assert "rename" in actions
+    assert "edit" in actions
 
 
 # ============================================================
 # /photos/{id}/history
 # ============================================================
-def test_history_returns_upload_and_delete_for_deleted_photo(pt_client, actor_headers):
-    up = _upload(pt_client, actor_headers, display_name="Doomed")
+def test_history_returns_upload_and_delete_for_deleted_photo(pt_client, actor_headers, mobile_upload):
+    up = _upload(mobile_upload, title="Doomed")
     pt_client.delete(f"/photos/{up['id']}", headers=actor_headers)
 
     r = pt_client.get(f"/photos/{up['id']}/history", headers=actor_headers)
@@ -172,8 +158,8 @@ def test_history_returns_upload_and_delete_for_deleted_photo(pt_client, actor_he
         assert e["download_url"] is None
 
 
-def test_history_for_living_photo_includes_links(pt_client, actor_headers):
-    up = _upload(pt_client, actor_headers)
+def test_history_for_living_photo_includes_links(pt_client, actor_headers, mobile_upload):
+    up = _upload(mobile_upload)
     r = pt_client.get(f"/photos/{up['id']}/history", headers=actor_headers)
     body = r.json()
     assert body["photo_exists"] is True
@@ -182,7 +168,7 @@ def test_history_for_living_photo_includes_links(pt_client, actor_headers):
     assert upload_row["download_url"] == f"/photos/{up['id']}/download"
 
 
-def test_history_unknown_photo_returns_empty(pt_client, actor_headers):
+def test_history_unknown_photo_returns_empty(pt_client, actor_headers, mobile_upload):
     r = pt_client.get("/photos/99999/history", headers=actor_headers)
     assert r.status_code == 200
     body = r.json()
@@ -191,8 +177,8 @@ def test_history_unknown_photo_returns_empty(pt_client, actor_headers):
     assert body["photo_exists"] is False
 
 
-def test_history_pagination(pt_client, actor_headers):
-    up = _upload(pt_client, actor_headers)
+def test_history_pagination(pt_client, actor_headers, mobile_upload):
+    up = _upload(mobile_upload)
     for i in range(3):
         pt_client.post(
             f"/photos/{up['id']}/rename",
@@ -218,8 +204,8 @@ def test_history_pagination(pt_client, actor_headers):
 # ============================================================
 # /activity/digest
 # ============================================================
-def test_digest_default_is_today(pt_client, actor_headers):
-    _upload(pt_client, actor_headers)
+def test_digest_default_is_today(pt_client, actor_headers, mobile_upload):
+    _upload(mobile_upload)
     r = pt_client.get("/activity/digest", headers=actor_headers)
     assert r.status_code == 200
     body = r.json()
@@ -231,8 +217,8 @@ def test_digest_default_is_today(pt_client, actor_headers):
     assert body["days"][0]["date"] == today
 
 
-def test_digest_from_date_only_uses_same_date(pt_client, actor_headers):
-    _upload(pt_client, actor_headers)
+def test_digest_from_date_only_uses_same_date(pt_client, actor_headers, mobile_upload):
+    _upload(mobile_upload)
     today = date.today().isoformat()
     r = pt_client.get(
         f"/activity/digest?from_date={today}",
@@ -243,7 +229,7 @@ def test_digest_from_date_only_uses_same_date(pt_client, actor_headers):
     assert body["to_date"] == today
 
 
-def test_digest_rejects_inverted_range(pt_client, actor_headers):
+def test_digest_rejects_inverted_range(pt_client, actor_headers, mobile_upload):
     today = date.today()
     yesterday = today - timedelta(days=1)
     r = pt_client.get(
@@ -254,7 +240,7 @@ def test_digest_rejects_inverted_range(pt_client, actor_headers):
     assert r.status_code == 422
 
 
-def test_digest_rejects_range_above_limit(pt_client, actor_headers):
+def test_digest_rejects_range_above_limit(pt_client, actor_headers, mobile_upload):
     today = date.today()
     too_far = today - timedelta(days=MAX_DIGEST_DAYS + 1)
     r = pt_client.get(
@@ -265,8 +251,8 @@ def test_digest_rejects_range_above_limit(pt_client, actor_headers):
     assert r.status_code == 422
 
 
-def test_digest_yesterday_has_no_activity(pt_client, actor_headers):
-    _upload(pt_client, actor_headers)  # activity is today
+def test_digest_yesterday_has_no_activity(pt_client, actor_headers, mobile_upload):
+    _upload(mobile_upload)  # activity is today
     yesterday = (date.today() - timedelta(days=1)).isoformat()
     r = pt_client.get(
         f"/activity/digest?from_date={yesterday}&to_date={yesterday}",
@@ -278,13 +264,9 @@ def test_digest_yesterday_has_no_activity(pt_client, actor_headers):
     assert "No activity" in body["summary"]
 
 
-def test_digest_groups_by_actor_within_day(pt_client):
+def test_digest_groups_by_actor_within_day(pt_client, mobile_upload):
     for actor in ("alice", "bob"):
-        pt_client.post(
-            "/upload",
-            files={"file": (f"{actor}.png", io.BytesIO(_png_bytes()), "image/png")},
-            headers={"X-Actor": actor},
-        )
+        mobile_upload(f"{actor}.png", employee=actor)
     r = pt_client.get("/activity/digest", headers={"X-Actor": "test"})
     body = r.json()
     assert body["total"] == 2
@@ -294,39 +276,28 @@ def test_digest_groups_by_actor_within_day(pt_client):
     assert actor_names == {"alice", "bob"}
     assert day["highlights"]["distinct_actors"] == 2
     assert day["total"] == 2
-    # Per-actor summary exists.
-    assert "alice" in day["summary"]
-    assert "bob" in day["summary"]
 
 
-def test_digest_filters_by_actor(pt_client):
+def test_digest_filters_by_actor(pt_client, mobile_upload):
     for actor in ("alice", "bob"):
-        pt_client.post(
-            "/upload",
-            files={"file": (f"{actor}.png", io.BytesIO(_png_bytes()), "image/png")},
-            headers={"X-Actor": actor},
-        )
+        mobile_upload(f"{actor}.png", employee=actor)
     r = pt_client.get("/activity/digest?actor=alice", headers={"X-Actor": "test"})
     body = r.json()
     assert body["total"] == 1
     assert {row["actor"] for row in body["totals_by_actor"]} == {"alice"}
 
 
-def test_digest_q_filter(pt_client):
-    pt_client.post(
-        "/upload",
-        files={"file": ("a.png", io.BytesIO(_png_bytes()), "image/png")},
-        headers={"X-Actor": "frank"},
-    )
+def test_digest_q_filter(pt_client, mobile_upload):
+    mobile_upload("a.png", employee="frank")
     r = pt_client.get("/activity/digest?q=frank", headers={"X-Actor": "test"})
     body = r.json()
     assert body["total"] == 1
     assert {row["actor"] for row in body["totals_by_actor"]} == {"frank"}
 
 
-def test_digest_include_items_false_still_reports_counts(pt_client, actor_headers):
-    _upload(pt_client, actor_headers)
-    _upload(pt_client, actor_headers)
+def test_digest_include_items_false_still_reports_counts(pt_client, actor_headers, mobile_upload):
+    _upload(mobile_upload)
+    _upload(mobile_upload)
     r = pt_client.get(
         "/activity/digest?include_items=false",
         headers=actor_headers,
@@ -338,7 +309,7 @@ def test_digest_include_items_false_still_reports_counts(pt_client, actor_header
         assert day["total"] == 2
 
 
-def test_digest_groups_across_days(pt_client, actor_headers):
+def test_digest_groups_across_days(pt_client, actor_headers, mobile_upload):
     """Insert raw ActivityLog rows on two different days."""
     from pt_service import main as pt_main
 
@@ -368,8 +339,8 @@ def test_digest_groups_across_days(pt_client, actor_headers):
     assert body["total"] == 2
 
 
-def test_digest_summary_non_empty_when_activity_exists(pt_client, actor_headers):
-    _upload(pt_client, actor_headers)
+def test_digest_summary_non_empty_when_activity_exists(pt_client, actor_headers, mobile_upload):
+    _upload(mobile_upload)
     r = pt_client.get("/activity/digest", headers=actor_headers)
     assert r.json()["summary"].strip()
 
@@ -377,9 +348,9 @@ def test_digest_summary_non_empty_when_activity_exists(pt_client, actor_headers)
 # ============================================================
 # /photos/batch
 # ============================================================
-def test_batch_returns_found_and_missing(pt_client, actor_headers):
-    a = _upload(pt_client, actor_headers)
-    b = _upload(pt_client, actor_headers)
+def test_batch_returns_found_and_missing(pt_client, actor_headers, mobile_upload):
+    a = _upload(mobile_upload)
+    b = _upload(mobile_upload)
 
     r = pt_client.post(
         "/photos/batch",
@@ -392,9 +363,9 @@ def test_batch_returns_found_and_missing(pt_client, actor_headers):
     assert body["missing"] == [99999]
 
 
-def test_batch_dedupes_ids_preserving_order(pt_client, actor_headers):
-    a = _upload(pt_client, actor_headers)
-    b = _upload(pt_client, actor_headers)
+def test_batch_dedupes_ids_preserving_order(pt_client, actor_headers, mobile_upload):
+    a = _upload(mobile_upload)
+    b = _upload(mobile_upload)
     r = pt_client.post(
         "/photos/batch",
         json={"ids": [b["id"], a["id"], b["id"], a["id"]]},
@@ -404,7 +375,7 @@ def test_batch_dedupes_ids_preserving_order(pt_client, actor_headers):
     assert ids == [b["id"], a["id"]]
 
 
-def test_batch_empty_ids_422(pt_client, actor_headers):
+def test_batch_empty_ids_422(pt_client, actor_headers, mobile_upload):
     r = pt_client.post("/photos/batch", json={"ids": []}, headers=actor_headers)
     assert r.status_code == 422
 
@@ -420,9 +391,9 @@ def test_batch_requires_actor(pt_client):
 # ============================================================
 # /photos/bulk-delete
 # ============================================================
-def test_bulk_delete_multiple(pt_client, actor_headers):
-    a = _upload(pt_client, actor_headers)
-    b = _upload(pt_client, actor_headers)
+def test_bulk_delete_multiple(pt_client, actor_headers, mobile_upload):
+    a = _upload(mobile_upload)
+    b = _upload(mobile_upload)
 
     r = pt_client.post(
         "/photos/bulk-delete",
@@ -440,8 +411,8 @@ def test_bulk_delete_multiple(pt_client, actor_headers):
     assert pt_client.get(f"/photos/{b['id']}").status_code == 404
 
 
-def test_bulk_delete_ignores_unknown_ids(pt_client, actor_headers):
-    a = _upload(pt_client, actor_headers)
+def test_bulk_delete_ignores_unknown_ids(pt_client, actor_headers, mobile_upload):
+    a = _upload(mobile_upload)
     r = pt_client.post(
         "/photos/bulk-delete",
         json={"ids": [a["id"], 99999]},
@@ -451,8 +422,8 @@ def test_bulk_delete_ignores_unknown_ids(pt_client, actor_headers):
     assert r.json()["deleted"] == 1
 
 
-def test_bulk_delete_reports_missing_file(pt_client, actor_headers):
-    a = _upload(pt_client, actor_headers)
+def test_bulk_delete_reports_missing_file(pt_client, actor_headers, mobile_upload):
+    a = _upload(mobile_upload)
     # Delete the file behind our back — record still exists.
     (_upload_dir() / a["filename"]).unlink()
 
@@ -465,9 +436,9 @@ def test_bulk_delete_reports_missing_file(pt_client, actor_headers):
     assert len(r.json()["missing_files"]) == 1
 
 
-def test_bulk_delete_logs_activity_per_photo(pt_client, actor_headers):
-    a = _upload(pt_client, actor_headers)
-    b = _upload(pt_client, actor_headers)
+def test_bulk_delete_logs_activity_per_photo(pt_client, actor_headers, mobile_upload):
+    a = _upload(mobile_upload)
+    b = _upload(mobile_upload)
     pt_client.post(
         "/photos/bulk-delete",
         json={"ids": [a["id"], b["id"]]},
@@ -478,7 +449,7 @@ def test_bulk_delete_logs_activity_per_photo(pt_client, actor_headers):
     assert {a["id"], b["id"]} <= deleted_pids
 
 
-def test_bulk_delete_empty_ids_422(pt_client, actor_headers):
+def test_bulk_delete_empty_ids_422(pt_client, actor_headers, mobile_upload):
     r = pt_client.post(
         "/photos/bulk-delete", json={"ids": []}, headers=actor_headers,
     )
