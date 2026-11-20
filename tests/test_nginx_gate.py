@@ -79,6 +79,23 @@ def test_root_redirects_unauthenticated():
     assert "/auth/login" in r.headers["location"]
 
 
+def test_root_redirects_authenticated_to_role_home():
+    """Stub auth reports role=hr, so / goes to the hr dashboard."""
+    r = _get("/", cookies={"auth_session": "good"})
+    assert r.status_code == 302
+    assert r.headers["location"] == "/hr/index.html"
+
+    page = _get("/hr/index.html", cookies={"auth_session": "good"})
+    assert page.status_code == 200
+    assert "This is HR" in page.text
+
+
+def test_role_folders_are_isolated():
+    """An hr session cannot read another role's folder."""
+    r = _get("/employee/index.html", cookies={"auth_session": "good"})
+    assert r.status_code == 403
+
+
 # ---------- cookie session -> X-Actor forwarded to app1/app2 ----------
 
 def test_app1_forwards_x_actor_from_session():
