@@ -1,5 +1,5 @@
-import {roleLabels} from '../scripts/shared/permissions.js';
-import {previewCalendarRows, previewCalendarSummary} from '../src/features/history/calendar-contract.js';
+import {roleLabels} from '../../scripts/shared/permissions.js';
+import {previewCalendarRows, previewCalendarSummary} from '../../scripts/northpoint/features/history/calendar-contract.js';
 
 const cookie = 'northpoint_rbac_preview';
 const roles = Object.keys(roleLabels);
@@ -50,7 +50,7 @@ function page() {
 }
 
 export function previewPage(path, html, role) {
-  if (!/^(?:hr|supervisor|c_manager|employee)\.html$/.test(path)) return html;
+  if (!/^(?:hr|supervisor|c_manager|employee)\/index\.html$/.test(path)) return html;
   const label = role ? ' · ' + roleLabels[role] : '';
   return html.replace('</head>', '<link rel="stylesheet" href="/_preview/style.css"></head>')
     .replace('<body>', `<body><aside class="preview-banner" aria-label="Development preview">
@@ -83,7 +83,7 @@ export function handlePreviewRequest(request, response, url, role) {
     return redirect('/northpoint/', `${cookie}=${selection}; Path=/; HttpOnly; SameSite=Strict`);
   }
   if (path === '/_preview/style.css') return text(previewStyles,'text/css');
-  if (['/config.js','/northpoint/config.js'].includes(path)) return text(settings,'text/javascript');
+  if (['/scripts/config.js'].includes(path)) return text(settings,'text/javascript');
   if (path === '/auth/me') {
     return role ? json({username:'preview_'+role, full_name:'Preview '+roleLabels[role], role,
       ...(role === 'employee' ? {employee_id:employee.id} : {})}) : json({detail:'Choose a preview role.'},401);

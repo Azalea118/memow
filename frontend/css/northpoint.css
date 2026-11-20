@@ -1,0 +1,19 @@
+@import url('./northpoint/styles.css');
+@import url('./northpoint/map-tracking.css');
+@import url('./northpoint/photos.css');
+@import url('./northpoint/compact-records.css');
+
+.session-gate {
+  width: min(calc(100% - 32px), 640px);
+  margin: clamp(24px, 12vh, 100px) auto;
+}
+
+.session-gate-actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.workspace-access-notice { margin-bottom: 18px; }

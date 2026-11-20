@@ -2,7 +2,7 @@
 
 ## Role workspaces
 
-Northpoint serves HTML, CSS and native JavaScript modules directly. `index.html` reads the current session and opens `hr.html`, `supervisor.html`, `c_manager.html` or `employee.html`. A direct role-page link is checked against the same session before loading any records. Shared layout and feature code live in `src/`, with a shared stylesheet entry in `css/` and the session, API and permission modules in `scripts/shared/`.
+Northpoint serves HTML, CSS and native JavaScript modules directly from `frontend/`. The four role entry points are `/hr/index.html`, `/supervisor/index.html`, `/c_manager/index.html`, and `/employee/index.html`. Nginx can send users directly to their assigned folder. When the server serves the root landing page, it reads `/auth/me` and opens the matching role folder. The role entry checks the same session before making data requests. Shared assets are under `frontend/css/` and `frontend/scripts/`. The old `/northpoint/` landing URL still routes signed-in users to their assigned workspace.
 
 [RBAC_MATRIX.md](RBAC_MATRIX.md) defines permissions. HR retains the existing layout and its allowed workflows. Staff can find employees to view or issue violations as permitted. The Concerned Employee workspace opens only the signed-in employee’s violation history. It has no directory or global search.
 
@@ -37,7 +37,7 @@ The first command previews changes. The second saves a rulebook backup in the op
 
 ## Current offense-based integration
 
-Open http://localhost:8081/ and sign in. The root page now redirects into Northpoint. The previous API showcase is preserved at /showcase.html. Production Docker already serves frontend/northpoint as its web root. One backend correction is included: app/routers/activity.py now reads the calendar query’s config_changes count into the existing violation_types response field. No database, Docker or Nginx files were edited.
+Open http://localhost:8081/ and sign in. The earlier API showcase is available at /showcase.html on the local frontend mount.
 
 Categories come from /violation-types; each specific violation is a /subsections record with its own penalty tiers. Issue Violation uses Employee → Category → Specific violation → Review → Confirm. Preview reads the employee offense summary and current penalty schedule. Confirmation rechecks both; the backend assigns the final number and stores the penalty snapshot. The frontend sends subsection_id, notes and issued_by; it never posts points, strikes, an offense override or an employment-status change.
 
@@ -71,13 +71,13 @@ Northpoint uses the backend API for employees, violations, rulebook, dashboard, 
 
 ## One API configuration
 
-By default **frontend/northpoint/config.js** uses the same server address as the page:
+By default **frontend/scripts/config.js** uses the same server address as the page:
 
 ```javascript
 const BASE_URL = '';
 ```
 
-This makes both `http://localhost:8081/` and a tunnel address use their own `/app1/`, `/app2/`, and `/auth/` endpoints. Keep config.js beside index.html when copying or deploying the frontend. You may set an absolute API URL for a special deployment, but the browser needs an appropriate same-origin authentication and CORS setup. Save and reload after any configuration edit; no rebuild is needed. The older frontend/js/script.js configuration does not control Northpoint.
+This makes both `http://localhost:8081/` and a tunnel address use their own `/app1/`, `/app2/`, and `/auth/` endpoints. Serve the whole frontend directory so `/scripts/config.js` is available. You may set an absolute API URL for a special deployment, but the browser needs an appropriate same-origin authentication and CORS setup. Save and reload after any configuration edit; no rebuild is needed. The older frontend/js/script.js configuration does not control Northpoint.
 
 For a phone, localhost refers to the phone. Open the tunnel address or `http://YOUR-PC-LAN-IP:8081/` from the phone and sign in there; the API follows that address automatically.
 
@@ -103,7 +103,7 @@ If the stack is already running, apply the frontend mount by recreating only Ngi
 docker compose -f docker-compose.yaml -f docker-compose.local.yaml up -d --no-deps --force-recreate nginx
 ```
 
-The default frontend/index.html redirects to Northpoint under /northpoint/ with the existing local mount. The main docker-compose.yaml and nginx/nginx.conf remain unchanged; `/app1/`, `/app2/`, `/app3/` and `/auth/` keep their existing routes and authentication. Remove that local volume override and recreate Nginx to restore the original frontend. A deployment serving these routes on the same origin needs no config.js URL change.
+The local Compose overlay already mounts `frontend/`. The checked-in Nginx configuration currently authenticates the static site but has no role-specific folder locations. To provide server-side folder isolation, the deployment must use its role-aware Nginx configuration and serve the whole `frontend/` tree. The checked-in production Dockerfile copies only `frontend/northpoint/`, so an image built with that copy instruction does not include the new role folders or shared paths. API authorization remains the responsibility of the backend.
 
 Your signed-in full name is used automatically for changes. Existing documented X-Actor and removal payload behavior is retained; Nginx also forwards the authenticated name. Loading, success, conflict, access and lost-response handling remain in place; unconfirmed saves are checked by GET before another write is allowed.
 
@@ -127,7 +127,7 @@ The account name comes from `/auth/me`: `full_name`, then available first/last n
 
 ## Source folders
 
-Edit role entry points in `scripts/` and shared features in `src/`. Keep the API server configuration in `config.js`.
+From `frontend/`, edit the role entries in their folders, common startup and permissions in `scripts/shared/`, and application features in `scripts/northpoint/`. The API configuration is `scripts/config.js`.
 
 - `app.js`: shared workspace shell, screen routing and action dispatch.
 - `api/`: shared API transport, allowed routes and request helpers.
@@ -169,9 +169,9 @@ Select a device from the list to show its current/last reported location, accura
 
 Device and selected-location reads update every five seconds while the page is open and visible; selected route reads update every fifteen seconds. Refresh also reloads the route. Requests stop when leaving the page or hiding it, and aborted/outdated replies cannot replace a newer selection. Tracking starts and stops in the phone app, not from this management page. The backend considers a device online when it reported within fifteen seconds; its live device list is held in backend memory. An empty list means no devices are currently known to the running tracking service.
 
-The frontend bundles Leaflet 1.9.4 locally with its BSD license under `src/assets/vendor/leaflet/`. JavaScript and CSS integrity hashes match the official Leaflet distribution. OpenStreetMap tiles load over HTTPS with visible map attribution and normal browser caching. Internet access is needed for base-map tiles. The original backend map, GPS upload flow, authentication, Docker and Nginx files were not changed.
+The frontend bundles Leaflet 1.9.4 locally with its BSD license under `frontend/scripts/northpoint/vendor/leaflet/`. JavaScript and CSS integrity hashes match the official Leaflet distribution. OpenStreetMap tiles load over HTTPS with visible map attribution and normal browser caching. Internet access is needed for base-map tiles. The original backend map, GPS upload flow, authentication, Docker and Nginx files were not changed.
 
-Source: `src/features/tracking/` and `src/styles/map-tracking.css`. The frontend version remains `v.FE-0.3a`.
+Source: `frontend/scripts/northpoint/features/tracking/` and `frontend/css/northpoint/map-tracking.css`. The frontend version remains `v.FE-0.3a`.
 
 On phones, Map Tracking places the map immediately under the compact page title. Refresh, search/filter controls, device summary and the device list follow below. Desktop retains the existing toolbar and side-by-side device/map panels. The responsive helper moves the existing controls without duplicating the map or starting another polling loop.
 
