@@ -17,11 +17,17 @@ if ROLE == "auth":
         authz = request.headers.get("authorization", "")
         method = request.headers.get("x-original-method", "").upper()
         uri = request.headers.get("x-original-uri", "").split("?")[0]
+        normalized = request.headers.get("x-normalized-uri", uri).split("?")[0]
         device_only = method == "POST" and uri.startswith("/app3/")
         if "auth_session=good" in cookie and not device_only:
+            for role in ("c_manager", "employee", "hr", "supervisor"):
+                if (normalized == f"/{role}"
+                        or normalized.startswith(f"/{role}/")) and role != "hr":
+                    return JSONResponse({"error": "forbidden"}, status_code=403)
             return JSONResponse({"ok": True}, headers={
                 "X-User": "Test User",
                 "X-Username": "testuser",
+                "X-Role": "hr",
             })
         if authz == "Bearer device-good":
             if device_only:
