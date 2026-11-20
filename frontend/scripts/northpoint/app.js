@@ -1,42 +1,173 @@
-import {allowsAction,allowsForm,canOpen,landingPage,workspacePage,mayManage as canManage,mayRecord as canRecord,ownEmployeeId} from '../shared/permissions.js';
-import {restoreCompanyRules,companyRulesPresent} from './features/settings/company-restore.js';
-import {profileHistory,loadProfileHistory,invalidateProfileHistory} from './features/employees/profile-history.js';
-import {invalidateRulebookCache} from './features/records/rulebook.js';
-import {latestProfileViolations,renderProfileRecords,renderOwnHistory} from './features/employees/profile-records.js';
-import {readSubsection,penaltyPreview,fillSubsections,renderCategoryTiles,renderRulebookPage,preserveRulebookDraft,handleRulebookAction,handleRulebookSubmit} from './features/records/rulebook.js';
-import {enhanceSearchSuggestions} from './shared/search-suggestions.js';
-import {renderMapTracking,mountMapTracking,stopMapTracking,handleTrackingAction,handleTrackingSubmit,handleTrackingChange} from './features/tracking/map-tracking.js';
-import {ensureEmployeeDates,retryEmployeeDates} from './features/employees/employee-new.js';
-import {handleRecordFilterToggle,closeRecordFilters} from './shared/record-ui.js';
-import {sessionState,signOut,displayActor} from './auth/session.js';
-import {photoData,photoUpload,loadPhotos,watchPhotos} from './features/photos/photo-service.js';
-import {businessDate,todayChanges,renderTodayChange,yesterdayComparison,renderYesterdayChange} from './features/reports/yesterday.js';
-import {renderPhotoLibrary,handlePhotoAction,handlePhotoSubmit,clearPhotoDraft} from './features/photos/photo-library.js';
-import {sourceLabel,sourceNotice} from './state/data-source.js';
-import {invalidateHistoryCalendar,handleCalendarKeydown} from './features/history/calendar.js';
-import { employeeProfile, fetchEmployeeProfile, loadEmployeeProfile, invalidateEmployeeProfile, employeeUpdatePayload, employeeMatchesUpdate, patchEmployee, changeEmployeeState } from './features/employees/employee-details.js';
-import { apiRequest, apiId, paginatedApi } from './api/api-client.js';
-import { resources, watchBackend, refreshEmployees, refreshWorkspace, ensurePageData, loadRecords, loadTypes, loadActiveTypes, loadRecent, loadTimeline, loadRemovals, normalizeViolation, normalizeType } from './state/backend.js';
-import { mutationInFlight, pendingMutation, runMutation, checkPendingMutation, saveType, changeType, issueViolation, deleteViolation } from './state/mutations.js';
-import { submitApiEmployeeForm, employeeCreateInFlight, pendingEmployeeCreation } from './features/employees/employee-create.js';
-import { employeeDirectory, nextApiEmployeeCode, fetchEmployeeDirectorySnapshot } from './features/employees/employee-api.js';
-import { loadingSkeleton } from './shared/loading.js';
-import { renderEmployees, renderViolations, renderTypesList, employeeLoadState } from './features/records/records.js';
-import { bindEmployeePicker } from './features/employees/employee-picker.js';
-import { enhancePhoneLayout, syncPhoneFilters } from './shared/phone.js';
-import { localDate, startOfWeek, normalizeViolationStatus, VIOLATION_STATUSES, violationStatusLabel } from './shared/domain.js';
-import { renderDashboard } from './features/dashboard/dashboard.js';
-import { store, saveStore, employeeSummary, visibleEmployees, visibleViolations } from './state/data.js';
-import { renderSecondary, handleSecondary } from './features/settings/secondary.js';
+import {
+  allowsAction,
+  allowsForm,
+  canOpen,
+  landingPage,
+  workspacePage,
+  mayManage as canManage,
+  mayRecord as canRecord,
+  ownEmployeeId,
+  roleLabels,
+} from "../shared/permissions.js";
+import {
+  restoreCompanyRules,
+  companyRulesPresent,
+} from "./features/settings/company-restore.js";
+import {
+  profileHistory,
+  loadProfileHistory,
+  invalidateProfileHistory,
+} from "./features/employees/profile-history.js";
+import { invalidateRulebookCache } from "./features/records/rulebook.js";
+import {
+  latestProfileViolations,
+  renderProfileRecords,
+  renderOwnHistory,
+} from "./features/employees/profile-records.js";
+import {
+  readSubsection,
+  penaltyPreview,
+  fillSubsections,
+  renderCategoryTiles,
+  renderRulebookPage,
+  preserveRulebookDraft,
+  handleRulebookAction,
+  handleRulebookSubmit,
+} from "./features/records/rulebook.js";
+import { enhanceSearchSuggestions } from "./shared/search-suggestions.js";
+import {
+  renderMapTracking,
+  mountMapTracking,
+  stopMapTracking,
+  handleTrackingAction,
+  handleTrackingSubmit,
+  handleTrackingChange,
+} from "./features/tracking/map-tracking.js";
+import {
+  ensureEmployeeDates,
+  retryEmployeeDates,
+} from "./features/employees/employee-new.js";
+import {
+  handleRecordFilterToggle,
+  closeRecordFilters,
+} from "./shared/record-ui.js";
+import { sessionState, signOut, displayActor } from "./auth/session.js";
+import {
+  photoData,
+  photoUpload,
+  loadPhotos,
+  watchPhotos,
+} from "./features/photos/photo-service.js";
+import {
+  businessDate,
+  todayChanges,
+  renderTodayChange,
+  yesterdayComparison,
+  renderYesterdayChange,
+} from "./features/reports/yesterday.js";
+import {
+  renderPhotoLibrary,
+  handlePhotoAction,
+  handlePhotoSubmit,
+  clearPhotoDraft,
+} from "./features/photos/photo-library.js";
+import { sourceLabel, sourceNotice } from "./state/data-source.js";
+import {
+  invalidateHistoryCalendar,
+  handleCalendarKeydown,
+} from "./features/history/calendar.js";
+import {
+  employeeProfile,
+  fetchEmployeeProfile,
+  loadEmployeeProfile,
+  invalidateEmployeeProfile,
+  employeeUpdatePayload,
+  employeeMatchesUpdate,
+  patchEmployee,
+  changeEmployeeState,
+} from "./features/employees/employee-details.js";
+import { apiRequest, apiId, paginatedApi } from "./api/api-client.js";
+import {
+  resources,
+  watchBackend,
+  refreshEmployees,
+  refreshWorkspace,
+  ensurePageData,
+  loadRecords,
+  loadTypes,
+  loadActiveTypes,
+  loadRecent,
+  loadTimeline,
+  loadRemovals,
+  normalizeViolation,
+  normalizeType,
+} from "./state/backend.js";
+import {
+  mutationInFlight,
+  pendingMutation,
+  runMutation,
+  checkPendingMutation,
+  saveType,
+  changeType,
+  issueViolation,
+  deleteViolation,
+} from "./state/mutations.js";
+import {
+  submitApiEmployeeForm,
+  employeeCreateInFlight,
+  pendingEmployeeCreation,
+} from "./features/employees/employee-create.js";
+import {
+  employeeDirectory,
+  nextApiEmployeeCode,
+  fetchEmployeeDirectorySnapshot,
+} from "./features/employees/employee-api.js";
+import { mobileAccessPanel } from "./features/employees/mobile-access.js";
+import { loadingSkeleton } from "./shared/loading.js";
+import {
+  renderEmployees,
+  renderViolations,
+  renderTypesList,
+  employeeLoadState,
+} from "./features/records/records.js";
+import { bindEmployeePicker } from "./features/employees/employee-picker.js";
+import { enhancePhoneLayout, syncPhoneFilters } from "./shared/phone.js";
+import {
+  localDate,
+  startOfWeek,
+  normalizeViolationStatus,
+  VIOLATION_STATUSES,
+  violationStatusLabel,
+} from "./shared/domain.js";
+import { renderDashboard } from "./features/dashboard/dashboard.js";
+import {
+  store,
+  saveStore,
+  employeeSummary,
+  visibleEmployees,
+  visibleViolations,
+} from "./state/data.js";
+import {
+  renderSecondary,
+  handleSecondary,
+} from "./features/settings/secondary.js";
 
-const app = document.querySelector('#app');
-const dialog = document.querySelector('#modal');
-let displayedWeek = startOfWeek(localDate()),displayedMonth=localDate().slice(0,7),displayedDay=businessDate();
+const app = document.querySelector("#app");
+const dialog = document.querySelector("#modal");
+let displayedWeek = startOfWeek(localDate()),
+  displayedMonth = localDate().slice(0, 7),
+  displayedDay = businessDate();
 const filters = {};
+const employeeTypes = [
+  ["employee", "Employee"],
+  ["supervisor", "Supervisor"],
+  ["hr", "HR"],
+  ["c_manager", "Chief Manager"],
+];
 let savedSnapshot = JSON.stringify(store.settings);
 let page = landingPage();
 let restrictedRoute = false;
-let profileId = '';
+let profileId = "";
 let employeePage = 1;
 let violationPage = 1;
 let draft = null;
@@ -45,433 +176,2033 @@ let modalVersion = 0;
 let checkingDraft = false;
 let editingEmployee = null;
 const pageInfo = {
-  mine: ['My Violations', '', ''],
-  dashboard: ['Dashboard', '', 'Overview'],
-  employees: ['Employees', 'Find employee records and follow their disciplinary history.', 'Employee management'],
-  violations: ['Violations', 'Find, record, and review employee violations.', 'Employee management'],
-  rulebook: ['Specific Violations', '', 'Employee management'],
-  ruleEditor: ['Specific Violation', '', 'Employee management'],
-  types: ['Violation Types', 'Keep a clear, consistent guide to workplace violations.', 'Employee management'],
-  profile: ['Employee Profile', 'Employee information and disciplinary history in one place.', 'Employee management'],
-  tracking: ['Map Tracking', 'View device locations and today’s routes in one place.', 'Tracking'],
-  photos: ['Photo Library', 'Review and organize photos taken by your employees.', 'Photo management'],
-  history: ['History', 'All recorded changes and employee violation removals in one place.', 'Monitoring'],
-  reports: ['Reports & Analytics', 'Turn disciplinary records into a clearer picture of your workplace.', 'Reports'],
-  settings: ['Settings', 'Make your workspace comfortable and easy to use.', 'Administration'],
-  help: ['Help & Guidance', 'A little guidance for your everyday HR tasks.', 'Support']
+  mine: ["My Violations", "", ""],
+  dashboard: ["Dashboard", "", "Overview"],
+  employees: [
+    "Employees",
+    "Find employee records and follow their disciplinary history.",
+    "Employee management",
+  ],
+  violations: [
+    "Violations",
+    "Find, record, and review employee violations.",
+    "Employee management",
+  ],
+  rulebook: ["Specific Violations", "", "Employee management"],
+  ruleEditor: ["Specific Violation", "", "Employee management"],
+  types: [
+    "Violation Types",
+    "Keep a clear, consistent guide to workplace violations.",
+    "Employee management",
+  ],
+  profile: [
+    "Employee Profile",
+    "Employee information and disciplinary history in one place.",
+    "Employee management",
+  ],
+  tracking: [
+    "Map Tracking",
+    "View device locations and today’s routes in one place.",
+    "Tracking",
+  ],
+  photos: [
+    "Photo Library",
+    "Review and organize photos taken by your employees.",
+    "Photo management",
+  ],
+  history: [
+    "History",
+    "All recorded changes and employee violation removals in one place.",
+    "Monitoring",
+  ],
+  reports: [
+    "Reports & Analytics",
+    "Turn disciplinary records into a clearer picture of your workplace.",
+    "Reports",
+  ],
+  settings: [
+    "Settings",
+    "Make your workspace comfortable and easy to use.",
+    "Administration",
+  ],
+  help: [
+    "Help & Guidance",
+    "A little guidance for your everyday HR tasks.",
+    "Support",
+  ],
 };
 const paths = {
-  camera:'M14 4l2 3h4v14H2V7h6l2-3h4ZM16 13a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z',
-  image:'M3 3h18v18H3V3ZM3 16l5-5 5 5 3-3 5 5M9 8h.01',
-  list:'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01',
-  dashboard:'M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z',
-  users:'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M16 3a4 4 0 0 1 0 8 M22 21v-2a4 4 0 0 0-3-3.87 M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0',
-  user:'M20 21v-2a7 7 0 0 0-14 0v2 M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0',
-  shield:'M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11 M9 12l2 2 4-4',
-  alert:'m10.3 3.9-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3.1l-8-14a2 2 0 0 0-3.4 0 M12 9v4 M12 17h.01',
-  file:'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M8 13h8 M8 17h5',
-  clipboard:'M9 5H6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3 M9 2h6v5H9z M8 12h8 M8 16h6',
-  history:'M3 11a9 9 0 1 1 2.7 7 M3 4v7h7 M12 7v5l3 2',
-  archive:'M3 3h18v4H3z M5 7v14h14V7 M10 11h4 M9 16l6-6 M9 10l6 6',
-  chart:'M3 3v18h18 M7 14l4-5 4 3 6-7',
-  settings:'M9 3h6l1 3 3 1 2 5-2 5-3 1-1 3H9l-1-3-3-1-2-5 2-5 3-1z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0',
-  help:'M12 17h.01 M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3 M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0',
-  search:'m21 21-4.3-4.3 M18 10.5a7.5 7.5 0 1 1-15 0 7.5 7.5 0 0 1 15 0',
-  bell:'M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9 M10 21h4',
-  'chevron-right':'m9 5 7 7-7 7',
-  'chevron-left':'m15 5-7 7 7 7',
-  'chevron-down':'m6 9 6 6 6-6',
-  plus:'M12 5v14 M5 12h14',
-  download:'M21 15v5H3v-5 M12 3v12 M7 10l5 5 5-5',
-  calendar:'M8 2v4 M16 2v4 M3 10h18 M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2',
-  sun:'M12 2v2 M12 20v2 M2 12h2 M20 12h2 M4.93 4.93l1.42 1.42 M17.65 17.65l1.42 1.42 M4.93 19.07l1.42-1.42 M17.65 6.35l1.42-1.42 M17 12a5 5 0 1 1-10 0 5 5 0 0 1 10 0',
-  clock:'M12 8v4l3 2 M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0',
-  check:'m5 12 4 4L19 6',
-  'check-circle':'m8 12 3 3 5-6 M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0',
-  info:'M12 11v6 M12 7h.01 M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0',
-  arrow:'M5 12h14 m-6-6 6 6-6 6',
-  'arrow-up':'M7 17 17 7 M7 7h10v10',
-  'arrow-down':'M7 7l10 10 M7 17h10V7',
-  close:'M6 6l12 12 M6 18 18 6',
-  edit:'m16 3 5 5 M4 15 16 3a3.5 3.5 0 0 1 5 5L9 20l-6 1z',
-  trash:'M3 6h18 M9 6V3h6v3 M5 6l1 15h12l1-15 M10 10v7 M14 10v7',
-  mail:'M3 5h18v14H3z m0 1 9 7 9-7',
-  building:'M4 22V2h12v20 M16 8h4v14 M8 6h4 M8 10h4 M8 14h4 M8 18h4',
-  printer:'M6 9V2h12v7 M6 18H3V9h18v9h-3 M6 14h12v8H6z M17 11h.01',
-  menu:'M3 6h18 M3 12h18 M3 18h18',
-  eye:'M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7 M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0',
-  'log-out':'M9 21H3V3h6 M15 8l4 4-4 4 M8 12h11',
-  map:'M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3V6z M9 3v15 M15 6v15',
-  'map-pin':'M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0z M15 10a3 3 0 1 1-6 0 3 3 0 0 1 6 0',
-  locate:'M3 12h3 M18 12h3 M12 3v3 M12 18v3 M18 12a6 6 0 1 1-12 0 6 6 0 0 1 12 0',
-  lock:'M6 11h12v11H6z M8 11V6a4 4 0 0 1 8 0v5',
-  filter:'M3 4h18l-7 8v7l-4 2v-9z',
-  refresh:'M20 4v6h-6 M4 20v-6h6 M5 8a8 8 0 0 1 13-4l2 6 M4 14l2 6a8 8 0 0 0 13-4'
+  camera: "M14 4l2 3h4v14H2V7h6l2-3h4ZM16 13a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z",
+  image: "M3 3h18v18H3V3ZM3 16l5-5 5 5 3-3 5 5M9 8h.01",
+  list: "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01",
+  dashboard: "M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z",
+  users:
+    "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M16 3a4 4 0 0 1 0 8 M22 21v-2a4 4 0 0 0-3-3.87 M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0",
+  user: "M20 21v-2a7 7 0 0 0-14 0v2 M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0",
+  shield: "M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11 M9 12l2 2 4-4",
+  alert:
+    "m10.3 3.9-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3.1l-8-14a2 2 0 0 0-3.4 0 M12 9v4 M12 17h.01",
+  file: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M8 13h8 M8 17h5",
+  clipboard:
+    "M9 5H6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3 M9 2h6v5H9z M8 12h8 M8 16h6",
+  history: "M3 11a9 9 0 1 1 2.7 7 M3 4v7h7 M12 7v5l3 2",
+  archive: "M3 3h18v4H3z M5 7v14h14V7 M10 11h4 M9 16l6-6 M9 10l6 6",
+  chart: "M3 3v18h18 M7 14l4-5 4 3 6-7",
+  settings:
+    "M9 3h6l1 3 3 1 2 5-2 5-3 1-1 3H9l-1-3-3-1-2-5 2-5 3-1z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0",
+  help: "M12 17h.01 M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3 M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0",
+  search: "m21 21-4.3-4.3 M18 10.5a7.5 7.5 0 1 1-15 0 7.5 7.5 0 0 1 15 0",
+  bell: "M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9 M10 21h4",
+  "chevron-right": "m9 5 7 7-7 7",
+  "chevron-left": "m15 5-7 7 7 7",
+  "chevron-down": "m6 9 6 6 6-6",
+  plus: "M12 5v14 M5 12h14",
+  download: "M21 15v5H3v-5 M12 3v12 M7 10l5 5 5-5",
+  calendar:
+    "M8 2v4 M16 2v4 M3 10h18 M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2",
+  sun: "M12 2v2 M12 20v2 M2 12h2 M20 12h2 M4.93 4.93l1.42 1.42 M17.65 17.65l1.42 1.42 M4.93 19.07l1.42-1.42 M17.65 6.35l1.42-1.42 M17 12a5 5 0 1 1-10 0 5 5 0 0 1 10 0",
+  clock: "M12 8v4l3 2 M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0",
+  check: "m5 12 4 4L19 6",
+  "check-circle": "m8 12 3 3 5-6 M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0",
+  info: "M12 11v6 M12 7h.01 M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0",
+  arrow: "M5 12h14 m-6-6 6 6-6 6",
+  "arrow-up": "M7 17 17 7 M7 7h10v10",
+  "arrow-down": "M7 7l10 10 M7 17h10V7",
+  close: "M6 6l12 12 M6 18 18 6",
+  edit: "m16 3 5 5 M4 15 16 3a3.5 3.5 0 0 1 5 5L9 20l-6 1z",
+  trash: "M3 6h18 M9 6V3h6v3 M5 6l1 15h12l1-15 M10 10v7 M14 10v7",
+  mail: "M3 5h18v14H3z m0 1 9 7 9-7",
+  building: "M4 22V2h12v20 M16 8h4v14 M8 6h4 M8 10h4 M8 14h4 M8 18h4",
+  printer: "M6 9V2h12v7 M6 18H3V9h18v9h-3 M6 14h12v8H6z M17 11h.01",
+  menu: "M3 6h18 M3 12h18 M3 18h18",
+  eye: "M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7 M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0",
+  "log-out": "M9 21H3V3h6 M15 8l4 4-4 4 M8 12h11",
+  map: "M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3V6z M9 3v15 M15 6v15",
+  "map-pin":
+    "M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0z M15 10a3 3 0 1 1-6 0 3 3 0 0 1 6 0",
+  locate:
+    "M3 12h3 M18 12h3 M12 3v3 M12 18v3 M18 12a6 6 0 1 1-12 0 6 6 0 0 1 12 0",
+  lock: "M6 11h12v11H6z M8 11V6a4 4 0 0 1 8 0v5",
+  filter: "M3 4h18l-7 8v7l-4 2v-9z",
+  refresh:
+    "M20 4v6h-6 M4 20v-6h6 M5 8a8 8 0 0 1 13-4l2 6 M4 14l2 6a8 8 0 0 0 13-4",
 };
-paths['file-text']=paths.file;
-function icon(name,size=20){return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${paths[name]||paths.file}"/></svg>`;}
-function esc(value=''){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-function formatDate(iso){if(!iso)return '—';const d=new Date(String(iso).slice(0,10)+'T12:00:00');return Number.isNaN(+d)?'—':d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}
-function badge(text){const t=String(text);const cl=/resolved|active$|good standing/i.test(t)&&!/^Inactive/.test(t)?'success':/pending|monitor/i.test(t)?'warning':/review/i.test(t)?'review':/Repeated|attention/i.test(t)?'danger':'neutral';const ic=cl==='success'?'check-circle':cl==='warning'?'clock':cl==='danger'?'alert':cl==='review'?'eye':'info';return `<span class="pill ${cl}">${icon(ic,12)}${esc(t)}</span>`;}
-function violationStatusOptions(current='',includeAll=false){return (includeAll?'<option value="">All statuses</option>':'')+VIOLATION_STATUSES.map(status=>`<option value="${status}" ${status===current?'selected':''}>${includeAll?status:violationStatusLabel(status)}</option>`).join('');}
-function violationBadge(value){if(!value)return `<span class="pill neutral" title="The API does not supply case resolution status">${icon('info',14)}Not provided</span>`;const status=normalizeViolationStatus(value);return `<span class="pill ${status==='Active'?'warning':'success'}" title="${violationStatusLabel(status)}">${icon(status==='Active'?'clock':'check-circle',14)}${status}</span>`;}
-function initials(name){return name.split(/\s+/).filter(Boolean).slice(0,2).map(n=>n[0]).join('');}
-function avatar(e){const colors=['','sage','rose','lavender'];return `<span class="avatar ${colors[Number(e.id?.replace(/\D/g,''))%4]||''}">${esc(initials(e.name))}</span>`;}
-function person(e){const content=`${avatar(e)}<span><span class="person-name">${esc(e.name)}</span><span class="person-id" style="display:block">${esc(e.id)}</span></span>`;return e.source==='api'&&!e.profileId?`<span class="person-button">${content}</span>`:`<button class="person-button" data-action="profile" data-id="${esc(e.profileId || e.id)}">${content}</button>`;}
-function opt(values,current='',all='All'){return `<option value="">${esc(all)}</option>${values.map(v=>`<option value="${esc(v)}" ${v===current?'selected':''}>${esc(v)}</option>`).join('')}`;}
-function unique(values){return [...new Set(values)].filter(Boolean).sort();}
-function empty(title='No records found',desc='Try adjusting your search or clearing the filters.'){return `<div class="empty-state">${icon('search',32)}<h3>${title}</h3><p>${desc}</p></div>`;}
-function restoreSnapshot(){Object.assign(store.settings,JSON.parse(savedSnapshot));}
-function commitStore(){try{saveStore();savedSnapshot=JSON.stringify(store.settings);}catch(error){restoreSnapshot();throw error;}}
-function ctx(){return {canOpen,canManage,canRecord,recordActions:['employees','violations','types'].includes(page)?headingActions().replaceAll('<button ','<button type="button" '):'',mutate,renderCategoryTiles,store,resources,resourceState,employeeDirectory,sessionState,renderYesterdayChange,renderTodayChange:canOpen('history')?renderTodayChange:null,comparison:page==='reports'?comparison():{},dailyChanges:page==='dashboard'?dashboardChanges():{},icon,esc,formatDate,badge,violationBadge,violationStatusOptions,person,employeeSummary,visibleEmployees,visibleViolations,navigate,toast,saveStore:commitStore,openModal,closeModal,downloadCSV,render,pagination,getFilters:p=>filters[p]||{},setFilters:(p,f)=>{filters[p]=f;},barChart};}
-function dashboardChanges(){if(resources.timeline.status==='error')return {employees:null,violations:null,offenses:null,watchlist:null,reason:resources.timeline.error};if(resources.timeline.status!=='ready')return {};return todayChanges({employees:visibleEmployees(),records:visibleViolations(),events:resources.timeline.items,removals:resources.removals.items});}
-function comparison(){if(resources.timeline.status==='error')return {employees:null,violations:null,offenses:null,watchlist:null,dailyAverage:null,reason:resources.timeline.error};if(resources.timeline.status!=='ready')return {};return yesterdayComparison({employees:visibleEmployees(),records:visibleViolations(),events:resources.timeline.items,removals:resources.removals.items,days:Number(filters.reports?.days)||30,scoped:false});}
-function persist(message){try{commitStore();if(message)toast(message);return true;}catch(e){toast(e.message||'Unable to save changes in this browser.','alert');return false;}}
-function toast(message,type='check-circle'){const r=document.querySelector('#toast-region');r.innerHTML=`<div class="toast">${icon(type,22)}<span>${esc(message)}</span><button class="icon-button" data-action="dismiss-toast" aria-label="Dismiss notification">${icon('close',16)}</button></div>`;clearTimeout(window.toastTimer);window.toastTimer=setTimeout(()=>r.innerHTML='',6500);}
-function openModal(title,html,footer=''){modalVersion++;delete dialog.dataset.calendarDate;dialog.classList.remove('calendar-digest-dialog','photo-viewer-dialog','photo-management-dialog','rulebook-dialog');if(!dialog.open)modalOrigin=document.activeElement;dialog.innerHTML=`<div class="modal-header"><h2 id="modal-title">${title}</h2><button class="icon-button" data-action="close-modal" aria-label="Close dialog">${icon('close')}</button></div><div class="modal-content">${html}</div>${footer?`<div class="modal-footer">${footer}</div>`:''}`;if(!dialog.open)dialog.showModal();}
-function closeModal(){if(photoUpload.busy||employeeCreateInFlight()||mutationInFlight()||checkingDraft)return;modalVersion++;dialog.close();if(modalOrigin?.isConnected)modalOrigin.focus();}
-function downloadCSV(filename,rows){const safe=rows.map(row=>row.map(value=>{let s=String(value??'');if(/^[=+@\-\t\r]/.test(s))s="'"+s;return '"'+s.replaceAll('"','""')+'"';}).join(',')).join('\r\n');const url=URL.createObjectURL(new Blob(['\uFEFF'+safe],{type:'text/csv;charset=utf-8;'}));const a=document.createElement('a');a.href=url;a.download=filename.endsWith('.csv')?filename:filename+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('Your report has been downloaded.');}
-
-function navItem(id,label,ic,count=''){return `<button class="nav-item ${page===id||(page==='profile'&&id==='employees')||(['rulebook','ruleEditor'].includes(page)&&id==='types')?'active':''}" data-action="navigate" data-page="${id}" ${page===id?'aria-current="page"':''}>${icon(ic)}<span>${label}</span>${count?`<span class="nav-count">${count}</span>`:''}</button>`;}
-function connectionNotice(){return sourceNotice?`<div class="callout preview-notice" role="status"><p>${esc(sourceNotice)}</p></div>`:'';}
-function navigation(){
-  const groups = [
-    ['', [['dashboard','Dashboard','dashboard'],['mine','My Violations','shield']]],
-    ['Employee management',[['employees','Employees','users'],['violations','Violations','shield'],['types','Violation Types','clipboard'],['tracking','Map Tracking','map'],['photos','Photo Library','image']]],
-    ['Monitoring',[['history','History','history'],['reports','Reports & Analytics','chart']]],
-    ['Administration',[['settings','Settings','settings']]]
-  ];
-  return groups.map(([label,items])=>{
-    const links=items.filter(([id])=>canOpen(id)).map(args=>navItem(...args)).join('');
-    return links ? (label?'<div class="nav-label">'+label+'</div>':'')+links : '';
-  }).join('');
+paths["file-text"] = paths.file;
+function icon(name, size = 20) {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${paths[name] || paths.file}"/></svg>`;
 }
-function shell(content){const info=pageInfo[page];return `<button class="mobile-overlay" data-action="toggle-nav" aria-label="Close navigation"></button><aside class="sidebar" aria-label="Main navigation"><a class="brand" href="#${landingPage()}" aria-label="Northpoint home"><img src="/css/northpoint/assets/company-logo.png" alt="Company logo"><div><div class="brand-name">Northpoint</div><div class="brand-subtitle">Violation Management</div></div></a><button class="button secondary phone-menu-close" data-action="toggle-nav">${icon('close',18)} Close menu</button><nav class="navigation">${navigation()}</nav><div class="sidebar-bottom">${canOpen('help')?`<div class="help-card"><div class="help-top">${icon('help',18)} A little help, if you need it</div><p>Simple guidance for everyday tasks.</p><button data-action="navigate" data-page="help">View the quick guide ${icon('arrow',15)}</button></div>`:''}<div class="sidebar-note">${icon('lock',12)} ${esc(sourceLabel)}</div></div></aside><div class="workspace"><header class="topbar"><button class="icon-button mobile-toggle" data-action="toggle-nav" aria-label="Open navigation" aria-expanded="false">${icon('menu')}<span>Menu</span></button><div class="breadcrumb"><strong>${info[0]}</strong></div><div class="topbar-right">${canOpen('employees')?`<form id="global-search" class="top-search"><label class="sr-only" for="global-query">Search employees or records</label>${icon('search',17)}<input id="global-query" name="query" placeholder="Search employees or records…" autocomplete="off"><span class="key-hint">Ctrl K</span></form>`:''}${canOpen('help')?`<button class="icon-button" data-action="navigate" data-page="help" aria-label="Help and guidance">${icon('help',21)}</button>`:''}<span class="top-divider"></span><details class="account-menu"><summary class="account-button" aria-label="Account menu"><span class="avatar sage">${esc(initials(store.settings.name || '?'))}</span><span class="account-details"><span class="account-name" title="${esc(store.settings.name)}">${esc(store.settings.name || 'Sign in required')}</span></span>${icon('chevron-down',14)}</summary><div class="account-dropdown"><button type="button" data-action="sign-out">${icon('log-out',17)} Sign out</button></div></details></div></header><main id="main" class="main ${page==='tracking'?'tracking-view':''}" tabindex="-1"><h1 class="sr-only">${info[0]}</h1>${!['employees','violations','types'].includes(page)&&headingActions()?`<div class="page-heading page-actions-only"><div class="heading-actions">${headingActions()}</div></div>`:''}${connectionNotice()}${restrictedRoute?'<div class="callout warning workspace-access-notice" role="alert"><p>Your account cannot open the requested page.</p></div>':''}${content}<footer class="page-footer"><span>${icon('shield',13)} Northpoint</span></footer></main></div>`;}
-function headingActions(){
-    if(page==='tracking')return '';
-    if(page==='photos')return '';
-    const recordDisabled=employeeDirectory.status!=='ready'?'disabled title="Load employees before recording a violation"':'';
-    if(page==='violations')return canRecord()?`<button class="button primary" data-action="record" ${recordDisabled}>${icon('plus',18)} Record New Violation</button>`:'';
-    if(page==='employees'&&canManage())return `<button class="button primary" data-action="add-employee" ${employeeDirectory.status!=='ready'&&!pendingEmployeeCreation()?'disabled':''}>${icon('plus',18)} Add Employee</button>`;
-    if(page==='types'&&canManage())return `<button class="button primary" data-action="add-type" ${resources.types.status!=='ready'?'disabled':''}>${icon('plus',18)} Add Category</button>`;
-    if(page==='profile')return `<button class="button secondary" data-action="navigate" data-page="employees">${icon('chevron-left',17)} All employees</button>${canRecord()?`<button class="button primary" data-action="record" data-employee="${esc(profileId)}" ${employeeProfile.status!=='ready'||employeeProfile.employee?.status!=='Active'?'disabled title="Only active employees can receive a violation"':recordDisabled}>${icon('plus',17)} Record violation</button>`:''}`;
-    return '';
+function esc(value = "") {
+  return String(value ?? "").replace(
+    /[&<>"']/g,
+    (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
+        c
+      ],
+  );
+}
+function formatDate(iso) {
+  if (!iso) return "—";
+  const d = new Date(String(iso).slice(0, 10) + "T12:00:00");
+  return Number.isNaN(+d)
+    ? "—"
+    : d.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
+}
+function badge(text) {
+  const t = String(text);
+  const cl =
+    /resolved|active$|good standing/i.test(t) && !/^Inactive/.test(t)
+      ? "success"
+      : /pending|monitor/i.test(t)
+        ? "warning"
+        : /review/i.test(t)
+          ? "review"
+          : /Repeated|attention/i.test(t)
+            ? "danger"
+            : "neutral";
+  const ic =
+    cl === "success"
+      ? "check-circle"
+      : cl === "warning"
+        ? "clock"
+        : cl === "danger"
+          ? "alert"
+          : cl === "review"
+            ? "eye"
+            : "info";
+  return `<span class="pill ${cl}">${icon(ic, 12)}${esc(t)}</span>`;
+}
+function violationStatusOptions(current = "", includeAll = false) {
+  return (
+    (includeAll ? '<option value="">All statuses</option>' : "") +
+    VIOLATION_STATUSES.map(
+      (status) =>
+        `<option value="${status}" ${status === current ? "selected" : ""}>${includeAll ? status : violationStatusLabel(status)}</option>`,
+    ).join("")
+  );
+}
+function violationBadge(value) {
+  if (!value)
+    return `<span class="pill neutral" title="The API does not supply case resolution status">${icon("info", 14)}Not provided</span>`;
+  const status = normalizeViolationStatus(value);
+  return `<span class="pill ${status === "Active" ? "warning" : "success"}" title="${violationStatusLabel(status)}">${icon(status === "Active" ? "clock" : "check-circle", 14)}${status}</span>`;
+}
+function initials(name) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((n) => n[0])
+    .join("");
+}
+function avatar(e) {
+  const colors = ["", "sage", "rose", "lavender"];
+  return `<span class="avatar ${colors[Number(e.id?.replace(/\D/g, "")) % 4] || ""}">${esc(initials(e.name))}</span>`;
+}
+function person(e) {
+  const content = `${avatar(e)}<span><span class="person-name">${esc(e.name)}</span><span class="person-id" style="display:block">${esc(e.id)}</span></span>`;
+  return e.source === "api" && !e.profileId
+    ? `<span class="person-button">${content}</span>`
+    : `<button class="person-button" data-action="profile" data-id="${esc(e.profileId || e.id)}">${content}</button>`;
+}
+function opt(values, current = "", all = "All") {
+  return `<option value="">${esc(all)}</option>${values.map((v) => `<option value="${esc(v)}" ${v === current ? "selected" : ""}>${esc(v)}</option>`).join("")}`;
+}
+function unique(values) {
+  return [...new Set(values)].filter(Boolean).sort();
+}
+function empty(
+  title = "No records found",
+  desc = "Try adjusting your search or clearing the filters.",
+) {
+  return `<div class="empty-state">${icon("search", 32)}<h3>${title}</h3><p>${desc}</p></div>`;
+}
+function restoreSnapshot() {
+  Object.assign(store.settings, JSON.parse(savedSnapshot));
+}
+function commitStore() {
+  try {
+    saveStore();
+    savedSnapshot = JSON.stringify(store.settings);
+  } catch (error) {
+    restoreSnapshot();
+    throw error;
   }
+}
+function ctx() {
+  return {
+    canOpen,
+    canManage,
+    canRecord,
+    recordActions: ["employees", "violations", "types"].includes(page)
+      ? headingActions().replaceAll("<button ", '<button type="button" ')
+      : "",
+    mutate,
+    renderCategoryTiles,
+    store,
+    resources,
+    resourceState,
+    employeeDirectory,
+    sessionState,
+    renderYesterdayChange,
+    renderTodayChange: canOpen("history") ? renderTodayChange : null,
+    comparison: page === "reports" ? comparison() : {},
+    dailyChanges: page === "dashboard" ? dashboardChanges() : {},
+    icon,
+    esc,
+    formatDate,
+    badge,
+    violationBadge,
+    violationStatusOptions,
+    person,
+    employeeSummary,
+    visibleEmployees,
+    visibleViolations,
+    navigate,
+    toast,
+    saveStore: commitStore,
+    openModal,
+    closeModal,
+    downloadCSV,
+    render,
+    pagination,
+    getFilters: (p) => filters[p] || {},
+    setFilters: (p, f) => {
+      filters[p] = f;
+    },
+    barChart,
+  };
+}
+function dashboardChanges() {
+  if (resources.timeline.status === "error")
+    return {
+      employees: null,
+      violations: null,
+      offenses: null,
+      watchlist: null,
+      reason: resources.timeline.error,
+    };
+  if (resources.timeline.status !== "ready") return {};
+  return todayChanges({
+    employees: visibleEmployees(),
+    records: visibleViolations(),
+    events: resources.timeline.items,
+    removals: resources.removals.items,
+  });
+}
+function comparison() {
+  if (resources.timeline.status === "error")
+    return {
+      employees: null,
+      violations: null,
+      offenses: null,
+      watchlist: null,
+      dailyAverage: null,
+      reason: resources.timeline.error,
+    };
+  if (resources.timeline.status !== "ready") return {};
+  return yesterdayComparison({
+    employees: visibleEmployees(),
+    records: visibleViolations(),
+    events: resources.timeline.items,
+    removals: resources.removals.items,
+    days: Number(filters.reports?.days) || 30,
+    scoped: false,
+  });
+}
+function persist(message) {
+  try {
+    commitStore();
+    if (message) toast(message);
+    return true;
+  } catch (e) {
+    toast(e.message || "Unable to save changes in this browser.", "alert");
+    return false;
+  }
+}
+function toast(message, type = "check-circle") {
+  const r = document.querySelector("#toast-region");
+  r.innerHTML = `<div class="toast">${icon(type, 22)}<span>${esc(message)}</span><button class="icon-button" data-action="dismiss-toast" aria-label="Dismiss notification">${icon("close", 16)}</button></div>`;
+  clearTimeout(window.toastTimer);
+  window.toastTimer = setTimeout(() => (r.innerHTML = ""), 6500);
+}
+function openModal(title, html, footer = "") {
+  modalVersion++;
+  delete dialog.dataset.calendarDate;
+  dialog.classList.remove(
+    "calendar-digest-dialog",
+    "photo-viewer-dialog",
+    "photo-management-dialog",
+    "rulebook-dialog",
+  );
+  if (!dialog.open) modalOrigin = document.activeElement;
+  dialog.innerHTML = `<div class="modal-header"><h2 id="modal-title">${title}</h2><button class="icon-button" data-action="close-modal" aria-label="Close dialog">${icon("close")}</button></div><div class="modal-content">${html}</div>${footer ? `<div class="modal-footer">${footer}</div>` : ""}`;
+  if (!dialog.open) dialog.showModal();
+}
+function closeModal() {
+  if (
+    photoUpload.busy ||
+    employeeCreateInFlight() ||
+    mutationInFlight() ||
+    checkingDraft
+  )
+    return;
+  modalVersion++;
+  dialog.close();
+  if (modalOrigin?.isConnected) modalOrigin.focus();
+}
+function downloadCSV(filename, rows) {
+  const safe = rows
+    .map((row) =>
+      row
+        .map((value) => {
+          let s = String(value ?? "");
+          if (/^[=+@\-\t\r]/.test(s)) s = "'" + s;
+          return '"' + s.replaceAll('"', '""') + '"';
+        })
+        .join(","),
+    )
+    .join("\r\n");
+  const url = URL.createObjectURL(
+    new Blob(["\uFEFF" + safe], { type: "text/csv;charset=utf-8;" }),
+  );
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename.endsWith(".csv") ? filename : filename + ".csv";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast("Your report has been downloaded.");
+}
 
-function barChart(items){const max=Math.max(1,...items.map(x=>x.value));return `<div class="bar-chart">${items.map(i=>`<div class="bar-chart-row" title="${esc(i.label)}: ${i.value}"><span>${esc(i.label)}</span><div class="bar-track"><div class="bar-fill" style="width:${i.value/max*100}%"></div></div><strong>${i.value}</strong></div>`).join('')}</div>`;}
-function resourceState(resource,label='records',layout='rows'){
-    if(resource.status==='ready')return '';
-    const failed=resource.status==='error';
-    if(!failed)return loadingSkeleton(layout==='rows'&&/details|employee form|violation type$/.test(label)?'form':layout,label);
-    return `<div class="empty-state" role="${failed?'alert':'status'}" aria-live="polite">${icon(failed?'alert':'refresh',30)}<h3>${failed?'Couldn’t load '+esc(label):'Loading '+esc(label)+'…'}</h3><p>${failed?esc(resource.error):'Getting the latest backend data.'}</p>${failed?`<button class="button primary" data-action="refresh-data" style="margin-top:18px">${icon('refresh',17)} Try again</button>`:''}</div>`;
-  }
-  function dataGate(names){
-    if(names.includes('employees')&&employeeDirectory.status!=='ready')return employeeDirectory.status==='error'?'<section class="panel">'+employeeLoadState(employeeDirectory,icon,esc)+'</section>':loadingSkeleton(page,'employee data');
-    const labels={records:'violation records',types:'violation types',timeline:'activity history',removals:'removal history'};
-    const name=names.find(name=>name!=='employees'&&resources[name].status!=='ready');
-    return name?resources[name].status==='error'?'<section class="panel">'+resourceState(resources[name],labels[name])+'</section>':loadingSkeleton(page,labels[name]):'';
-  }
-  function dashboard(){return dataGate(['employees','records',...(canOpen('history')?['removals']:[])])||renderDashboard({...ctx(),recentActivity:resources.recent.items,recentState:resourceState(resources.recent,'recent activity')});}
+function navItem(id, label, ic, count = "") {
+  return `<button class="nav-item ${page === id || (page === "profile" && id === "employees") || (["rulebook", "ruleEditor"].includes(page) && id === "types") ? "active" : ""}" data-action="navigate" data-page="${id}" ${page === id ? 'aria-current="page"' : ""}>${icon(ic)}<span>${label}</span>${count ? `<span class="nav-count">${count}</span>` : ""}</button>`;
+}
+function connectionNotice() {
+  return sourceNotice
+    ? `<div class="callout preview-notice" role="status"><p>${esc(sourceNotice)}</p></div>`
+    : "";
+}
+function navigation() {
+  const groups = [
+    [
+      "",
+      [
+        ["dashboard", "Dashboard", "dashboard"],
+        ["mine", "My Violations", "shield"],
+      ],
+    ],
+    [
+      "Employee management",
+      [
+        ["employees", "Employees", "users"],
+        ["violations", "Violations", "shield"],
+        ["types", "Violation Types", "clipboard"],
+        ["tracking", "Map Tracking", "map"],
+        ["photos", "Photo Library", "image"],
+      ],
+    ],
+    [
+      "Monitoring",
+      [
+        ["history", "History", "history"],
+        ["reports", "Reports & Analytics", "chart"],
+      ],
+    ],
+    ["Administration", [["settings", "Settings", "settings"]]],
+  ];
+  return groups
+    .map(([label, items]) => {
+      const links = items
+        .filter(([id]) => canOpen(id))
+        .map((args) => navItem(...args))
+        .join("");
+      return links
+        ? (label ? '<div class="nav-label">' + label + "</div>" : "") + links
+        : "";
+    })
+    .join("");
+}
+function shell(content) {
+  const info = pageInfo[page];
+  return `<button class="mobile-overlay" data-action="toggle-nav" aria-label="Close navigation"></button><aside class="sidebar" aria-label="Main navigation"><a class="brand" href="#${landingPage()}" aria-label="Northpoint home"><img src="/css/northpoint/assets/company-logo.png" alt="Company logo"><div><div class="brand-name">Northpoint</div><div class="brand-subtitle">Violation Management</div></div></a><button class="button secondary phone-menu-close" data-action="toggle-nav">${icon("close", 18)} Close menu</button><nav class="navigation">${navigation()}</nav><div class="sidebar-bottom">${canOpen("help") ? `<div class="help-card"><div class="help-top">${icon("help", 18)} A little help, if you need it</div><p>Simple guidance for everyday tasks.</p><button data-action="navigate" data-page="help">View the quick guide ${icon("arrow", 15)}</button></div>` : ""}<div class="sidebar-note">${icon("lock", 12)} ${esc(sourceLabel)}</div></div></aside><div class="workspace"><header class="topbar"><button class="icon-button mobile-toggle" data-action="toggle-nav" aria-label="Open navigation" aria-expanded="false">${icon("menu")}<span>Menu</span></button><div class="breadcrumb"><strong>${info[0]}</strong></div><div class="topbar-right">${canOpen("employees") ? `<form id="global-search" class="top-search"><label class="sr-only" for="global-query">Search employees or records</label>${icon("search", 17)}<input id="global-query" name="query" placeholder="Search employees or records…" autocomplete="off"><span class="key-hint">Ctrl K</span></form>` : ""}${canOpen("help") ? `<button class="icon-button" data-action="navigate" data-page="help" aria-label="Help and guidance">${icon("help", 21)}</button>` : ""}<span class="top-divider"></span><details class="account-menu"><summary class="account-button" aria-label="Account menu"><span class="avatar sage">${esc(initials(store.settings.name || "?"))}</span><span class="account-details"><span class="account-name" title="${esc(store.settings.name)}">${esc(store.settings.name || "Sign in required")}</span></span>${icon("chevron-down", 14)}</summary><div class="account-dropdown"><button type="button" data-action="sign-out">${icon("log-out", 17)} Sign out</button></div></details></div></header><main id="main" class="main ${page === "tracking" ? "tracking-view" : ""}" tabindex="-1"><h1 class="sr-only">${info[0]}</h1>${!["employees", "violations", "types"].includes(page) && headingActions() ? `<div class="page-heading page-actions-only"><div class="heading-actions">${headingActions()}</div></div>` : ""}${connectionNotice()}${restrictedRoute ? '<div class="callout warning workspace-access-notice" role="alert"><p>Your account cannot open the requested page.</p></div>' : ""}${content}<footer class="page-footer"><span>${icon("shield", 13)} Northpoint</span></footer></main></div>`;
+}
+function headingActions() {
+  if (page === "tracking") return "";
+  if (page === "photos") return "";
+  const recordDisabled =
+    employeeDirectory.status !== "ready"
+      ? 'disabled title="Load employees before recording a violation"'
+      : "";
+  if (page === "violations")
+    return canRecord()
+      ? `<button class="button primary" data-action="record" ${recordDisabled}>${icon("plus", 18)} Record New Violation</button>`
+      : "";
+  if (page === "employees" && canManage())
+    return `<button class="button primary" data-action="add-employee" ${employeeDirectory.status !== "ready" && !pendingEmployeeCreation() ? "disabled" : ""}>${icon("plus", 18)} Add Employee</button>`;
+  if (page === "types" && canManage())
+    return `<button class="button primary" data-action="add-type" ${resources.types.status !== "ready" ? "disabled" : ""}>${icon("plus", 18)} Add Category</button>`;
+  if (page === "profile")
+    return `<button class="button secondary" data-action="navigate" data-page="employees">${icon("chevron-left", 17)} All employees</button>${canRecord() ? `<button class="button primary" data-action="record" data-employee="${esc(profileId)}" ${employeeProfile.status !== "ready" || employeeProfile.employee?.status !== "Active" ? 'disabled title="Only active employees can receive a violation"' : recordDisabled}>${icon("plus", 17)} Record violation</button>` : ""}`;
+  return "";
+}
 
-function isLiveEmployeeProfile(){return page==='profile'&&profileId.startsWith('api/');}
-function liveEmployeeRecords(){return visibleEmployees();}
-  function liveEmployeeSummary(id){return employeeSummary(id);}
-  async function refreshApiEmployees(){await refreshEmployees();ensurePageData(page);}
-  function employeeList(){return renderEmployees({...ctx(),employeeDirectory,visibleEmployees,employeeSummary,ensureCreationDates:shown=>ensureEmployeeDates(shown,()=>{if(page==='employees')render();}),page:employeePage,setPage:value=>employeePage=value})+(employeeDirectory.status==='ready'&&resources.records.status==='error'?`<div class="callout warning" role="alert">${icon('alert')}<p>${esc(resources.records.error)} Violation history filters are unavailable. <button class="text-button" data-action="refresh-data">Try again</button></p></div>`:'');}
+function barChart(items) {
+  const max = Math.max(1, ...items.map((x) => x.value));
+  return `<div class="bar-chart">${items.map((i) => `<div class="bar-chart-row" title="${esc(i.label)}: ${i.value}"><span>${esc(i.label)}</span><div class="bar-track"><div class="bar-fill" style="width:${(i.value / max) * 100}%"></div></div><strong>${i.value}</strong></div>`).join("")}</div>`;
+}
+function resourceState(resource, label = "records", layout = "rows") {
+  if (resource.status === "ready") return "";
+  const failed = resource.status === "error";
+  if (!failed)
+    return loadingSkeleton(
+      layout === "rows" && /details|employee form|violation type$/.test(label)
+        ? "form"
+        : layout,
+      label,
+    );
+  return `<div class="empty-state" role="${failed ? "alert" : "status"}" aria-live="polite">${icon(failed ? "alert" : "refresh", 30)}<h3>${failed ? "Couldn’t load " + esc(label) : "Loading " + esc(label) + "…"}</h3><p>${failed ? esc(resource.error) : "Getting the latest backend data."}</p>${failed ? `<button class="button primary" data-action="refresh-data" style="margin-top:18px">${icon("refresh", 17)} Try again</button>` : ""}</div>`;
+}
+function dataGate(names) {
+  if (names.includes("employees") && employeeDirectory.status !== "ready")
+    return employeeDirectory.status === "error"
+      ? '<section class="panel">' +
+          employeeLoadState(employeeDirectory, icon, esc) +
+          "</section>"
+      : loadingSkeleton(page, "employee data");
+  const labels = {
+    records: "violation records",
+    types: "violation types",
+    timeline: "activity history",
+    removals: "removal history",
+  };
+  const name = names.find(
+    (name) => name !== "employees" && resources[name].status !== "ready",
+  );
+  return name
+    ? resources[name].status === "error"
+      ? '<section class="panel">' +
+        resourceState(resources[name], labels[name]) +
+        "</section>"
+      : loadingSkeleton(page, labels[name])
+    : "";
+}
+function dashboard() {
+  return (
+    dataGate([
+      "employees",
+      "records",
+      ...(canOpen("history") ? ["removals"] : []),
+    ]) ||
+    renderDashboard({
+      ...ctx(),
+      recentActivity: resources.recent.items,
+      recentState: resourceState(resources.recent, "recent activity"),
+    })
+  );
+}
+
+function isLiveEmployeeProfile() {
+  return page === "profile" && profileId.startsWith("api/");
+}
+function liveEmployeeRecords() {
+  return visibleEmployees();
+}
+function liveEmployeeSummary(id) {
+  return employeeSummary(id);
+}
+async function refreshApiEmployees() {
+  await refreshEmployees();
+  ensurePageData(page);
+}
+function employeeList() {
+  return (
+    renderEmployees({
+      ...ctx(),
+      employeeDirectory,
+      visibleEmployees,
+      employeeSummary,
+      ensureCreationDates: (shown) =>
+        ensureEmployeeDates(shown, () => {
+          if (page === "employees") render();
+        }),
+      page: employeePage,
+      setPage: (value) => (employeePage = value),
+    }) +
+    (employeeDirectory.status === "ready" &&
+    resources.records.status === "error"
+      ? `<div class="callout warning" role="alert">${icon("alert")}<p>${esc(resources.records.error)} Violation history filters are unavailable. <button class="text-button" data-action="refresh-data">Try again</button></p></div>`
+      : "")
+  );
+}
 
 function pagination(total, current, size, target) {
   const pages = Math.max(1, Math.ceil(total / size));
-  const shown = [...new Set([1, ...Array.from({ length: 5 }, (_, index) => current + index - 2), pages])].filter(number => number > 0 && number <= pages).sort((a, b) => a - b);
-  return `<div class="table-footer"><span>${total ? `${(current - 1) * size + 1}–${Math.min(total, current * size)}` : '0'} of ${total} ${target === 'employees' ? 'employees' : 'records'}</span><nav class="pagination" aria-label="${target === 'employees' ? 'Employee' : target === 'history' ? 'History' : 'Violation'} pages"><button data-action="paginate" data-page="${target}" data-number="${current - 1}" ${current === 1 ? 'disabled' : ''} aria-label="Previous page">${icon('chevron-left', 15)}</button><span class="pagination-pages">${shown.map((number, index) => `${index && number > shown[index - 1] + 1 ? '<span aria-hidden="true">…</span>' : ''}<button data-action="paginate" data-page="${target}" data-number="${number}" class="${number === current ? 'active' : ''}" aria-label="Page ${number}" ${number === current ? 'aria-current="page"' : ''}>${number}</button>`).join('')}</span><span class="pagination-summary" aria-live="polite">Page ${current} of ${pages}</span><button data-action="paginate" data-page="${target}" data-number="${current + 1}" ${current >= pages ? 'disabled' : ''} aria-label="Next page">${icon('chevron-right', 15)}</button></nav></div>`;
+  const shown = [
+    ...new Set([
+      1,
+      ...Array.from({ length: 5 }, (_, index) => current + index - 2),
+      pages,
+    ]),
+  ]
+    .filter((number) => number > 0 && number <= pages)
+    .sort((a, b) => a - b);
+  return `<div class="table-footer"><span>${total ? `${(current - 1) * size + 1}–${Math.min(total, current * size)}` : "0"} of ${total} ${target === "employees" ? "employees" : "records"}</span><nav class="pagination" aria-label="${target === "employees" ? "Employee" : target === "history" ? "History" : "Violation"} pages"><button data-action="paginate" data-page="${target}" data-number="${current - 1}" ${current === 1 ? "disabled" : ""} aria-label="Previous page">${icon("chevron-left", 15)}</button><span class="pagination-pages">${shown.map((number, index) => `${index && number > shown[index - 1] + 1 ? '<span aria-hidden="true">…</span>' : ""}<button data-action="paginate" data-page="${target}" data-number="${number}" class="${number === current ? "active" : ""}" aria-label="Page ${number}" ${number === current ? 'aria-current="page"' : ""}>${number}</button>`).join("")}</span><span class="pagination-summary" aria-live="polite">Page ${current} of ${pages}</span><button data-action="paginate" data-page="${target}" data-number="${current + 1}" ${current >= pages ? "disabled" : ""} aria-label="Next page">${icon("chevron-right", 15)}</button></nav></div>`;
 }
-function violationsList(){return dataGate(['employees','records','types'])||renderViolations({...ctx(),page:violationPage,setPage:value=>violationPage=value});}
-function typesList(){return dataGate(['types'])||renderTypesList(ctx());}
-function profileApiId(){
-  if(profileId.startsWith('api/')){try{return apiId(profileId.slice(4));}catch{return '';}}
-  return store.employees.find(employee=>employee.id===profileId)?.apiId||'';
+function violationsList() {
+  return (
+    dataGate(["employees", "records", "types"]) ||
+    renderViolations({
+      ...ctx(),
+      page: violationPage,
+      setPage: (value) => (violationPage = value),
+    })
+  );
 }
-async function ensureCurrentProfile(force=false){
-  if(page!=='profile')return;
-  const id=profileApiId();if(!id)return;
-  if(force)invalidateProfileHistory();
-  if(force||employeeProfile.apiId!==id||employeeProfile.status==='idle')await loadEmployeeProfile(id,()=>{if(page==='profile')render();});
-  if(page==='profile'&&filters.profile?.tab==='history'&&(profileHistory.apiId!==id||profileHistory.status==='idle'))await loadProfileHistory(id,()=>{if(page==='profile'&&profileApiId()===id)render();});
+function typesList() {
+  return dataGate(["types"]) || renderTypesList(ctx());
 }
-function profile(){
-  const id=profileApiId();
-  if(!id){if(!profileId.startsWith('api/')&&employeeDirectory.status!=='ready')return '<section class="panel">'+employeeLoadState(employeeDirectory,icon,esc)+'</section>';return empty('Employee not available','Choose an employee from the directory.');}
-  if(employeeProfile.apiId!==id||employeeProfile.status!=='ready')return resourceState(employeeProfile.apiId===id?employeeProfile:{status:'loading'},'employee profile','profile').replace('data-action="refresh-data"','data-action="retry-profile"');
-  const e=employeeProfile.employee;
-  const vs=employeeProfile.violations, f=filters.profile||{}, offenses=e.totalOffenses, highest=Math.max(0,...vs.map(v=>v.offenseNumber),...store.removals.filter(r=>r.employeeId===e.id).map(r=>r.offenseNumber));
-  const standing=highest>=2?'Repeated offenses':vs.length?'For review':'No active violations';
-  const activeCount=latestProfileViolations(vs).length;
-  return `<section class="panel" style="margin-bottom:23px"><div class="profile-top">${avatar(e)}<div class="profile-info"><h2>${esc(e.name)}</h2><div class="profile-meta"><span>${esc(e.id)}</span><span>${esc(e.department||'Unassigned')}</span><span>${esc(e.position||'Not provided')}</span>${badge(e.status)}</div></div>${canManage()?`<button class="button secondary" data-action="edit-employee" data-id="${esc(e.apiId)}">${icon('edit',16)} Edit Employee</button>`:''}</div><div class="profile-stats"><div class="profile-stat"><span>Active Violations</span><strong>${activeCount}</strong></div><div class="profile-stat"><span>Total Offenses</span><strong>${offenses??'—'}</strong></div><div class="profile-stat"><span>Highest Offense</span><strong>${resources.removals.status==='ready'?highest||'—':'—'}</strong></div><div class="profile-stat"><span>Disciplinary Status</span><strong class="text">${badge(standing)}</strong></div></div></section>${highest>=2?`<div class="callout warning">${icon('alert')}<p><strong>Repeated offenses need a closer look.</strong> ${esc(e.name)} has reached offense ${highest} on a specific violation. Review the history and employee explanation before deciding on further action.</p></div>`:''}
-  ${renderProfileRecords(ctx(),e,vs)}`;
+function profileApiId() {
+  if (profileId.startsWith("api/")) {
+    try {
+      return apiId(profileId.slice(4));
+    } catch {
+      return "";
+    }
+  }
+  return (
+    store.employees.find((employee) => employee.id === profileId)?.apiId || ""
+  );
+}
+async function ensureCurrentProfile(force = false) {
+  if (page !== "profile") return;
+  const id = profileApiId();
+  if (!id) return;
+  if (force) invalidateProfileHistory();
+  if (
+    force ||
+    employeeProfile.apiId !== id ||
+    employeeProfile.status === "idle"
+  )
+    await loadEmployeeProfile(id, () => {
+      if (page === "profile") render();
+    });
+  if (
+    page === "profile" &&
+    filters.profile?.tab === "history" &&
+    (profileHistory.apiId !== id || profileHistory.status === "idle")
+  )
+    await loadProfileHistory(id, () => {
+      if (page === "profile" && profileApiId() === id) render();
+    });
+}
+function profile() {
+  const id = profileApiId();
+  if (!id) {
+    if (!profileId.startsWith("api/") && employeeDirectory.status !== "ready")
+      return (
+        '<section class="panel">' +
+        employeeLoadState(employeeDirectory, icon, esc) +
+        "</section>"
+      );
+    return empty(
+      "Employee not available",
+      "Choose an employee from the directory.",
+    );
+  }
+  if (employeeProfile.apiId !== id || employeeProfile.status !== "ready")
+    return resourceState(
+      employeeProfile.apiId === id ? employeeProfile : { status: "loading" },
+      "employee profile",
+      "profile",
+    ).replace('data-action="refresh-data"', 'data-action="retry-profile"');
+  const e = employeeProfile.employee;
+  const vs = employeeProfile.violations,
+    f = filters.profile || {},
+    offenses = e.totalOffenses,
+    highest = Math.max(
+      0,
+      ...vs.map((v) => v.offenseNumber),
+      ...store.removals
+        .filter((r) => r.employeeId === e.id)
+        .map((r) => r.offenseNumber),
+    );
+  const standing =
+    highest >= 2
+      ? "Repeated offenses"
+      : vs.length
+        ? "For review"
+        : "No active violations";
+  const activeCount = latestProfileViolations(vs).length;
+  const mobileAccess =
+    canManage() && e.employeeType === "supervisor"
+      ? mobileAccessPanel(e, esc)
+      : "";
+  return `<section class="panel" style="margin-bottom:23px"><div class="profile-top">${avatar(e)}<div class="profile-info"><h2>${esc(e.name)}</h2><div class="profile-meta"><span>${esc(e.id)}</span><span>${esc(roleLabels[e.employeeType] || "Employee")}</span><span>${esc(e.department || "Unassigned")}</span><span>${esc(e.position || "Not provided")}</span>${badge(e.status)}</div></div>${canManage() ? `<button class="button secondary" data-action="edit-employee" data-id="${esc(e.apiId)}">${icon("edit", 16)} Edit Employee</button>` : ""}</div><div class="profile-stats"><div class="profile-stat"><span>Active Violations</span><strong>${activeCount}</strong></div><div class="profile-stat"><span>Total Offenses</span><strong>${offenses ?? "—"}</strong></div><div class="profile-stat"><span>Highest Offense</span><strong>${resources.removals.status === "ready" ? highest || "—" : "—"}</strong></div><div class="profile-stat"><span>Disciplinary Status</span><strong class="text">${badge(standing)}</strong></div></div></section>${highest >= 2 ? `<div class="callout warning">${icon("alert")}<p><strong>Repeated offenses need a closer look.</strong> ${esc(e.name)} has reached offense ${highest} on a specific violation. Review the history and employee explanation before deciding on further action.</p></div>` : ""}
+  ${renderProfileRecords(ctx(), e, vs)}${mobileAccess}`;
 }
 
-function render(){preserveRulebookDraft();document.body.classList.toggle('larger-text',store.settings.textSize==='larger');document.documentElement.dataset.textSize=store.settings.textSize;let html=page==='mine'?renderOwnHistory(ctx(),ownEmployeeId()):page==='tracking'?renderMapTracking(ctx()):page==='photos'?renderPhotoLibrary(ctx()):page==='dashboard'?dashboard():page==='employees'?employeeList():page==='violations'?violationsList():page==='types'?typesList():['rulebook','ruleEditor'].includes(page)?(dataGate(['types'])||renderRulebookPage(ctx())):page==='profile'?profile():page==='reports'?(dataGate(['employees','records',...(filters.reports?.tab==='rulebook'?['types','removals']:['removals'])])||renderSecondary(page,ctx())):page==='history'?renderSecondary(page,ctx()):renderSecondary(page,ctx());if(page==='dashboard'){displayedWeek=startOfWeek(localDate());displayedMonth=localDate().slice(0,7);displayedDay=businessDate();}app.innerHTML=shell(html);enhanceSearchSuggestions(ctx());enhancePhoneLayout({icon});syncNavigation();if(page==='tracking')mountMapTracking(ctx());else stopMapTracking();document.title=`${pageInfo[page][0]} · Northpoint`;}
-function navigate(target,id=''){const hash=target==='profile'?`employee/${id}`:target;if(!canOpen(workspacePage(hash)))return;document.body.classList.remove('nav-open');if(location.hash.slice(1)===hash){route();}else location.hash=hash;}
-function route(){
-  const hash=location.hash.slice(1)||landingPage();
-  const target=workspacePage(hash);
-  restrictedRoute=!canOpen(target);
-  if (!restrictedRoute && (['camera','removals','rulebook','ruleEditor'].includes(hash))) {
-    if (hash==='removals') filters.history={tab:'removals'};
-    history.replaceState(null,'','#'+target);
+function render() {
+  preserveRulebookDraft();
+  document.body.classList.toggle(
+    "larger-text",
+    store.settings.textSize === "larger",
+  );
+  document.documentElement.dataset.textSize = store.settings.textSize;
+  let html =
+    page === "mine"
+      ? renderOwnHistory(ctx(), ownEmployeeId())
+      : page === "tracking"
+        ? renderMapTracking(ctx())
+        : page === "photos"
+          ? renderPhotoLibrary(ctx())
+          : page === "dashboard"
+            ? dashboard()
+            : page === "employees"
+              ? employeeList()
+              : page === "violations"
+                ? violationsList()
+                : page === "types"
+                  ? typesList()
+                  : ["rulebook", "ruleEditor"].includes(page)
+                    ? dataGate(["types"]) || renderRulebookPage(ctx())
+                    : page === "profile"
+                      ? profile()
+                      : page === "reports"
+                        ? dataGate([
+                            "employees",
+                            "records",
+                            ...(filters.reports?.tab === "rulebook"
+                              ? ["types", "removals"]
+                              : ["removals"]),
+                          ]) || renderSecondary(page, ctx())
+                        : page === "history"
+                          ? renderSecondary(page, ctx())
+                          : renderSecondary(page, ctx());
+  if (page === "dashboard") {
+    displayedWeek = startOfWeek(localDate());
+    displayedMonth = localDate().slice(0, 7);
+    displayedDay = businessDate();
   }
-  page=restrictedRoute?landingPage():target;
-  if(page==='profile'){try{profileId=decodeURIComponent(hash.slice(9));}catch{profileId='';}}
+  app.innerHTML = shell(html);
+  enhanceSearchSuggestions(ctx());
+  enhancePhoneLayout({ icon });
+  syncNavigation();
+  if (page === "tracking") mountMapTracking(ctx());
+  else stopMapTracking();
+  document.title = `${pageInfo[page][0]} · Northpoint`;
+}
+function navigate(target, id = "") {
+  const hash = target === "profile" ? `employee/${id}` : target;
+  if (!canOpen(workspacePage(hash))) return;
+  document.body.classList.remove("nav-open");
+  if (location.hash.slice(1) === hash) {
+    route();
+  } else location.hash = hash;
+}
+function route() {
+  const hash = location.hash.slice(1) || landingPage();
+  const target = workspacePage(hash);
+  restrictedRoute = !canOpen(target);
+  if (
+    !restrictedRoute &&
+    ["camera", "removals", "rulebook", "ruleEditor"].includes(hash)
+  ) {
+    if (hash === "removals") filters.history = { tab: "removals" };
+    history.replaceState(null, "", "#" + target);
+  }
+  page = restrictedRoute ? landingPage() : target;
+  if (page === "profile") {
+    try {
+      profileId = decodeURIComponent(hash.slice(9));
+    } catch {
+      profileId = "";
+    }
+  }
   render();
-  window.scrollTo({top:0,behavior:'instant'});
-  document.querySelector('#main')?.focus({preventScroll:true});
-  if(page==='mine'){void loadOwnHistory();return;}
-  if(!['photos','tracking'].includes(page)&&employeeDirectory.status==='idle')void refreshApiEmployees();
-  ensurePageData(['rulebook','ruleEditor'].includes(page)?'types':page);
-  if(page==='photos')void loadPhotos();
+  window.scrollTo({ top: 0, behavior: "instant" });
+  document.querySelector("#main")?.focus({ preventScroll: true });
+  if (page === "mine") {
+    void loadOwnHistory();
+    return;
+  }
+  if (
+    !["photos", "tracking"].includes(page) &&
+    employeeDirectory.status === "idle"
+  )
+    void refreshApiEmployees();
+  ensurePageData(["rulebook", "ruleEditor"].includes(page) ? "types" : page);
+  if (page === "photos") void loadPhotos();
   void ensureCurrentProfile();
 }
-async function loadOwnHistory(force=false){
-  const id=ownEmployeeId();
-  if(id&&page==='mine')await loadProfileHistory(id,()=>{if(page==='mine')render();},force);
+async function loadOwnHistory(force = false) {
+  const id = ownEmployeeId();
+  if (id && page === "mine")
+    await loadProfileHistory(
+      id,
+      () => {
+        if (page === "mine") render();
+      },
+      force,
+    );
 }
 
-function formError(form,message){const el=form.querySelector('.form-error');if(el){el.textContent=message;el.classList.add('show');el.hidden=false;el.scrollIntoView({block:'nearest'});}}
+function formError(form, message) {
+  const el = form.querySelector(".form-error");
+  if (el) {
+    el.textContent = message;
+    el.classList.add("show");
+    el.hidden = false;
+    el.scrollIntoView({ block: "nearest" });
+  }
+}
 async function employeeForm(id) {
-  if(!canManage())return;
-  if(pendingMutation()){showPending();return;}
-  if(pendingEmployeeCreation()&&id){toast('Check the previous employee save first.','info');return;}
-  const pending=!id?pendingEmployeeCreation():null;
-  let e={}, departments=unique(store.employees.map(employee=>employee.department));editingEmployee=null;
-  if(id){
-    id=id.startsWith('api/')?id.slice(4):store.employees.find(employee=>employee.id===id)?.apiId||id;
-    openModal('Edit Employee',resourceState({status:'loading'},'employee details'),'<button class="button secondary" data-action="close-modal">Cancel</button>');
-    const version=modalVersion;
-    try{e=(await fetchEmployeeProfile(id)).employee;}catch(error){if(dialog.open&&version===modalVersion)dialog.querySelector('.modal-content').innerHTML=resourceState({status:'error',error:error.message},'employee details').replace('data-action="refresh-data"',`data-action="edit-employee" data-id="${esc(id)}"`);return;}
-    if(!dialog.open||version!==modalVersion)return;editingEmployee={...e};
-  }else{
-    if(employeeDirectory.status!=='ready'&&!pending){toast('Load the employee list before adding an employee.','info');return;}
-    if(pending)e={id:pending.payload.employee_code,firstName:pending.payload.first_name,lastName:pending.payload.last_name,department:pending.payload.department,position:pending.payload.position};
+  if (!canManage()) return;
+  if (pendingMutation()) {
+    showPending();
+    return;
+  }
+  if (pendingEmployeeCreation() && id) {
+    toast("Check the previous employee save first.", "info");
+    return;
+  }
+  const pending = !id ? pendingEmployeeCreation() : null;
+  let e = {},
+    departments = unique(
+      store.employees.map((employee) => employee.department),
+    );
+  editingEmployee = null;
+  if (id) {
+    id = id.startsWith("api/")
+      ? id.slice(4)
+      : store.employees.find((employee) => employee.id === id)?.apiId || id;
+    openModal(
+      "Edit Employee",
+      resourceState({ status: "loading" }, "employee details"),
+      '<button class="button secondary" data-action="close-modal">Cancel</button>',
+    );
+    const version = modalVersion;
+    try {
+      e = (await fetchEmployeeProfile(id)).employee;
+    } catch (error) {
+      if (dialog.open && version === modalVersion)
+        dialog.querySelector(".modal-content").innerHTML = resourceState(
+          { status: "error", error: error.message },
+          "employee details",
+        ).replace(
+          'data-action="refresh-data"',
+          `data-action="edit-employee" data-id="${esc(id)}"`,
+        );
+      return;
+    }
+    if (!dialog.open || version !== modalVersion) return;
+    editingEmployee = { ...e };
+  } else {
+    if (employeeDirectory.status !== "ready" && !pending) {
+      toast("Load the employee list before adding an employee.", "info");
+      return;
+    }
+    if (pending)
+      e = {
+        id: pending.payload.employee_code,
+        firstName: pending.payload.first_name,
+        lastName: pending.payload.last_name,
+        department: pending.payload.department,
+        position: pending.payload.position,
+        employeeType: pending.payload.employee_type,
+      };
     else {
-      openModal('Add Employee',resourceState({status:'loading'},'employee form','form'),'<button class="button secondary" data-action="close-modal">Cancel</button>');
-      const version=modalVersion;
+      openModal(
+        "Add Employee",
+        resourceState({ status: "loading" }, "employee form", "form"),
+        '<button class="button secondary" data-action="close-modal">Cancel</button>',
+      );
+      const version = modalVersion;
       try {
-        const directory=await fetchEmployeeDirectorySnapshot();
-        if(!dialog.open||version!==modalVersion)return;
-        e.id=nextApiEmployeeCode(directory.items);
-        departments=unique(directory.items.map(employee=>employee.department));
-      } catch(error) {
-        if(dialog.open&&version===modalVersion)dialog.querySelector('.modal-content').innerHTML=resourceState({status:'error',error:error.message},'employee code availability').replace('data-action="refresh-data"','data-action="add-employee"');
+        const directory = await fetchEmployeeDirectorySnapshot();
+        if (!dialog.open || version !== modalVersion) return;
+        e.id = nextApiEmployeeCode(directory.items);
+        departments = unique(
+          directory.items.map((employee) => employee.department),
+        );
+      } catch (error) {
+        if (dialog.open && version === modalVersion)
+          dialog.querySelector(".modal-content").innerHTML = resourceState(
+            { status: "error", error: error.message },
+            "employee code availability",
+          ).replace('data-action="refresh-data"', 'data-action="add-employee"');
         return;
       }
     }
   }
-  if(e.department&&!departments.includes(e.department))departments.push(e.department);
-  openModal(id?'Edit Employee':'Add Employee',`<form id="employee-form" data-id="${esc(id||'')}" data-source="api"><p class="form-error" role="alert"></p><div class="form-grid ${id?'':'employee-create-grid'}">
-    <div class="field employee-first-name"><label for="emp-first-name">First name (required)</label><input id="emp-first-name" name="firstName" required maxlength="150" autocomplete="given-name" value="${esc(e.firstName||'')}"></div>
-    <div class="field employee-code"><label for="emp-code">Employee code</label><input id="emp-code" name="employee_code" required maxlength="50" value="${esc(e.id)}" ${id?'readonly aria-readonly="true"':'autocomplete="off" spellcheck="false"'} aria-describedby="emp-code-help"><small id="emp-code-help">${id?'Employee code stays the same.':'Generated from unused employee codes. You can change it.'}</small></div>
-    <div class="field"><label for="emp-last-name">Last name (required)</label><input id="emp-last-name" name="lastName" required maxlength="100" autocomplete="family-name" value="${esc(e.lastName||'')}"></div>
-    <div class="field"><label for="emp-department">Department <span class="muted">(optional)</span></label>${id?`<input id="emp-department" name="department" list="employee-departments" maxlength="100" value="${esc(e.department||'')}"><datalist id="employee-departments">${departments.map(department=>`<option value="${esc(department)}"></option>`).join('')}</datalist>`:`<select id="emp-department" name="department"><option value="">No department assigned</option>${departments.map(department=>`<option value="${esc(department)}" ${department===e.department?'selected':''}>${esc(department)}</option>`).join('')}<option value="__other_department__">Add another department…</option></select>`}</div>
-    ${id?'':'<div class="field span-full" id="employee-new-department-field" hidden><label for="emp-new-department">New department name</label><input id="emp-new-department" name="newDepartment" maxlength="100" disabled></div>'}
-    <div class="field span-full"><label for="emp-position">Position <span class="muted">(optional)</span></label><input id="emp-position" name="position" maxlength="100" value="${esc(e.position||'')}"></div>
-    </div>${!id?'<p class="form-intro" style="margin:20px 0 0">New employees are automatically active.</p>':''}</form>
-    ${id?`<div style="margin-top:22px;padding-top:18px;border-top:1px solid #e1e7ef"><p class="form-intro" style="margin-bottom:12px">Employment status: ${badge(e.status)}</p><div class="row-actions" style="flex-wrap:wrap;gap:10px"><button class="button secondary" data-action="employee-state" data-id="${esc(e.apiId)}" data-mode="${e.status==='Active'?'deactivate':'reactivate'}">${e.status==='Active'?'Deactivate':'Reactivate'} Employee</button></div></div>`:''}`,`<button class="button secondary" data-action="close-modal">Cancel</button><button class="button primary" type="submit" form="employee-form">${icon('check',17)} ${id?'Save Changes':pending?'Check save status':'Add Employee'}</button>`);
-  if(pending){dialog.querySelectorAll('#employee-form input,#employee-form select,#employee-form textarea').forEach(control=>control.disabled=true);formError(dialog.querySelector('#employee-form'),'A previous save has not been confirmed. Choose “Check save status” to check the server without sending another POST.');}
+  if (e.department && !departments.includes(e.department))
+    departments.push(e.department);
+  openModal(
+    id ? "Edit Employee" : "Add Employee",
+    `<form id="employee-form" data-id="${esc(id || "")}" data-source="api"><p class="form-error" role="alert"></p><div class="form-grid ${id ? "" : "employee-create-grid"}">
+    <div class="field employee-first-name"><label for="emp-first-name">First name (required)</label><input id="emp-first-name" name="firstName" required maxlength="150" autocomplete="given-name" value="${esc(e.firstName || "")}"></div>
+    <div class="field employee-code"><label for="emp-code">Employee code</label><input id="emp-code" name="employee_code" required maxlength="50" value="${esc(e.id)}" ${id ? 'readonly aria-readonly="true"' : 'autocomplete="off" spellcheck="false"'} aria-describedby="emp-code-help"><small id="emp-code-help">${id ? "Employee code stays the same." : "Generated from unused employee codes. You can change it."}</small></div>
+    <div class="field"><label for="emp-last-name">Last name (required)</label><input id="emp-last-name" name="lastName" required maxlength="100" autocomplete="family-name" value="${esc(e.lastName || "")}"></div>
+    <div class="field"><label for="emp-department">Department <span class="muted">(optional)</span></label>${id ? `<input id="emp-department" name="department" list="employee-departments" maxlength="100" value="${esc(e.department || "")}"><datalist id="employee-departments">${departments.map((department) => `<option value="${esc(department)}"></option>`).join("")}</datalist>` : `<select id="emp-department" name="department"><option value="">No department assigned</option>${departments.map((department) => `<option value="${esc(department)}" ${department === e.department ? "selected" : ""}>${esc(department)}</option>`).join("")}<option value="__other_department__">Add another department…</option></select>`}</div>
+    ${id ? "" : '<div class="field span-full" id="employee-new-department-field" hidden><label for="emp-new-department">New department name</label><input id="emp-new-department" name="newDepartment" maxlength="100" disabled></div>'}
+    <div class="field"><label for="emp-type">Employee type</label><select id="emp-type" name="employeeType" required>${employeeTypes.map(([value, label]) => `<option value="${value}" ${(e.employeeType || "employee") === value ? "selected" : ""}>${label}</option>`).join("")}</select><small>This sets the employee's login role and workspace.</small></div>
+    <div class="field span-full"><label for="emp-position">Position <span class="muted">(optional)</span></label><input id="emp-position" name="position" maxlength="100" value="${esc(e.position || "")}"></div>
+    ${id ? "" : `<div class="field"><label for="emp-account-username">Login username</label><input id="emp-account-username" name="accountUsername" required minlength="3" maxlength="50" pattern="[A-Za-z0-9][A-Za-z0-9._\\-]{2,49}" autocomplete="off" spellcheck="false" value="${esc(e.id)}"><small>3–50 letters, numbers, dots, underscores or hyphens.</small></div><div class="field"><label for="emp-account-password">Initial password</label><input id="emp-account-password" name="accountPassword" type="password" required minlength="10" maxlength="128" autocomplete="new-password"><small>At least 10 characters. Give it to the employee securely.</small></div>`}
+    </div>${!id ? '<p class="form-intro" style="margin:20px 0 0">New employees are automatically active and receive the login account above.</p>' : ""}</form>
+    ${id ? `<div style="margin-top:22px;padding-top:18px;border-top:1px solid #e1e7ef"><p class="form-intro" style="margin-bottom:12px">Employment status: ${badge(e.status)}</p><div class="row-actions" style="flex-wrap:wrap;gap:10px"><button class="button secondary" data-action="employee-state" data-id="${esc(e.apiId)}" data-mode="${e.status === "Active" ? "deactivate" : "reactivate"}">${e.status === "Active" ? "Deactivate" : "Reactivate"} Employee</button></div></div>` : ""}`,
+    `<button class="button secondary" data-action="close-modal">Cancel</button><button class="button primary" type="submit" form="employee-form">${icon("check", 17)} ${id ? "Save Changes" : pending ? "Check save status" : "Add Employee"}</button>`,
+  );
+  if (pending) {
+    dialog
+      .querySelectorAll(
+        "#employee-form input,#employee-form select,#employee-form textarea",
+      )
+      .forEach((control) => (control.disabled = true));
+    formError(
+      dialog.querySelector("#employee-form"),
+      "A previous save has not been confirmed. Choose “Check save status” to check the server without sending another POST.",
+    );
+  }
 }
-function confirmEmployeeState(id,mode){
-  if(!canManage()||!editingEmployee||editingEmployee.apiId!==id||!['deactivate','reactivate','delete'].includes(mode))return;
-  const e=editingEmployee,deleting=mode==='delete',label=deleting?'Permanently Delete':mode==='deactivate'?'Deactivate':'Reactivate';
-  openModal(label+' Employee',`<div class="callout ${deleting?'warning':''}">${icon(deleting?'alert':'info')}<p>${deleting?`Permanently delete <strong>${esc(e.name)}</strong> (${esc(e.id)}) and all their violation records? This cannot be undone and bypasses the violation removal audit trail.`:mode==='deactivate'?`Deactivate <strong>${esc(e.name)}</strong>? Their status becomes Inactive and their violation history stays on the backend.`:`Reactivate <strong>${esc(e.name)}</strong>? Their status becomes Active again.`}</p></div><form id="employee-state-form" data-id="${esc(id)}" data-mode="${mode}"><p class="form-error" role="alert"></p>${deleting?`<div class="field"><label for="employee-delete-code">Type ${esc(e.id)} to confirm</label><input id="employee-delete-code" name="code" required autocomplete="off"></div><label class="confirm-check" style="margin-top:18px"><input type="checkbox" name="confirmed" required>I understand that the employee and their violation records will be permanently deleted.</label>`:''}</form>`,`<button class="button secondary" data-action="edit-employee" data-id="${esc(id)}">Cancel</button><button class="button ${deleting?'danger':'primary'}" type="submit" form="employee-state-form">${label} Employee</button>`);
+function confirmEmployeeState(id, mode) {
+  if (
+    !canManage() ||
+    !editingEmployee ||
+    editingEmployee.apiId !== id ||
+    !["deactivate", "reactivate", "delete"].includes(mode)
+  )
+    return;
+  const e = editingEmployee,
+    deleting = mode === "delete",
+    label = deleting
+      ? "Permanently Delete"
+      : mode === "deactivate"
+        ? "Deactivate"
+        : "Reactivate";
+  openModal(
+    label + " Employee",
+    `<div class="callout ${deleting ? "warning" : ""}">${icon(deleting ? "alert" : "info")}<p>${deleting ? `Permanently delete <strong>${esc(e.name)}</strong> (${esc(e.id)}) and all their violation records? This cannot be undone and bypasses the violation removal audit trail.` : mode === "deactivate" ? `Deactivate <strong>${esc(e.name)}</strong>? Their status becomes Inactive and their violation history stays on the backend.` : `Reactivate <strong>${esc(e.name)}</strong>? Their status becomes Active again.`}</p></div><form id="employee-state-form" data-id="${esc(id)}" data-mode="${mode}"><p class="form-error" role="alert"></p>${deleting ? `<div class="field"><label for="employee-delete-code">Type ${esc(e.id)} to confirm</label><input id="employee-delete-code" name="code" required autocomplete="off"></div><label class="confirm-check" style="margin-top:18px"><input type="checkbox" name="confirmed" required>I understand that the employee and their violation records will be permanently deleted.</label>` : ""}</form>`,
+    `<button class="button secondary" data-action="edit-employee" data-id="${esc(id)}">Cancel</button><button class="button ${deleting ? "danger" : "primary"}" type="submit" form="employee-state-form">${label} Employee</button>`,
+  );
 }
 
 async function typeForm(id) {
   if (!canManage()) return;
-  if(pendingMutation()){showPending();return;}
-  let t = store.types.find(type => type.id === id) || {};
-  if(id){openModal('Edit Category',resourceState({status:'loading'},'violation type'),'<button class="button secondary" data-action="close-modal">Close</button>');const version=modalVersion;try{t=normalizeType(await apiRequest('/violation-types/'+apiId(id)));}catch(error){if(dialog.open&&version===modalVersion)dialog.querySelector('.modal-content').innerHTML=resourceState({status:'error',error:error.message},'violation type').replace('data-action="refresh-data"',`data-action="edit-type" data-id="${esc(id)}"`);return;}if(!dialog.open||version!==modalVersion)return;}
-  openModal(id ? 'Edit Category' : 'Add Category', `<p class="form-intro">Use a clear name and description so staff can record violations consistently.</p><form id="type-form" data-id="${esc(id || '')}"><p class="form-error" role="alert"></p><div class="form-grid">
-    <div class="field span-full"><label for="type-name">Category name (required)</label><input id="type-name" name="name" value="${esc(t.name || '')}" required maxlength="100"></div>
-    <div class="field span-full"><label for="type-description">Description (optional)</label><textarea id="type-description" name="description" maxlength="1000">${esc(t.description || '')}</textarea></div>
-    </div>${!id ? '<p class="form-intro" style="margin:20px 0 0">New violation types are automatically active.</p>' : ''}</form>`, `<button class="button secondary" data-action="close-modal">Cancel</button><button class="button primary" type="submit" form="type-form">${id ? 'Save Changes' : 'Add Category'}</button>`);
+  if (pendingMutation()) {
+    showPending();
+    return;
+  }
+  let t = store.types.find((type) => type.id === id) || {};
+  if (id) {
+    openModal(
+      "Edit Category",
+      resourceState({ status: "loading" }, "violation type"),
+      '<button class="button secondary" data-action="close-modal">Close</button>',
+    );
+    const version = modalVersion;
+    try {
+      t = normalizeType(await apiRequest("/violation-types/" + apiId(id)));
+    } catch (error) {
+      if (dialog.open && version === modalVersion)
+        dialog.querySelector(".modal-content").innerHTML = resourceState(
+          { status: "error", error: error.message },
+          "violation type",
+        ).replace(
+          'data-action="refresh-data"',
+          `data-action="edit-type" data-id="${esc(id)}"`,
+        );
+      return;
+    }
+    if (!dialog.open || version !== modalVersion) return;
+  }
+  openModal(
+    id ? "Edit Category" : "Add Category",
+    `<p class="form-intro">Use a clear name and description so staff can record violations consistently.</p><form id="type-form" data-id="${esc(id || "")}"><p class="form-error" role="alert"></p><div class="form-grid">
+    <div class="field span-full"><label for="type-name">Category name (required)</label><input id="type-name" name="name" value="${esc(t.name || "")}" required maxlength="100"></div>
+    <div class="field span-full"><label for="type-description">Description (optional)</label><textarea id="type-description" name="description" maxlength="1000">${esc(t.description || "")}</textarea></div>
+    </div>${!id ? '<p class="form-intro" style="margin:20px 0 0">New violation types are automatically active.</p>' : ""}</form>`,
+    `<button class="button secondary" data-action="close-modal">Cancel</button><button class="button primary" type="submit" form="type-form">${id ? "Save Changes" : "Add Category"}</button>`,
+  );
 }
-async function recordForm(employeeId = '', keep = false) {
+async function recordForm(employeeId = "", keep = false) {
   if (!canRecord()) return;
-  if(pendingMutation()){showPending();return;}
-  if(!store.settings.name.trim()){toast('Your sign-in session is not available yet. Check the signed-in account in Settings.','info');navigate('settings');return;}
-  if(employeeDirectory.status!=='ready'){toast('Load the employee list first.','info');return;}
-  if(resources.activeTypes.status!=='ready'){openModal('Record New Violation',resourceState(resources.activeTypes,'active violation types'),`<button class="button secondary" data-action="close-modal">Close</button>`);const version=modalVersion;await loadActiveTypes(true);if(!dialog.open||version!==modalVersion)return;if(resources.activeTypes.status!=='ready'){dialog.querySelector('.modal-content').innerHTML=resourceState(resources.activeTypes,'active violation types').replace('data-action="refresh-data"','data-action="record"');return;}}
-  employeeId=store.employees.find(employee=>employee.profileId===employeeId)?.id||employeeId;
-  const d = keep && draft ? draft : { employeeId, typeId: '', subsectionId:'', date: localDate(), description: '', recordedBy: store.settings.name };
-  const employees = visibleEmployees().filter(employee => employee.status === 'Active');
+  if (pendingMutation()) {
+    showPending();
+    return;
+  }
+  if (!store.settings.name.trim()) {
+    toast(
+      "Your sign-in session is not available yet. Check the signed-in account in Settings.",
+      "info",
+    );
+    navigate("settings");
+    return;
+  }
+  if (employeeDirectory.status !== "ready") {
+    toast("Load the employee list first.", "info");
+    return;
+  }
+  if (resources.activeTypes.status !== "ready") {
+    openModal(
+      "Record New Violation",
+      resourceState(resources.activeTypes, "active violation types"),
+      `<button class="button secondary" data-action="close-modal">Close</button>`,
+    );
+    const version = modalVersion;
+    await loadActiveTypes(true);
+    if (!dialog.open || version !== modalVersion) return;
+    if (resources.activeTypes.status !== "ready") {
+      dialog.querySelector(".modal-content").innerHTML = resourceState(
+        resources.activeTypes,
+        "active violation types",
+      ).replace('data-action="refresh-data"', 'data-action="record"');
+      return;
+    }
+  }
+  employeeId =
+    store.employees.find((employee) => employee.profileId === employeeId)?.id ||
+    employeeId;
+  const d =
+    keep && draft
+      ? draft
+      : {
+          employeeId,
+          typeId: "",
+          subsectionId: "",
+          date: localDate(),
+          description: "",
+          recordedBy: store.settings.name,
+        };
+  const employees = visibleEmployees().filter(
+    (employee) => employee.status === "Active",
+  );
   const issuers = issuerNames();
-  openModal('Record New Violation', `<div class="modal-stepper"><span class="step-circle">1</span><span class="current">Enter details</span><span class="step-line"></span><span class="step-circle">2</span><span>Review & confirm</span></div><form id="record-form"><p class="form-error" role="alert"></p><div class="form-grid">
+  openModal(
+    "Record New Violation",
+    `<div class="modal-stepper"><span class="step-circle">1</span><span class="current">Enter details</span><span class="step-line"></span><span class="step-circle">2</span><span>Review & confirm</span></div><form id="record-form"><p class="form-error" role="alert"></p><div class="form-grid">
     <div class="field span-full employee-picker"><label for="record-employee">Employee (required)</label><div class="employee-picker-control"><input id="record-employee" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="employee-suggestions" aria-describedby="employee-picker-hint employee-picker-status" autocomplete="off" autocapitalize="words" spellcheck="false" required placeholder="Type an employee name or code"><input id="record-employee-id" type="hidden" name="employeeId"><div id="employee-suggestions" class="employee-suggestions" role="listbox" aria-label="Employee suggestions" hidden></div></div><small id="employee-picker-hint">Search by name or employee code, then choose a suggestion.</small><span id="employee-picker-status" class="sr-only" role="status" aria-live="polite"></span></div>
-    <div class="field span-full"><label for="record-type">Category (required)</label><select id="record-type" name="typeId" required><option value="">Select a category</option>${resources.activeTypes.items.map(type => `<option value="${esc(type.id)}" ${type.id === d.typeId ? 'selected' : ''}>${esc(type.name)}</option>`).join('')}</select></div>
+    <div class="field span-full"><label for="record-type">Category (required)</label><select id="record-type" name="typeId" required><option value="">Select a category</option>${resources.activeTypes.items.map((type) => `<option value="${esc(type.id)}" ${type.id === d.typeId ? "selected" : ""}>${esc(type.name)}</option>`).join("")}</select></div>
     <div class="field span-full"><label for="record-subsection">Specific violation (required)</label><select id="record-subsection" name="subsectionId" required disabled><option value="">Choose a category first</option></select><small>The offense sequence and penalty belong to this specific violation.</small></div>
-    <div class="field"><label for="record-issuer">Issued by</label><select id="record-issuer" name="recordedBy" required>${issuers.map(name => `<option value="${esc(name)}" ${name === d.recordedBy ? 'selected' : ''}>${esc(displayActor(name))}${name === store.settings.name ? ' (you)' : ''}</option>`).join('')}</select></div>
+    <div class="field"><label for="record-issuer">Issued by</label><select id="record-issuer" name="recordedBy" required>${issuers.map((name) => `<option value="${esc(name)}" ${name === d.recordedBy ? "selected" : ""}>${esc(displayActor(name))}${name === store.settings.name ? " (you)" : ""}</option>`).join("")}</select></div>
     <div class="field"><label for="record-date">Issued at</label><input id="record-date" name="date" type="date" required readonly aria-readonly="true" value="${localDate()}"><small>The backend records the current date and time.</small></div>
     <div class="field span-full"><label for="record-description">Notes / Incident details <span class="muted">(optional)</span></label><textarea id="record-description" name="description" maxlength="2000" placeholder="Add any details that may help with the review.">${esc(d.description)}</textarea></div>
-    </div></form>`, `<button class="button secondary" data-action="close-modal">Cancel</button><button class="button primary" type="submit" form="record-form">Review & Submit ${icon('arrow', 16)}</button>`);
+    </div></form>`,
+    `<button class="button secondary" data-action="close-modal">Cancel</button><button class="button primary" type="submit" form="record-form">Review & Submit ${icon("arrow", 16)}</button>`,
+  );
   bindEmployeePicker(dialog, employees, d.employeeId, esc);
-  if(d.typeId)await fillSubsections(dialog.querySelector("#record-form"),d.subsectionId);
+  if (d.typeId)
+    await fillSubsections(dialog.querySelector("#record-form"), d.subsectionId);
 }
 function recordReview() {
-  const e = store.employees.find(employee => employee.id === draft.employeeId);
-  const t = resources.activeTypes.items.find(type => type.id === draft.typeId);
-  openModal('Review Violation', `<div class="modal-stepper"><span class="step-circle">${icon('check', 13)}</span><span>Enter details</span><span class="step-line"></span><span class="step-circle">2</span><span class="current">Review & confirm</span></div><p class="form-error" role="alert"></p><p class="form-intro">Please review the employee, specific violation, offense number and penalty before confirming.</p><div class="review-summary"><dl>
+  const e = store.employees.find(
+    (employee) => employee.id === draft.employeeId,
+  );
+  const t = resources.activeTypes.items.find(
+    (type) => type.id === draft.typeId,
+  );
+  openModal(
+    "Review Violation",
+    `<div class="modal-stepper"><span class="step-circle">${icon("check", 13)}</span><span>Enter details</span><span class="step-line"></span><span class="step-circle">2</span><span class="current">Review & confirm</span></div><p class="form-error" role="alert"></p><p class="form-intro">Please review the employee, specific violation, offense number and penalty before confirming.</p><div class="review-summary"><dl>
     <dt>Employee</dt><dd>${esc(e.name)}<small class="muted" style="display:block">${esc(e.id)}</small></dd>
     <dt>Category</dt><dd>${esc(t.name)}</dd><dt>Specific violation</dt><dd>${esc(draft.ruleName)}</dd><dt>Offense number</dt><dd>${draft.offenseNumber}</dd><dt>Penalty for this offense</dt><dd>${esc(draft.penalty)}</dd>
     <dt>Issued by</dt><dd>${esc(displayActor(draft.recordedBy))}</dd><dt>Issued at</dt><dd>${formatDate(draft.date)}</dd>
-    <dt>Notes / Incident details</dt><dd class="review-description">${esc(draft.description || 'No notes provided.')}</dd>
-    </dl></div><label class="confirm-check"><input id="confirm-record" type="checkbox">I have reviewed the details and confirm that this violation should be recorded.</label>`, `<button class="button secondary" data-action="record-back">${icon('chevron-left', 16)} Back to details</button><button class="button primary" data-action="confirm-record" disabled>${icon('check', 17)} Confirm & Record</button>`);
+    <dt>Notes / Incident details</dt><dd class="review-description">${esc(draft.description || "No notes provided.")}</dd>
+    </dl></div><label class="confirm-check"><input id="confirm-record" type="checkbox">I have reviewed the details and confirm that this violation should be recorded.</label>`,
+    `<button class="button secondary" data-action="record-back">${icon("chevron-left", 16)} Back to details</button><button class="button primary" data-action="confirm-record" disabled>${icon("check", 17)} Confirm & Record</button>`,
+  );
 }
-async function caseDetails(id){
-    const recent=resources.recent.items.find(record=>record.id===id);
-    if(!visibleViolations().some(record=>record.id===id)&&!employeeProfile.violations.some(record=>record.id===id)&&!recent){toast('This case is not available in the selected view.','alert');return;}
-    openModal('Violation Details',resourceState({status:'loading'},'case details'),`<button class="button secondary" data-action="close-modal">Close</button>`);
-    const version=modalVersion;
-    let v;try{v=normalizeViolation(await apiRequest('/violations/'+apiId(id)),[...store.employees,...(employeeProfile.employee?[employeeProfile.employee]:[]),...(recent?.employee?[recent.employee]:[])]);}catch(error){if(dialog.open&&modalVersion===version)dialog.querySelector('.modal-content').innerHTML=resourceState({status:'error',error:error.message},'case details').replace('data-action="refresh-data"',`data-action="case-details" data-id="${esc(id)}"`);return;}
-    if(!dialog.open||modalVersion!==version)return;
-    const e=store.employees.find(employee=>employee.apiId===v.employeeApiId)||v.employee;if(!e)return;
-    openModal('Violation Details',`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:22px">${person(e)}</div><div class="review-summary"><dl><dt>Case number</dt><dd>${esc(v.id)}</dd><dt>Violation type</dt><dd>${esc(v.typeName)}</dd><dt>Incident date</dt><dd>${formatDate(v.date)}</dd><dt>Category</dt><dd>${esc(v.categoryName)}</dd><dt>Offense number</dt><dd>${v.offenseNumber}</dd><dt>Penalty at issue</dt><dd>${esc(v.penalty||'Not provided')}</dd><dt id="case-issuer-label">Issued by</dt><dd>${esc(displayActor(v.recordedBy))}</dd><dt id="case-notes-label">Incident details</dt><dd class="review-description">${esc(v.description||'No notes provided.')}</dd></dl></div>
-    ${canManage()?`<div style="margin-top:25px;padding-top:17px;border-top:1px solid #e1e7ef;display:flex;justify-content:space-between;align-items:center;gap:12px"><small class="muted">Incorrect record? You can remove it with an optional reason.</small><button class="button danger-outline small" data-action="remove-violation" data-id="${esc(id)}">${icon('trash',14)} Remove record</button></div>`:''}`,`<button class="button secondary" data-action="close-modal">Close</button>`);
+async function caseDetails(id) {
+  const recent = resources.recent.items.find((record) => record.id === id);
+  if (
+    !visibleViolations().some((record) => record.id === id) &&
+    !employeeProfile.violations.some((record) => record.id === id) &&
+    !recent
+  ) {
+    toast("This case is not available in the selected view.", "alert");
+    return;
   }
-
-function removeViolation(id){if(!canManage())return;const v=visibleViolations().find(v=>v.id===id)||employeeProfile.violations.find(v=>v.id===id)||resources.recent.items.find(v=>v.id===id);if(!v)return;const e=store.employees.find(e=>e.apiId===v.employeeApiId)||v.employee;openModal('Remove Violation Record',`<div class="callout warning">${icon('alert')}<p>This will remove <strong>${esc(v.typeName)}</strong> from ${esc(e.name)}’s active history and reduce their active violation count. Removed offenses still count toward future offense numbers. The reason and original record will remain in the removal history.</p></div><form id="remove-form" data-id="${esc(id)}"><p class="form-error" role="alert"></p><div class="field"><label for="remove-reason">Reason for removal (optional)</label><textarea id="remove-reason" name="reason" maxlength="1000" placeholder="Explain why this record should be removed."></textarea><small>Leave blank to record “No reason provided.” in History.</small></div><label class="confirm-check" style="margin-top:20px"><input type="checkbox" required name="confirmed" ${page==='profile'&&(filters.profile?.tab||'active')==='active'?'checked':''}>I understand this record will be removed from the employee’s active history.</label></form>`,`<button class="button secondary" data-action="case-details" data-id="${esc(id)}">Keep record</button><button class="button danger" type="submit" form="remove-form">Remove Violation</button>`);}
-function confirmType(id,mode){if(!canManage())return;const t=store.types.find(t=>t.id===id);if(!t)return;const deleting=mode==='delete';openModal(deleting?'Delete Violation Type':`${t.active?'Deactivate':'Reactivate'} Violation Type`, `<p style="margin-bottom:18px">${deleting?'Delete':t.active?'Deactivate':'Reactivate'} <strong>${esc(t.name)}</strong>?</p><p class="muted" style="font-size:14px">${deleting?'This category will be deleted from the backend. Types referenced by records cannot be deleted.':t.active?'Staff will no longer be able to select this category for new violations. Existing records will keep their details.':'Staff will be able to select this category for new violations again.'}</p>`,`<button class="button secondary" data-action="close-modal">Cancel</button><button class="button ${deleting?'danger':'primary'}" data-action="confirm-type" data-id="${esc(id)}" data-mode="${mode}">${deleting?'Delete Type':t.active?'Deactivate':'Reactivate'}</button>`);}
-
-document.addEventListener('click',async event=>{closeRecordFilters(event.target);const account=document.querySelector('.account-menu[open]');if(account&&!account.contains(event.target))account.open=false;const el=event.target.closest('[data-action]');if(!el)return;const action=el.dataset.action;if(!allowsAction(action,el.dataset,page))return;const id=el.dataset.id;try{if(action.startsWith('rulebook-')){await handleRulebookAction(action,el,ctx());return;}if(action.startsWith('tracking-')){handleTrackingAction(action,el,ctx());return;}if(action.startsWith('photo-')){await handlePhotoAction(action,el,ctx());return;}if(action.startsWith('sec-')){await handleSecondary(action,el,ctx());return;}switch(action){
-case 'retry-own-history':await loadOwnHistory(true);break;
-case 'sign-out':if(photoUpload.busy||employeeCreateInFlight()||mutationInFlight()||checkingDraft){toast('Please wait for the current save to finish before signing out.','info');return;}signOut();break;
-case 'navigate':if(dialog.open)closeModal();navigate(el.dataset.page);break;
-case 'profile':if(dialog.open)closeModal();navigate('profile',id);break;
-case 'toggle-nav':document.body.classList.toggle('nav-open');syncNavigation();if(document.body.classList.contains('nav-open'))document.querySelector('.nav-item.active')?.focus();else document.querySelector('.mobile-toggle')?.focus();break;
-case 'close-modal':closeModal();break;
-case 'dismiss-toast':document.querySelector('#toast-region').innerHTML='';break;
-case 'retry-employees':case 'refresh-data':invalidateHistoryCalendar();await refreshWorkspace();ensurePageData(page);break;
-case 'check-mutation':await checkPendingMutation(mutationContext());break;
-case 'add-employee':await employeeForm();break;
-case 'edit-employee':await employeeForm(id);break;
-case 'employee-state':confirmEmployeeState(id,el.dataset.mode);break;
-case 'profile-record-tab':filters.profile={tab:el.dataset.tab,page:1};render();if(el.dataset.tab==='history')await loadProfileHistory(profileApiId(),()=>{if(page==='profile')render();});document.querySelector('#profile-tab-'+el.dataset.tab)?.focus({preventScroll:true});break;
-case 'retry-profile-history':await loadProfileHistory(profileApiId(),()=>{if(page==='profile')render();},true);break;
-case 'restore-company-rules':if(!canManage())return;openModal('Restore Violation Categories?',`<p>Add missing company categories and specific violations, including their penalty schedules.</p><p>Existing rules, penalties, and inactive settings are kept. Custom categories remain alongside them. These entries are shared by all accounts.</p><form id="restore-company-rules-form"><label class="confirm-check"><input name="confirmed" type="checkbox" required>Restore the missing company entries.</label><p id="restore-progress" role="status" aria-live="polite"></p><p class="form-error" role="alert"></p></form>`,`<button class="button secondary" data-action="close-modal">Cancel</button><button class="button primary" type="submit" form="restore-company-rules-form">Restore Categories</button>`);break;
-case 'retry-profile':await ensureCurrentProfile(true);break;
-case 'add-type':await typeForm();break;
-case 'edit-type':await typeForm(id);break;
-case 'toggle-type':confirmType(id,'toggle');break;
-case 'delete-type':confirmType(id,'delete');break;
-case 'confirm-type':{const t=store.types.find(type=>type.id===id);if(!canManage()||!t)return;const mode=el.dataset.mode==='delete'?'delete':t.active?'deactivate':'activate';await mutate({message:'Violation type updated successfully.',execute:()=>changeType(id,mode,store.settings.name),reconcile:async()=>{try{const current=normalizeType(await apiRequest('/violation-types/'+apiId(id)));return mode==='delete'?false:current.active===(mode==='activate');}catch(error){if(mode==='delete'&&error.status===404)return true;throw error;}}});break;}
-case 'record':draft=null;await recordForm(el.dataset.employee||'');break;
-case 'record-back':await recordForm('',true);break;
-case 'confirm-record':{
-  if(checkingDraft||mutationInFlight()||!canRecord()||!draft||!document.querySelector('#confirm-record')?.checked)return;
-  checkingDraft=true;
-  const confirmButton=dialog.querySelector('[data-action="confirm-record"]');if(confirmButton)confirmButton.disabled=true;
-  try{
-    const employee=visibleEmployees().find(e=>e.id===draft.employeeId);if(!employee)return;
-    const category=normalizeType(await apiRequest('/violation-types/'+apiId(draft.typeId)));if(!category.active)throw Error('This category is inactive. Choose another category.');
-    const preview=await penaltyPreview(employee.apiId,draft.subsectionId);
-    if(preview.offenseNumber!==draft.offenseNumber||preview.penalty!==draft.penalty||preview.rule.name!==draft.ruleName){Object.assign(draft,{offenseNumber:preview.offenseNumber,penalty:preview.penalty,ruleName:preview.rule.name});recordReview();toast('The rule or offense history changed. Review the updated penalty before confirming.','info');return;}
-    const input={...draft};
-    const beforeRows=await paginatedApi('/employees/'+apiId(employee.apiId)+'/violations',{array:true});
-    const before=new Set(beforeRows.map(r=>String(r.id)));checkingDraft=false;
-    await mutate({message:'Violation recorded successfully.',execute:async()=>{const raw=await issueViolation(employee.apiId,input,store.settings.name);if(raw.offense_number!==input.offenseNumber||raw.penalty_description!==input.penalty)toast('The server assigned a newer offense or penalty. Review the saved case.','info');},reconcile:async()=>{const rows=await paginatedApi('/employees/'+apiId(employee.apiId)+'/violations',{array:true});return rows.some(r=>!before.has(String(r.id))&&String(r.subsection_id)===input.subsectionId&&(r.notes||'')===input.description&&r.issued_by===input.recordedBy)?true:null;}});
+  openModal(
+    "Violation Details",
+    resourceState({ status: "loading" }, "case details"),
+    `<button class="button secondary" data-action="close-modal">Close</button>`,
+  );
+  const version = modalVersion;
+  let v;
+  try {
+    v = normalizeViolation(await apiRequest("/violations/" + apiId(id)), [
+      ...store.employees,
+      ...(employeeProfile.employee ? [employeeProfile.employee] : []),
+      ...(recent?.employee ? [recent.employee] : []),
+    ]);
+  } catch (error) {
+    if (dialog.open && modalVersion === version)
+      dialog.querySelector(".modal-content").innerHTML = resourceState(
+        { status: "error", error: error.message },
+        "case details",
+      ).replace(
+        'data-action="refresh-data"',
+        `data-action="case-details" data-id="${esc(id)}"`,
+      );
+    return;
   }
-  catch(error){formError(dialog,error.message||'The violation could not be saved.');}
-  finally{checkingDraft=false;if(confirmButton?.isConnected)confirmButton.disabled=!document.querySelector('#confirm-record')?.checked;}
-  break;
+  if (!dialog.open || modalVersion !== version) return;
+  const e =
+    store.employees.find((employee) => employee.apiId === v.employeeApiId) ||
+    v.employee;
+  if (!e) return;
+  openModal(
+    "Violation Details",
+    `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:22px">${person(e)}</div><div class="review-summary"><dl><dt>Case number</dt><dd>${esc(v.id)}</dd><dt>Violation type</dt><dd>${esc(v.typeName)}</dd><dt>Incident date</dt><dd>${formatDate(v.date)}</dd><dt>Category</dt><dd>${esc(v.categoryName)}</dd><dt>Offense number</dt><dd>${v.offenseNumber}</dd><dt>Penalty at issue</dt><dd>${esc(v.penalty || "Not provided")}</dd><dt id="case-issuer-label">Issued by</dt><dd>${esc(displayActor(v.recordedBy))}</dd><dt id="case-notes-label">Incident details</dt><dd class="review-description">${esc(v.description || "No notes provided.")}</dd></dl></div>
+    ${canManage() ? `<div style="margin-top:25px;padding-top:17px;border-top:1px solid #e1e7ef;display:flex;justify-content:space-between;align-items:center;gap:12px"><small class="muted">Incorrect record? You can remove it with an optional reason.</small><button class="button danger-outline small" data-action="remove-violation" data-id="${esc(id)}">${icon("trash", 14)} Remove record</button></div>` : ""}`,
+    `<button class="button secondary" data-action="close-modal">Close</button>`,
+  );
 }
 
-case 'case-details':await caseDetails(id);break;
-case 'remove-violation':removeViolation(id);break;
-case 'retry-employee-labels':retryEmployeeDates();render();break;
-case 'close-record-filter':el.closest('.record-filter').open=false;el.closest('.record-filter').querySelector('summary').focus();break;
-case 'clear-filters':filters[el.dataset.page]={};employeePage=1;violationPage=1;render();break;
-case 'paginate':if(el.dataset.page==='employees')employeePage=Number(el.dataset.number);else if(el.dataset.page==='mine')filters.mine={page:Number(el.dataset.number)};else if(el.dataset.page==='profile')filters.profile={...filters.profile,page:Number(el.dataset.number)};else if(el.dataset.page==='history')filters.history={...filters.history,page:Number(el.dataset.number)};else violationPage=Number(el.dataset.number);render();(document.querySelector('.mobile-record-list')?.getClientRects().length?document.querySelector('.mobile-record-list'):document.querySelector('.history-panel')||document.querySelector('.table-wrap'))?.scrollIntoView({block:'start',behavior:'smooth'});break;
+function removeViolation(id) {
+  if (!canManage()) return;
+  const v =
+    visibleViolations().find((v) => v.id === id) ||
+    employeeProfile.violations.find((v) => v.id === id) ||
+    resources.recent.items.find((v) => v.id === id);
+  if (!v) return;
+  const e =
+    store.employees.find((e) => e.apiId === v.employeeApiId) || v.employee;
+  openModal(
+    "Remove Violation Record",
+    `<div class="callout warning">${icon("alert")}<p>This will remove <strong>${esc(v.typeName)}</strong> from ${esc(e.name)}’s active history and reduce their active violation count. Removed offenses still count toward future offense numbers. The reason and original record will remain in the removal history.</p></div><form id="remove-form" data-id="${esc(id)}"><p class="form-error" role="alert"></p><div class="field"><label for="remove-reason">Reason for removal (optional)</label><textarea id="remove-reason" name="reason" maxlength="1000" placeholder="Explain why this record should be removed."></textarea><small>Leave blank to record “No reason provided.” in History.</small></div><label class="confirm-check" style="margin-top:20px"><input type="checkbox" required name="confirmed" ${page === "profile" && (filters.profile?.tab || "active") === "active" ? "checked" : ""}>I understand this record will be removed from the employee’s active history.</label></form>`,
+    `<button class="button secondary" data-action="case-details" data-id="${esc(id)}">Keep record</button><button class="button danger" type="submit" form="remove-form">Remove Violation</button>`,
+  );
+}
+function confirmType(id, mode) {
+  if (!canManage()) return;
+  const t = store.types.find((t) => t.id === id);
+  if (!t) return;
+  const deleting = mode === "delete";
+  openModal(
+    deleting
+      ? "Delete Violation Type"
+      : `${t.active ? "Deactivate" : "Reactivate"} Violation Type`,
+    `<p style="margin-bottom:18px">${deleting ? "Delete" : t.active ? "Deactivate" : "Reactivate"} <strong>${esc(t.name)}</strong>?</p><p class="muted" style="font-size:14px">${deleting ? "This category will be deleted from the backend. Types referenced by records cannot be deleted." : t.active ? "Staff will no longer be able to select this category for new violations. Existing records will keep their details." : "Staff will be able to select this category for new violations again."}</p>`,
+    `<button class="button secondary" data-action="close-modal">Cancel</button><button class="button ${deleting ? "danger" : "primary"}" data-action="confirm-type" data-id="${esc(id)}" data-mode="${mode}">${deleting ? "Delete Type" : t.active ? "Deactivate" : "Reactivate"}</button>`,
+  );
+}
 
-case 'watchlist':filters.employees={strikes:'watchlist'};employeePage=1;navigate('employees');break;
-case 'dashboard-trend':filters.dashboard={...filters.dashboard,period:el.dataset.period==='month'?'month':'week'};render();break;
-case 'dashboard-card':{const target=el.dataset.target;if(target==='watchlist'){filters.employees={strikes:'watchlist'};employeePage=1;navigate('employees');}else if(target==='offenses'){filters.reports={};navigate('reports');}else if(target==='employees'){filters.employees={};employeePage=1;navigate('employees');}else{filters.violations={};violationPage=1;navigate('violations');}break;}
-case 'export-employees':downloadCSV('NorthPoint-Employees', [['Employee ID','Name','Department','Position','Employment Status','Active Violations','Total Offenses'],...visibleEmployees().map(e=>{const s=employeeSummary(e.id);return [e.id,e.name,e.department,e.position,e.status,s.activeCount,s.totalOffenses];})]);break;
-case 'export-violations':downloadCSV('NorthPoint-Violations',[['Case number','Employee ID','Employee','Violation','Incident date','Offense','Penalty','Recorded by','Status'],...visibleViolations().map(v=>[v.id,v.employeeId,store.employees.find(e=>e.id===v.employeeId)?.name,v.typeName,v.date,v.offenseNumber,v.penalty,displayActor(v.recordedBy),v.status])]);break;
+document.addEventListener("click", async (event) => {
+  closeRecordFilters(event.target);
+  const account = document.querySelector(".account-menu[open]");
+  if (account && !account.contains(event.target)) account.open = false;
+  const el = event.target.closest("[data-action]");
+  if (!el) return;
+  const action = el.dataset.action;
+  if (!allowsAction(action, el.dataset, page)) return;
+  const id = el.dataset.id;
+  try {
+    if (action.startsWith("rulebook-")) {
+      await handleRulebookAction(action, el, ctx());
+      return;
+    }
+    if (action.startsWith("tracking-")) {
+      handleTrackingAction(action, el, ctx());
+      return;
+    }
+    if (action.startsWith("photo-")) {
+      await handlePhotoAction(action, el, ctx());
+      return;
+    }
+    if (action.startsWith("sec-")) {
+      await handleSecondary(action, el, ctx());
+      return;
+    }
+    switch (action) {
+      case "retry-own-history":
+        await loadOwnHistory(true);
+        break;
+      case "sign-out":
+        if (
+          photoUpload.busy ||
+          employeeCreateInFlight() ||
+          mutationInFlight() ||
+          checkingDraft
+        ) {
+          toast(
+            "Please wait for the current save to finish before signing out.",
+            "info",
+          );
+          return;
+        }
+        signOut();
+        break;
+      case "navigate":
+        if (dialog.open) closeModal();
+        navigate(el.dataset.page);
+        break;
+      case "profile":
+        if (dialog.open) closeModal();
+        navigate("profile", id);
+        break;
+      case "toggle-nav":
+        document.body.classList.toggle("nav-open");
+        syncNavigation();
+        if (document.body.classList.contains("nav-open"))
+          document.querySelector(".nav-item.active")?.focus();
+        else document.querySelector(".mobile-toggle")?.focus();
+        break;
+      case "close-modal":
+        closeModal();
+        break;
+      case "dismiss-toast":
+        document.querySelector("#toast-region").innerHTML = "";
+        break;
+      case "retry-employees":
+      case "refresh-data":
+        invalidateHistoryCalendar();
+        await refreshWorkspace();
+        ensurePageData(page);
+        break;
+      case "check-mutation":
+        await checkPendingMutation(mutationContext());
+        break;
+      case "add-employee":
+        await employeeForm();
+        break;
+      case "edit-employee":
+        await employeeForm(id);
+        break;
+      case "employee-state":
+        confirmEmployeeState(id, el.dataset.mode);
+        break;
+      case "profile-record-tab":
+        filters.profile = { tab: el.dataset.tab, page: 1 };
+        render();
+        if (el.dataset.tab === "history")
+          await loadProfileHistory(profileApiId(), () => {
+            if (page === "profile") render();
+          });
+        document
+          .querySelector("#profile-tab-" + el.dataset.tab)
+          ?.focus({ preventScroll: true });
+        break;
+      case "retry-profile-history":
+        await loadProfileHistory(
+          profileApiId(),
+          () => {
+            if (page === "profile") render();
+          },
+          true,
+        );
+        break;
+      case "restore-company-rules":
+        if (!canManage()) return;
+        openModal(
+          "Restore Violation Categories?",
+          `<p>Add missing company categories and specific violations, including their penalty schedules.</p><p>Existing rules, penalties, and inactive settings are kept. Custom categories remain alongside them. These entries are shared by all accounts.</p><form id="restore-company-rules-form"><label class="confirm-check"><input name="confirmed" type="checkbox" required>Restore the missing company entries.</label><p id="restore-progress" role="status" aria-live="polite"></p><p class="form-error" role="alert"></p></form>`,
+          `<button class="button secondary" data-action="close-modal">Cancel</button><button class="button primary" type="submit" form="restore-company-rules-form">Restore Categories</button>`,
+        );
+        break;
+      case "retry-profile":
+        await ensureCurrentProfile(true);
+        break;
+      case "add-type":
+        await typeForm();
+        break;
+      case "edit-type":
+        await typeForm(id);
+        break;
+      case "toggle-type":
+        confirmType(id, "toggle");
+        break;
+      case "delete-type":
+        confirmType(id, "delete");
+        break;
+      case "confirm-type": {
+        const t = store.types.find((type) => type.id === id);
+        if (!canManage() || !t) return;
+        const mode =
+          el.dataset.mode === "delete"
+            ? "delete"
+            : t.active
+              ? "deactivate"
+              : "activate";
+        await mutate({
+          message: "Violation type updated successfully.",
+          execute: () => changeType(id, mode, store.settings.name),
+          reconcile: async () => {
+            try {
+              const current = normalizeType(
+                await apiRequest("/violation-types/" + apiId(id)),
+              );
+              return mode === "delete"
+                ? false
+                : current.active === (mode === "activate");
+            } catch (error) {
+              if (mode === "delete" && error.status === 404) return true;
+              throw error;
+            }
+          },
+        });
+        break;
+      }
+      case "record":
+        draft = null;
+        await recordForm(el.dataset.employee || "");
+        break;
+      case "record-back":
+        await recordForm("", true);
+        break;
+      case "confirm-record": {
+        if (
+          checkingDraft ||
+          mutationInFlight() ||
+          !canRecord() ||
+          !draft ||
+          !document.querySelector("#confirm-record")?.checked
+        )
+          return;
+        checkingDraft = true;
+        const confirmButton = dialog.querySelector(
+          '[data-action="confirm-record"]',
+        );
+        if (confirmButton) confirmButton.disabled = true;
+        try {
+          const employee = visibleEmployees().find(
+            (e) => e.id === draft.employeeId,
+          );
+          if (!employee) return;
+          const category = normalizeType(
+            await apiRequest("/violation-types/" + apiId(draft.typeId)),
+          );
+          if (!category.active)
+            throw Error("This category is inactive. Choose another category.");
+          const preview = await penaltyPreview(
+            employee.apiId,
+            draft.subsectionId,
+          );
+          if (
+            preview.offenseNumber !== draft.offenseNumber ||
+            preview.penalty !== draft.penalty ||
+            preview.rule.name !== draft.ruleName
+          ) {
+            Object.assign(draft, {
+              offenseNumber: preview.offenseNumber,
+              penalty: preview.penalty,
+              ruleName: preview.rule.name,
+            });
+            recordReview();
+            toast(
+              "The rule or offense history changed. Review the updated penalty before confirming.",
+              "info",
+            );
+            return;
+          }
+          const input = { ...draft };
+          const beforeRows = await paginatedApi(
+            "/employees/" + apiId(employee.apiId) + "/violations",
+            { array: true },
+          );
+          const before = new Set(beforeRows.map((r) => String(r.id)));
+          checkingDraft = false;
+          await mutate({
+            message: "Violation recorded successfully.",
+            execute: async () => {
+              const raw = await issueViolation(
+                employee.apiId,
+                input,
+                store.settings.name,
+              );
+              if (
+                raw.offense_number !== input.offenseNumber ||
+                raw.penalty_description !== input.penalty
+              )
+                toast(
+                  "The server assigned a newer offense or penalty. Review the saved case.",
+                  "info",
+                );
+            },
+            reconcile: async () => {
+              const rows = await paginatedApi(
+                "/employees/" + apiId(employee.apiId) + "/violations",
+                { array: true },
+              );
+              return rows.some(
+                (r) =>
+                  !before.has(String(r.id)) &&
+                  String(r.subsection_id) === input.subsectionId &&
+                  (r.notes || "") === input.description &&
+                  r.issued_by === input.recordedBy,
+              )
+                ? true
+                : null;
+            },
+          });
+        } catch (error) {
+          formError(
+            dialog,
+            error.message || "The violation could not be saved.",
+          );
+        } finally {
+          checkingDraft = false;
+          if (confirmButton?.isConnected)
+            confirmButton.disabled =
+              !document.querySelector("#confirm-record")?.checked;
+        }
+        break;
+      }
 
-}}catch(error){toast(error.message||'Unable to complete that action. Please try again.','alert');}});
+      case "case-details":
+        await caseDetails(id);
+        break;
+      case "remove-violation":
+        removeViolation(id);
+        break;
+      case "retry-employee-labels":
+        retryEmployeeDates();
+        render();
+        break;
+      case "close-record-filter":
+        el.closest(".record-filter").open = false;
+        el.closest(".record-filter").querySelector("summary").focus();
+        break;
+      case "clear-filters":
+        filters[el.dataset.page] = {};
+        employeePage = 1;
+        violationPage = 1;
+        render();
+        break;
+      case "paginate":
+        if (el.dataset.page === "employees")
+          employeePage = Number(el.dataset.number);
+        else if (el.dataset.page === "mine")
+          filters.mine = { page: Number(el.dataset.number) };
+        else if (el.dataset.page === "profile")
+          filters.profile = {
+            ...filters.profile,
+            page: Number(el.dataset.number),
+          };
+        else if (el.dataset.page === "history")
+          filters.history = {
+            ...filters.history,
+            page: Number(el.dataset.number),
+          };
+        else violationPage = Number(el.dataset.number);
+        render();
+        (document.querySelector(".mobile-record-list")?.getClientRects().length
+          ? document.querySelector(".mobile-record-list")
+          : document.querySelector(".history-panel") ||
+            document.querySelector(".table-wrap")
+        )?.scrollIntoView({ block: "start", behavior: "smooth" });
+        break;
 
-document.addEventListener('submit',async event=>{const form=event.target;if(!(form instanceof HTMLFormElement))return;event.preventDefault();if(!allowsForm(form,page))return;try{const values=Object.fromEntries(new FormData(form));if(form.id.startsWith('photo-')){await handlePhotoSubmit(form,values,ctx());return;}switch(form.id){
-case 'global-search':{if(employeeDirectory.status!=='ready'||resources.records.status!=='ready'){toast('Live data is still loading or unavailable. Refresh before searching.','alert');return;}const q=(values.query||'').trim().toLowerCase();if(!q)return;const es=visibleEmployees().filter(e=>`${e.name} ${e.id} ${e.department}`.toLowerCase().includes(q));const vs=visibleViolations().filter(v=>`${v.id} ${v.typeName} ${store.employees.find(e=>e.id===v.employeeId)?.name}`.toLowerCase().includes(q)).slice(0,8);openModal('Search Results',`<p class="muted" style="font-size:14px;margin-bottom:20px">Results for “${esc(values.query.trim())}”</p>${es.length?`<h3>Employees</h3>${es.map(e=>`<div class="watchlist-row">${person(e)}<span class="muted" style="font-size:13px">${esc(e.department)}</span></div>`).join('')}`:''}${vs.length?`<h3 style="margin-top:25px">Violation records</h3>${vs.map(v=>`<button class="button ghost full" data-action="case-details" data-id="${esc(v.id)}" style="justify-content:space-between;text-align:left;white-space:normal">${esc(v.typeName)}<span class="muted">${esc(v.id)}</span>${icon('chevron-right',14)}</button>`).join('')}`:''}${!es.length&&!vs.length?empty('No matching records','Try an employee name, ID, or violation type.'):''}`,`<button class="button secondary" data-action="close-modal">Close</button>`);break;}
-case 'employee-filters':filters.employees={...filters.employees,...values};employeePage=1;render();break;
-case 'violation-filters':if(values.from&&values.to&&values.from>values.to){formError(form,'The end date must be on or after the start date.');return;}filters.violations={...values,repeat:values.repeat==='on'};violationPage=1;render();break;
-case 'type-filters':filters.types=values;render();break;
-case 'tracking-filters':handleTrackingSubmit(values,ctx());break;
-case 'report-filters':filters.reports={...filters.reports,days:Number(values.days)};render();break;
-case 'employee-form': {
-  if(!form.dataset.id&&values.department==='__other_department__'){values.department=(values.newDepartment||'').trim();if(!values.department){formError(form,'Enter the new department name or choose No department assigned.');return;}}
-  if(!canManage())return;
-  const id=form.dataset.id;
-  if(id){
-    if(!editingEmployee||editingEmployee.apiId!==id){formError(form,'Reload this employee before saving.');return;}
-    const payload=employeeUpdatePayload(values,editingEmployee);
-    if(!Object.keys(payload).length){toast('No employee details have changed.','info');return;}
-    await mutate({message:'Employee updated successfully.',execute:async()=>{await patchEmployee(id,payload,store.settings.name);invalidateEmployeeProfile();},reconcile:async()=>employeeMatchesUpdate((await fetchEmployeeProfile(id)).employee,payload)},form);
-  }else await submitApiEmployeeForm(form,values,{dialog,actor:store.settings.name,refresh:refreshApiEmployees,formError,closeModal,render,toast,resetFilters:()=>{invalidateHistoryCalendar();filters.employees={};employeePage=1;store.employees=employeeDirectory.items;void Promise.all([loadRecords(true),loadRecent(true),loadTimeline(true),loadRemovals(true)]);}});
-  break;
+      case "watchlist":
+        filters.employees = { strikes: "watchlist" };
+        employeePage = 1;
+        navigate("employees");
+        break;
+      case "dashboard-trend":
+        filters.dashboard = {
+          ...filters.dashboard,
+          period: el.dataset.period === "month" ? "month" : "week",
+        };
+        render();
+        break;
+      case "dashboard-card": {
+        const target = el.dataset.target;
+        if (target === "watchlist") {
+          filters.employees = { strikes: "watchlist" };
+          employeePage = 1;
+          navigate("employees");
+        } else if (target === "offenses") {
+          filters.reports = {};
+          navigate("reports");
+        } else if (target === "employees") {
+          filters.employees = {};
+          employeePage = 1;
+          navigate("employees");
+        } else {
+          filters.violations = {};
+          violationPage = 1;
+          navigate("violations");
+        }
+        break;
+      }
+      case "export-employees":
+        downloadCSV("NorthPoint-Employees", [
+          [
+            "Employee ID",
+            "Name",
+            "Department",
+            "Position",
+            "Employment Status",
+            "Active Violations",
+            "Total Offenses",
+          ],
+          ...visibleEmployees().map((e) => {
+            const s = employeeSummary(e.id);
+            return [
+              e.id,
+              e.name,
+              e.department,
+              e.position,
+              e.status,
+              s.activeCount,
+              s.totalOffenses,
+            ];
+          }),
+        ]);
+        break;
+      case "export-violations":
+        downloadCSV("NorthPoint-Violations", [
+          [
+            "Case number",
+            "Employee ID",
+            "Employee",
+            "Violation",
+            "Incident date",
+            "Offense",
+            "Penalty",
+            "Recorded by",
+            "Status",
+          ],
+          ...visibleViolations().map((v) => [
+            v.id,
+            v.employeeId,
+            store.employees.find((e) => e.id === v.employeeId)?.name,
+            v.typeName,
+            v.date,
+            v.offenseNumber,
+            v.penalty,
+            displayActor(v.recordedBy),
+            v.status,
+          ]),
+        ]);
+        break;
+    }
+  } catch (error) {
+    toast(
+      error.message || "Unable to complete that action. Please try again.",
+      "alert",
+    );
+  }
+});
+
+document.addEventListener("submit", async (event) => {
+  const form = event.target;
+  if (!(form instanceof HTMLFormElement)) return;
+  event.preventDefault();
+  if (!allowsForm(form, page)) return;
+  try {
+    const values = Object.fromEntries(new FormData(form));
+    if (form.id.startsWith("photo-")) {
+      await handlePhotoSubmit(form, values, ctx());
+      return;
+    }
+    switch (form.id) {
+      case "global-search": {
+        if (
+          employeeDirectory.status !== "ready" ||
+          resources.records.status !== "ready"
+        ) {
+          toast(
+            "Live data is still loading or unavailable. Refresh before searching.",
+            "alert",
+          );
+          return;
+        }
+        const q = (values.query || "").trim().toLowerCase();
+        if (!q) return;
+        const es = visibleEmployees().filter((e) =>
+          `${e.name} ${e.id} ${e.department}`.toLowerCase().includes(q),
+        );
+        const vs = visibleViolations()
+          .filter((v) =>
+            `${v.id} ${v.typeName} ${store.employees.find((e) => e.id === v.employeeId)?.name}`
+              .toLowerCase()
+              .includes(q),
+          )
+          .slice(0, 8);
+        openModal(
+          "Search Results",
+          `<p class="muted" style="font-size:14px;margin-bottom:20px">Results for “${esc(values.query.trim())}”</p>${es.length ? `<h3>Employees</h3>${es.map((e) => `<div class="watchlist-row">${person(e)}<span class="muted" style="font-size:13px">${esc(e.department)}</span></div>`).join("")}` : ""}${vs.length ? `<h3 style="margin-top:25px">Violation records</h3>${vs.map((v) => `<button class="button ghost full" data-action="case-details" data-id="${esc(v.id)}" style="justify-content:space-between;text-align:left;white-space:normal">${esc(v.typeName)}<span class="muted">${esc(v.id)}</span>${icon("chevron-right", 14)}</button>`).join("")}` : ""}${!es.length && !vs.length ? empty("No matching records", "Try an employee name, ID, or violation type.") : ""}`,
+          `<button class="button secondary" data-action="close-modal">Close</button>`,
+        );
+        break;
+      }
+      case "employee-filters":
+        filters.employees = { ...filters.employees, ...values };
+        employeePage = 1;
+        render();
+        break;
+      case "violation-filters":
+        if (values.from && values.to && values.from > values.to) {
+          formError(form, "The end date must be on or after the start date.");
+          return;
+        }
+        filters.violations = { ...values, repeat: values.repeat === "on" };
+        violationPage = 1;
+        render();
+        break;
+      case "type-filters":
+        filters.types = values;
+        render();
+        break;
+      case "tracking-filters":
+        handleTrackingSubmit(values, ctx());
+        break;
+      case "report-filters":
+        filters.reports = { ...filters.reports, days: Number(values.days) };
+        render();
+        break;
+      case "employee-form": {
+        if (!form.dataset.id && values.department === "__other_department__") {
+          values.department = (values.newDepartment || "").trim();
+          if (!values.department) {
+            formError(
+              form,
+              "Enter the new department name or choose No department assigned.",
+            );
+            return;
+          }
+        }
+        if (!canManage()) return;
+        const id = form.dataset.id;
+        if (id) {
+          if (!editingEmployee || editingEmployee.apiId !== id) {
+            formError(form, "Reload this employee before saving.");
+            return;
+          }
+          const payload = employeeUpdatePayload(values, editingEmployee);
+          if (!Object.keys(payload).length) {
+            toast("No employee details have changed.", "info");
+            return;
+          }
+          await mutate(
+            {
+              message: "Employee updated successfully.",
+              execute: async () => {
+                await patchEmployee(id, payload, store.settings.name);
+                invalidateEmployeeProfile();
+              },
+              reconcile: async () =>
+                employeeMatchesUpdate(
+                  (await fetchEmployeeProfile(id)).employee,
+                  payload,
+                ),
+            },
+            form,
+          );
+        } else
+          await submitApiEmployeeForm(form, values, {
+            dialog,
+            actor: store.settings.name,
+            refresh: refreshApiEmployees,
+            formError,
+            closeModal,
+            render,
+            toast,
+            resetFilters: () => {
+              invalidateHistoryCalendar();
+              filters.employees = {};
+              employeePage = 1;
+              store.employees = employeeDirectory.items;
+              void Promise.all([
+                loadRecords(true),
+                loadRecent(true),
+                loadTimeline(true),
+                loadRemovals(true),
+              ]);
+            },
+          });
+        break;
+      }
+      case "employee-state-form": {
+        if (!canManage()) return;
+        const id = form.dataset.id,
+          mode = form.dataset.mode;
+        if (!editingEmployee || editingEmployee.apiId !== id) return;
+        if (
+          mode === "delete" &&
+          (values.code !== editingEmployee.id || !values.confirmed)
+        ) {
+          formError(
+            form,
+            "Type the employee code exactly and confirm permanent deletion.",
+          );
+          return;
+        }
+        await mutate(
+          {
+            message:
+              mode === "delete"
+                ? "Employee permanently deleted."
+                : mode === "deactivate"
+                  ? "Employee deactivated."
+                  : "Employee reactivated.",
+            execute: async () => {
+              await changeEmployeeState(id, mode, store.settings.name);
+              invalidateEmployeeProfile();
+              if (mode === "delete") {
+                filters.employees = {};
+                employeePage = 1;
+                navigate("employees");
+              }
+            },
+            reconcile: async () => {
+              try {
+                const result = await fetchEmployeeProfile(id);
+                return mode === "delete"
+                  ? false
+                  : result.employee.status ===
+                      (mode === "deactivate" ? "Inactive" : "Active");
+              } catch (error) {
+                if (mode === "delete" && error.status === 404) {
+                  invalidateEmployeeProfile();
+                  navigate("employees");
+                  return true;
+                }
+                throw error;
+              }
+            },
+          },
+          form,
+        );
+        break;
+      }
+      case "rule-editor-form":
+        await handleRulebookSubmit(form, ctx());
+        break;
+      case "type-form": {
+        if (!canManage()) return;
+        const id = form.dataset.id;
+        await mutate(
+          {
+            message: "Violation type saved successfully.",
+            execute: () => saveType(id, values, store.settings.name),
+            reconcile: async () => {
+              await loadTypes(true);
+              if (resources.types.status !== "ready")
+                throw Error(resources.types.error);
+              const target = resources.types.items.find((type) =>
+                id ? type.id === id : type.name === values.name.trim(),
+              );
+              return target &&
+                target.name === values.name.trim() &&
+                (target.description || "") === values.description.trim()
+                ? true
+                : null;
+            },
+          },
+          form,
+        );
+        break;
+      }
+      case "record-form": {
+        if (!canRecord()) return;
+        const employee = visibleEmployees().find(
+          (employee) =>
+            employee.id === values.employeeId && employee.status === "Active",
+        );
+        const type = resources.activeTypes.items.find(
+          (type) => type.id === values.typeId && type.active,
+        );
+        const issuers = issuerNames();
+        if (!employee) {
+          formError(form, "Choose an employee from the suggestions.");
+          return;
+        }
+        if (!type) {
+          formError(form, "Choose an active violation type.");
+          return;
+        }
+        if (!issuers.includes(values.recordedBy)) {
+          formError(form, "Choose who issued this violation.");
+          return;
+        }
+        if (
+          !/^\d{4}-\d{2}-\d{2}$/.test(values.date) ||
+          Number.isNaN(Date.parse(values.date)) ||
+          values.date > localDate()
+        ) {
+          formError(form, "Choose a valid issue date on or before today.");
+          return;
+        }
+        const preview = await penaltyPreview(
+          employee.apiId,
+          values.subsectionId,
+        );
+        if (String(preview.rule.violation_type_id) !== type.id)
+          throw Error("Choose a specific violation from this category.");
+        draft = {
+          employeeId: employee.id,
+          typeId: type.id,
+          subsectionId: values.subsectionId,
+          date: values.date,
+          description: (values.description || "").trim(),
+          recordedBy: values.recordedBy,
+          offenseNumber: preview.offenseNumber,
+          penalty: preview.penalty,
+          ruleName: preview.rule.name,
+        };
+        recordReview();
+        break;
+      }
+      case "remove-form": {
+        if (!canManage() || !values.confirmed) return;
+        const id = form.dataset.id,
+          reason = String(values.reason || "").trim() || "No reason provided.";
+        await mutate(
+          {
+            message: "Violation removed. The removal is saved in History.",
+            execute: () => deleteViolation(id, reason, store.settings.name),
+            reconcile: async () => {
+              await loadRemovals(true);
+              if (resources.removals.status !== "ready")
+                throw Error(resources.removals.error);
+              return resources.removals.items.some(
+                (removal) =>
+                  removal.violationId === id && removal.reason === reason,
+              )
+                ? true
+                : null;
+            },
+          },
+          form,
+        );
+        break;
+      }
+      case "secondary-filter":
+        await handleSecondary(
+          "sec-filter-apply",
+          { dataset: { page: form.dataset.filterPage } },
+          ctx(),
+        );
+        break;
+      case "restore-company-rules-form": {
+        if (!canManage() || !values.confirmed) return;
+        await mutate(
+          {
+            message:
+              "Company violation categories restored. Existing and custom entries were kept.",
+            execute: async () => {
+              await restoreCompanyRules(store.settings.name, (message) => {
+                const node = document.querySelector("#restore-progress");
+                if (node) node.textContent = message;
+              });
+              invalidateRulebookCache();
+            },
+            reconcile: () => companyRulesPresent(),
+          },
+          form,
+        );
+        break;
+      }
+      case "secondary-settings-form":
+        await handleSecondary("sec-settings-save", { dataset: {} }, ctx());
+        break;
+      default:
+        if (form.id.startsWith("sec-")) {
+          const button =
+            form.querySelector("[data-action]") ||
+            dialog.querySelector('.modal-footer [data-action^="sec-"]');
+          if (button)
+            await handleSecondary(button.dataset.action, button, ctx());
+        }
+    }
+  } catch (error) {
+    formError(
+      form,
+      error.message || "Unable to save changes. Please review the fields.",
+    );
+    toast(error.message || "Unable to save changes.", "alert");
+  }
+});
+document.addEventListener("change", (event) => {
+  if (event.target.id === "record-type") {
+    void fillSubsections(event.target.form);
+    return;
+  }
+  if (
+    event.target.type === "radio" &&
+    event.target.closest?.(".record-toolbar")
+  ) {
+    const form = event.target.closest("form"),
+      name = event.target.name;
+    form.requestSubmit();
+    document
+      .querySelector("#" + form.id + ' input[name="' + name + '"]:checked')
+      ?.closest(".record-filter")
+      ?.querySelector("summary")
+      ?.focus();
+    return;
+  }
+  if (page === "tracking" && handleTrackingChange(event)) return;
+  const el = event.target;
+  if (
+    el.id === "emp-department" &&
+    document.querySelector("#employee-new-department-field")
+  ) {
+    const other = el.value === "__other_department__";
+    const field = document.querySelector("#employee-new-department-field");
+    const input = document.querySelector("#emp-new-department");
+    field.hidden = !other;
+    input.disabled = !other;
+    input.required = other;
+    if (other) input.focus();
+  }
+  if (el.id === "employee-order") {
+    filters.employees = { ...filters.employees, order: el.value };
+    employeePage = 1;
+    render();
+    document.querySelector("#employee-order")?.focus({ preventScroll: true });
+  }
+  if (el.id === "report-period") {
+    filters.reports = { ...filters.reports, days: Number(el.value) };
+    render();
+    document.querySelector("#report-period")?.focus({ preventScroll: true });
+  }
+  if (el.id === "confirm-record")
+    dialog.querySelector('[data-action="confirm-record"]').disabled =
+      !el.checked;
+});
+document.addEventListener("toggle", handleRecordFilterToggle, true);
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && document.querySelector(".account-menu[open]")) {
+    const menu = document.querySelector(".account-menu[open]");
+    menu.open = false;
+    menu.querySelector("summary").focus();
+    event.preventDefault();
+    return;
+  }
+  if (
+    event.key === "Escape" &&
+    event.target.closest?.(".record-filter[open]")
+  ) {
+    const details = event.target.closest(".record-filter");
+    details.open = false;
+    details.querySelector("summary").focus();
+    event.preventDefault();
+    return;
+  }
+  if (page === "history" && handleCalendarKeydown(event, ctx())) return;
+  const reportTab = event.target.closest?.(
+    '[data-action="sec-report-tab"],[data-action="sec-history-tab"],[data-action="profile-record-tab"]',
+  );
+  if (
+    reportTab &&
+    ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)
+  ) {
+    event.preventDefault();
+    const action = reportTab.dataset.action;
+    const tabs = [
+      ...document.querySelectorAll('[data-action="' + action + '"]'),
+    ];
+    const index = tabs.indexOf(reportTab);
+    const next =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? tabs.length - 1
+          : (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) %
+            tabs.length;
+    tabs[next].click();
+    return;
+  }
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+    event.preventDefault();
+    document.querySelector("#global-query")?.focus();
+  }
+  if (event.key === "Escape") {
+    document.body.classList.remove("nav-open");
+    syncNavigation();
+  }
+});
+dialog.addEventListener("close", clearPhotoDraft);
+dialog.addEventListener("cancel", (event) => {
+  if (
+    photoUpload.busy ||
+    employeeCreateInFlight() ||
+    mutationInFlight() ||
+    checkingDraft
+  )
+    event.preventDefault();
+});
+dialog.addEventListener("click", (event) => {
+  if (event.target === dialog) {
+    const r = dialog.getBoundingClientRect();
+    if (
+      event.clientX < r.left ||
+      event.clientX > r.right ||
+      event.clientY < r.top ||
+      event.clientY > r.bottom
+    )
+      closeModal();
+  }
+});
+function syncNavigation() {
+  const sidebar = document.querySelector(".sidebar");
+  const open = document.body.classList.contains("nav-open");
+  if (sidebar) {
+    sidebar.inert = matchMedia("(max-width:900px)").matches && !open;
+    sidebar.setAttribute("aria-hidden", String(sidebar.inert));
+  }
+  const workspace = document.querySelector(".workspace");
+  if (workspace)
+    workspace.inert = matchMedia("(max-width:900px)").matches && open;
+  document
+    .querySelector(".mobile-toggle")
+    ?.setAttribute("aria-expanded", String(open));
 }
-case 'employee-state-form':{
-  if(!canManage())return;const id=form.dataset.id,mode=form.dataset.mode;
-  if(!editingEmployee||editingEmployee.apiId!==id)return;
-  if(mode==='delete'&&(values.code!==editingEmployee.id||!values.confirmed)){formError(form,'Type the employee code exactly and confirm permanent deletion.');return;}
-  await mutate({message:mode==='delete'?'Employee permanently deleted.':mode==='deactivate'?'Employee deactivated.':'Employee reactivated.',execute:async()=>{await changeEmployeeState(id,mode,store.settings.name);invalidateEmployeeProfile();if(mode==='delete'){filters.employees={};employeePage=1;navigate('employees');}},reconcile:async()=>{try{const result=await fetchEmployeeProfile(id);return mode==='delete'?false:result.employee.status===(mode==='deactivate'?'Inactive':'Active');}catch(error){if(mode==='delete'&&error.status===404){invalidateEmployeeProfile();navigate('employees');return true;}throw error;}}},form);break;
+window.addEventListener("resize", () => {
+  syncNavigation();
+  syncPhoneFilters();
+});
+function refreshWeeklyDashboard() {
+  if (
+    page === "dashboard" &&
+    !dialog.open &&
+    (startOfWeek(localDate()) !== displayedWeek ||
+      localDate().slice(0, 7) !== displayedMonth ||
+      businessDate() !== displayedDay)
+  )
+    void (invalidateHistoryCalendar(), refreshWorkspace());
 }
-case 'rule-editor-form':await handleRulebookSubmit(form,ctx());break;
-case 'type-form': {
-  if(!canManage())return;
-  const id=form.dataset.id;
-  await mutate({message:'Violation type saved successfully.',execute:()=>saveType(id,values,store.settings.name),reconcile:async()=>{await loadTypes(true);if(resources.types.status!=='ready')throw Error(resources.types.error);const target=resources.types.items.find(type=>id?type.id===id:type.name===values.name.trim());return target&&target.name===values.name.trim()&&(target.description||'')===values.description.trim()?true:null;}},form);
-  break;
+window.addEventListener("focus", refreshWeeklyDashboard);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) refreshWeeklyDashboard();
+});
+setInterval(refreshWeeklyDashboard, 60000);
+window.addEventListener("hashchange", route);
+document.querySelector(".skip-link").addEventListener("click", (event) => {
+  event.preventDefault();
+  document.querySelector("#main")?.focus();
+});
+function issuerNames() {
+  return unique(
+    [
+      store.settings.name,
+      ...store.violations.map((record) => record.recordedBy),
+      ...store.activities.map((event) => event.actor),
+    ].map(displayActor),
+  );
 }
-case 'record-form': {
-  if (!canRecord()) return;
-  const employee = visibleEmployees().find(employee => employee.id === values.employeeId && employee.status === 'Active');
-  const type = resources.activeTypes.items.find(type => type.id === values.typeId && type.active);
-  const issuers = issuerNames();
-  if (!employee) { formError(form, 'Choose an employee from the suggestions.'); return; }
-  if (!type) { formError(form, 'Choose an active violation type.'); return; }
-  if (!issuers.includes(values.recordedBy)) { formError(form, 'Choose who issued this violation.'); return; }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(values.date) || Number.isNaN(Date.parse(values.date)) || values.date > localDate()) { formError(form, 'Choose a valid issue date on or before today.'); return; }
-  const preview=await penaltyPreview(employee.apiId,values.subsectionId);
-  if(String(preview.rule.violation_type_id)!==type.id)throw Error('Choose a specific violation from this category.');
-  draft = {employeeId:employee.id,typeId:type.id,subsectionId:values.subsectionId,date:values.date,description:(values.description||'').trim(),recordedBy:values.recordedBy,offenseNumber:preview.offenseNumber,penalty:preview.penalty,ruleName:preview.rule.name};
-  recordReview();
-  break;
+function showPending() {
+  openModal(
+    "Check Save Status",
+    `<p class="form-error show" role="alert">${esc(pendingMutation()?.error || "The save has not been confirmed.")}</p><div class="callout warning">${icon("info")}<p>A previous change has not been confirmed. Check the backend before making another change. This check will not send another save request.</p></div>`,
+    `<button class="button secondary" data-action="close-modal">Close</button><button class="button primary" data-action="check-mutation">Check save status</button>`,
+  );
 }
-case 'remove-form':{if(!canManage()||!values.confirmed)return;const id=form.dataset.id,reason=String(values.reason||'').trim()||'No reason provided.';await mutate({message:'Violation removed. The removal is saved in History.',execute:()=>deleteViolation(id,reason,store.settings.name),reconcile:async()=>{await loadRemovals(true);if(resources.removals.status!=='ready')throw Error(resources.removals.error);return resources.removals.items.some(removal=>removal.violationId===id&&removal.reason===reason)?true:null;}},form);break;}
-case 'secondary-filter':await handleSecondary('sec-filter-apply',{dataset:{page:form.dataset.filterPage}},ctx());break;
-case 'restore-company-rules-form':{if(!canManage()||!values.confirmed)return;await mutate({message:'Company violation categories restored. Existing and custom entries were kept.',execute:async()=>{await restoreCompanyRules(store.settings.name,message=>{const node=document.querySelector('#restore-progress');if(node)node.textContent=message;});invalidateRulebookCache();},reconcile:()=>companyRulesPresent()},form);break;}
-case 'secondary-settings-form':await handleSecondary('sec-settings-save',{dataset:{}},ctx());break;
-default:if(form.id.startsWith('sec-')){const button=form.querySelector('[data-action]')||dialog.querySelector('.modal-footer [data-action^="sec-"]');if(button)await handleSecondary(button.dataset.action,button,ctx());}
-}}catch(error){formError(form,error.message||'Unable to save changes. Please review the fields.');toast(error.message||'Unable to save changes.','alert');}});
-document.addEventListener('change',event=>{if(event.target.id==='record-type'){void fillSubsections(event.target.form);return;}if(event.target.type==='radio'&&event.target.closest?.('.record-toolbar')){const form=event.target.closest('form'),name=event.target.name;form.requestSubmit();document.querySelector('#'+form.id+' input[name="'+name+'"]:checked')?.closest('.record-filter')?.querySelector('summary')?.focus();return;}if(page==='tracking'&&handleTrackingChange(event))return;const el=event.target;if(el.id==='emp-department'&&document.querySelector('#employee-new-department-field')){const other=el.value==='__other_department__';const field=document.querySelector('#employee-new-department-field');const input=document.querySelector('#emp-new-department');field.hidden=!other;input.disabled=!other;input.required=other;if(other)input.focus();}if(el.id==='employee-order'){filters.employees={...filters.employees,order:el.value};employeePage=1;render();document.querySelector('#employee-order')?.focus({preventScroll:true});}if(el.id==='report-period'){filters.reports={...filters.reports,days:Number(el.value)};render();document.querySelector('#report-period')?.focus({preventScroll:true});}if(el.id==='confirm-record')dialog.querySelector('[data-action="confirm-record"]').disabled=!el.checked;});
-document.addEventListener('toggle',handleRecordFilterToggle,true);
-document.addEventListener('keydown',event=>{if(event.key==='Escape'&&document.querySelector('.account-menu[open]')){const menu=document.querySelector('.account-menu[open]');menu.open=false;menu.querySelector('summary').focus();event.preventDefault();return;}if(event.key==='Escape'&&event.target.closest?.('.record-filter[open]')){const details=event.target.closest('.record-filter');details.open=false;details.querySelector('summary').focus();event.preventDefault();return;}if(page==='history'&&handleCalendarKeydown(event,ctx()))return;const reportTab=event.target.closest?.('[data-action="sec-report-tab"],[data-action="sec-history-tab"],[data-action="profile-record-tab"]');if(reportTab&&['ArrowLeft','ArrowRight','Home','End'].includes(event.key)){event.preventDefault();const action=reportTab.dataset.action;const tabs=[...document.querySelectorAll('[data-action="'+action+'"]')];const index=tabs.indexOf(reportTab);const next=event.key==='Home'?0:event.key==='End'?tabs.length-1:(index+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;tabs[next].click();return;}if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='k'){event.preventDefault();document.querySelector('#global-query')?.focus();}if(event.key==='Escape'){document.body.classList.remove('nav-open');syncNavigation();}});
-dialog.addEventListener('close',clearPhotoDraft);
-dialog.addEventListener('cancel',event=>{if(photoUpload.busy||employeeCreateInFlight()||mutationInFlight()||checkingDraft)event.preventDefault();});
-dialog.addEventListener('click',event=>{if(event.target===dialog){const r=dialog.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)closeModal();}});
-function syncNavigation(){const sidebar=document.querySelector('.sidebar');const open=document.body.classList.contains('nav-open');if(sidebar){sidebar.inert=matchMedia('(max-width:900px)').matches&&!open;sidebar.setAttribute('aria-hidden',String(sidebar.inert));}const workspace=document.querySelector('.workspace');if(workspace)workspace.inert=matchMedia('(max-width:900px)').matches&&open;document.querySelector('.mobile-toggle')?.setAttribute('aria-expanded',String(open));}
-window.addEventListener('resize',()=>{syncNavigation();syncPhoneFilters();});
-function refreshWeeklyDashboard(){if(page==='dashboard'&&!dialog.open&&(startOfWeek(localDate())!==displayedWeek||localDate().slice(0,7)!==displayedMonth||businessDate()!==displayedDay))void (invalidateHistoryCalendar(),refreshWorkspace());}
-window.addEventListener('focus',refreshWeeklyDashboard);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshWeeklyDashboard();});
-setInterval(refreshWeeklyDashboard,60000);
-window.addEventListener('hashchange',route);
-document.querySelector('.skip-link').addEventListener('click',event=>{event.preventDefault();document.querySelector('#main')?.focus();});
-function issuerNames(){return unique([store.settings.name,...store.violations.map(record=>record.recordedBy),...store.activities.map(event=>event.actor)].map(displayActor));}
-function showPending(){openModal('Check Save Status',`<p class="form-error show" role="alert">${esc(pendingMutation()?.error||'The save has not been confirmed.')}</p><div class="callout warning">${icon('info')}<p>A previous change has not been confirmed. Check the backend before making another change. This check will not send another save request.</p></div>`,`<button class="button secondary" data-action="close-modal">Close</button><button class="button primary" data-action="check-mutation">Check save status</button>`);}
-function mutationContext(form){return {dialog,actor:store.settings.name,error:message=>{if(pendingMutation())pendingMutation().error=message;formError(form||dialog,message);},showPending,refresh:async()=>{await refreshWorkspace();await loadActiveTypes(true);await ensureCurrentProfile(true);return employeeDirectory.status!=='ready'||['records','types','timeline','removals'].some(name=>resources[name].status==='error')||page==='profile'&&employeeProfile.status!=='ready'?'Some lists could not refresh. Use Try again to reload them.':'';},close:closeModal,render,toast};}
-async function mutate(task,form){if(employeeCreateInFlight())return;if(pendingEmployeeCreation()){employeeForm();return;}await runMutation(task,mutationContext(form));}
-let updateQueued=false;
-watchBackend(()=>{if(updateQueued)return;updateQueued=true;queueMicrotask(()=>{updateQueued=false;ensurePageData(page);void ensureCurrentProfile();render();});});
-watchPhotos(()=>{if(page==='photos')render();});
+function mutationContext(form) {
+  return {
+    dialog,
+    actor: store.settings.name,
+    error: (message) => {
+      if (pendingMutation()) pendingMutation().error = message;
+      formError(form || dialog, message);
+    },
+    showPending,
+    refresh: async () => {
+      await refreshWorkspace();
+      await loadActiveTypes(true);
+      await ensureCurrentProfile(true);
+      return employeeDirectory.status !== "ready" ||
+        ["records", "types", "timeline", "removals"].some(
+          (name) => resources[name].status === "error",
+        ) ||
+        (page === "profile" && employeeProfile.status !== "ready")
+        ? "Some lists could not refresh. Use Try again to reload them."
+        : "";
+    },
+    close: closeModal,
+    render,
+    toast,
+  };
+}
+async function mutate(task, form) {
+  if (employeeCreateInFlight()) return;
+  if (pendingEmployeeCreation()) {
+    employeeForm();
+    return;
+  }
+  await runMutation(task, mutationContext(form));
+}
+let updateQueued = false;
+watchBackend(() => {
+  if (updateQueued) return;
+  updateQueued = true;
+  queueMicrotask(() => {
+    updateQueued = false;
+    ensurePageData(page);
+    void ensureCurrentProfile();
+    render();
+  });
+});
+watchPhotos(() => {
+  if (page === "photos") render();
+});
 route();
 
 // Revalidate with Nginx if Back restores a page from the browser memory cache.
-window.addEventListener('pageshow',event=>{if(event.persisted)location.reload();});
+window.addEventListener("pageshow", (event) => {
+  if (event.persisted) location.reload();
+});
