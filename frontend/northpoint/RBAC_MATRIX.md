@@ -27,6 +27,7 @@ Each role has specific permissions that determine which features they can access
 | Submit a proof photo | No | Yes | No | No |
 | View proof photos | Yes | Yes | No | No |
 | View location data and paths | Yes | No | No | No |
+| Issue mobile tracker accounts | Yes | No | No | No |
 
 ## Role Permissions
 
@@ -42,6 +43,7 @@ Each role has specific permissions that determine which features they can access
 - View activity and analytics
 - View proof photos
 - View location data and paths
+- Issue mobile tracker accounts to Supervisor employees
 
 ### Supervisor
 - View the dashboard
@@ -50,6 +52,7 @@ Each role has specific permissions that determine which features they can access
 - View personal employee violations
 - Submit proof photos
 - View proof photos
+- Use a mobile tracker account issued by HR
 
 ### Chief Manager
 - View the dashboard
@@ -69,5 +72,7 @@ Each role has specific permissions that determine which features they can access
 - Role identification must come from the authenticated backend session.
 - The backend must enforce authorization for all protected API operations.
 - Concerned Employees must only be able to retrieve their own violation records.
+- Only HR may issue mobile tracker accounts, and only employees whose employee type is
+  Supervisor are eligible for one.
 - Shared functionality should be reused across role-specific interfaces.
 - All unspecified permissions are denied by default
