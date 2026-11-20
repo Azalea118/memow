@@ -3,6 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 const project = fileURLToPath(new URL('./', import.meta.url));
+if (fs.existsSync(path.join(project, 'scripts/shared/start.js'))) {
+  throw new Error('Northpoint uses static role pages. Open the site directly instead of running this legacy builder.');
+}
 const source = path.join(project, 'src');
 const read = name => fs.readFileSync(path.join(source, name), 'utf8');
 const withoutExports = content => content.replace(/^import .*?;\s*$/gm, '').replace(/\bexport\s+(?=(?:async\s+)?(?:function|const|let)\b)/g, '');
