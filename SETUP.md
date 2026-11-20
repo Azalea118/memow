@@ -32,8 +32,14 @@ All long-lived account management goes through `auth.manage` inside the `auth` c
 ```bash
 COMPOSE="docker compose -f docker-compose.yaml -f docker-compose.local.yaml"
 
-# create/update a browser (HR) user; prompts for first name, last name, password
+# create/update a browser user; prompts for first name, last name, role, password
 $COMPOSE exec auth uv run --no-sync python -m auth.manage create-user james
+
+# create/update a user without the role prompt (roles: c_manager, employee, hr, supervisor)
+$COMPOSE exec auth uv run --no-sync python -m auth.manage create-user james --role hr
+
+# change an existing user's role
+$COMPOSE exec auth uv run --no-sync python -m auth.manage set-role james --role supervisor
 
 # change only the displayed name, keeping password and active sessions
 $COMPOSE exec auth uv run --no-sync python -m auth.manage set-name james
@@ -50,6 +56,10 @@ $COMPOSE exec auth uv run --no-sync python -m auth.manage list
 ```
 
 Passwords for browser users are at least 10 characters; tracker passwords are at least 8.
+
+Each browser user has one role. After sign-in nginx sends the user to that role's page:
+`c_manager/`, `employee/`, `hr/`, or `supervisor/`. Users can open only their own role's
+folder; the auth service rejects cross-role folder requests with `403`.
 
 ## Phone sign-in and mobile access
 
