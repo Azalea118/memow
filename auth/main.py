@@ -15,6 +15,9 @@ PREFIX = "/auth"
 COOKIE = "auth_session"
 COOKIE_SECURE = os.getenv("AUTH_COOKIE_SECURE", "1") == "1"
 SESSION_TTL = 7 * 24 * 3600
+ROLES = ("c_manager", "employee", "hr", "supervisor")
+DEFAULT_ROLE = "employee"
+ROLE_HOME = {role: f"/{role}/index.html" for role in ROLES}
 # what a device token may do: POST anywhere under /app3/, nothing else
 DEVICE_ALLOWED_PREFIX = "/app3/"
 DEVICE_ALLOWED_METHOD = "POST"
@@ -27,7 +30,8 @@ LOGIN_HTML_PATH = Path(os.getenv(
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users(
   id INTEGER PRIMARY KEY, username TEXT UNIQUE NOT NULL,
-  password_hash TEXT NOT NULL, created_at INTEGER NOT NULL);
+  password_hash TEXT NOT NULL, created_at INTEGER NOT NULL,
+  role TEXT NOT NULL DEFAULT 'employee');
 CREATE TABLE IF NOT EXISTS sessions(
   token_hash TEXT PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -68,6 +72,12 @@ with closing(db()) as _c, _c:
     for col in ("first_name", "last_name"):
         if col not in ucols:
             _c.execute(f"ALTER TABLE users ADD COLUMN {col} TEXT")
+    if "role" not in ucols:
+        _c.execute(
+            "ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'employee'")
+    _c.execute(
+        "UPDATE users SET role=? WHERE role IS NULL OR role NOT IN (?,?,?,?)",
+        (DEFAULT_ROLE, *ROLES))
 
 
 # ---------- hashing ----------
@@ -111,6 +121,20 @@ def safe_next(n: str) -> str:
         return n
     return "/"
 
+def normalize_role(role: str | None) -> str:
+    role = (role or "").strip().lower()
+    return role if role in ROLES else DEFAULT_ROLE
+
+def role_for_path(path: str) -> str | None:
+    """Return the role that owns a frontend folder, if the path is in one."""
+    for role in ROLES:
+        if path == f"/{role}" or path.startswith(f"/{role}/"):
+            return role
+    return None
+
+def role_home(role: str) -> str:
+    return ROLE_HOME[normalize_role(role)]
+
 def load_login_html() -> str:
     """Read login.html, cached but refreshed when the file changes."""
     m = LOGIN_HTML_PATH.stat().st_mtime          # raises if missing
@@ -148,18 +172,23 @@ def login_page(next: str = "/"):
 def login(username: str = Form(...), password: str = Form(...),
           next_url: str = Form("/", alias="next")):
     with closing(db()) as c, c:
-        row = c.execute("SELECT id, password_hash FROM users WHERE username=?",
+        row = c.execute("SELECT id, password_hash, role FROM users WHERE username=?",
                         (username.strip(),)).fetchone()
         ok = check_password(password, row["password_hash"] if row else DUMMY_HASH)
         if not (row and ok):
             return HTMLResponse(render_login(next_url, "Wrong username or password."),
                                 status_code=401)
+        role = normalize_role(row["role"])
         token = secrets.token_urlsafe(32)
         now = int(time.time())
         c.execute("DELETE FROM sessions WHERE expires_at < ?", (now,))
         c.execute("INSERT INTO sessions VALUES (?,?,?)",
                   (hash_token(token), row["id"], now + SESSION_TTL))
-    resp = RedirectResponse(safe_next(next_url), status_code=303)
+    target = safe_next(next_url)
+    wanted = role_for_path(target.split("?", 1)[0].split("#", 1)[0])
+    if target in ("/", "/index.html") or (wanted and wanted != role):
+        target = role_home(role)
+    resp = RedirectResponse(target, status_code=303)
     resp.set_cookie(COOKIE, token, max_age=SESSION_TTL, httponly=True,
                     secure=COOKIE_SECURE, samesite="lax", path="/")
     return resp
@@ -181,6 +210,7 @@ def verify(request: Request):
     """Called by nginx (auth_request) before every protected request."""
     method = request.headers.get("x-original-method", "").upper()
     path = request.headers.get("x-original-uri", "").split("?")[0]
+    normalized = request.headers.get("x-normalized-uri", path).split("?")[0]
     device_only = (
         method == DEVICE_ALLOWED_METHOD and path.startswith(DEVICE_ALLOWED_PREFIX)
     )
@@ -189,14 +219,19 @@ def verify(request: Request):
         token = request.cookies.get(COOKIE)
         if token and not device_only:
             row = c.execute(
-                "SELECT u.username, u.first_name, u.last_name "
+                "SELECT u.username, u.first_name, u.last_name, u.role "
                 "FROM sessions s JOIN users u ON u.id=s.user_id "
                 "WHERE s.token_hash=? AND s.expires_at>?",
                 (hash_token(token), now)).fetchone()
             if row:
+                role = normalize_role(row["role"])
+                wanted = role_for_path(normalized)
+                if wanted and wanted != role:
+                    return Response(status_code=403)
                 return Response(status_code=200, headers={
                     "X-User": header_safe(full_name(row)),
-                    "X-Username": row["username"]})
+                    "X-Username": row["username"],
+                    "X-Role": role})
 
         bearer = request.headers.get("authorization", "")
         if bearer.lower().startswith("bearer "):
@@ -260,15 +295,17 @@ def me(request: Request):
     if token:
         with closing(db()) as c:
             row = c.execute(
-                "SELECT u.id, u.username, u.first_name, u.last_name "
+                "SELECT u.id, u.username, u.first_name, u.last_name, u.role "
                 "FROM sessions s JOIN users u ON u.id=s.user_id "
                 "WHERE s.token_hash=? AND s.expires_at>?",
                 (hash_token(token), int(time.time()))).fetchone()
         if row:
+            role = normalize_role(row["role"])
             return JSONResponse(
                 {"id": row["id"], "username": row["username"],
                  "first_name": row["first_name"], "last_name": row["last_name"],
-                 "full_name": full_name(row)},
+                 "full_name": full_name(row), "role": role,
+                 "role_home": role_home(role)},
                 headers={"Cache-Control": "no-store"})
     return JSONResponse({"detail": "Not signed in"}, status_code=401)
 

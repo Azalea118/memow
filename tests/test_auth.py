@@ -109,3 +109,81 @@ def test_device_token_scoped_to_post_app3(auth_client):
         "x-original-uri": "/app1/employees",
     })
     assert r.status_code == 401
+
+
+# ---------- role-based frontend routing ----------
+
+def _role_user(role):
+    from auth.main import hash_password
+
+    username = f"role_{secrets.token_hex(4)}"
+    password = "testpass123"
+    with sqlite3.connect(os.environ["AUTH_DB_PATH"]) as c:
+        c.execute(
+            "INSERT INTO users(username, password_hash, created_at, role) VALUES(?,?,?,?)",
+            (username, hash_password(password), int(time.time()), role),
+        )
+    return username, password
+
+
+def test_login_redirects_to_role_home(auth_client):
+    username, password = _role_user("hr")
+    r = auth_client.post(
+        "/login",
+        data={"username": username, "password": password},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"] == "/hr/index.html"
+
+    me = auth_client.get("/me").json()
+    assert me["role"] == "hr"
+    assert me["role_home"] == "/hr/index.html"
+
+
+def test_login_keeps_explicit_next(auth_client):
+    username, password = _role_user("employee")
+    r = auth_client.post(
+        "/login",
+        data={"username": username, "password": password, "next": "/app2/photos"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"] == "/app2/photos"
+
+
+def test_verify_exposes_role_and_blocks_other_role_folders(auth_client):
+    username, password = _role_user("hr")
+    auth_client.post(
+        "/login", data={"username": username, "password": password},
+        follow_redirects=False,
+    )
+
+    def verify(path):
+        return auth_client.get("/verify", headers={
+            "x-original-method": "GET",
+            "x-original-uri": path,
+            "x-normalized-uri": path,
+        })
+
+    r = verify("/hr/index.html")
+    assert r.status_code == 200
+    assert r.headers["x-role"] == "hr"
+
+    for path in ("/employee/index.html", "/c_manager/index.html",
+                 "/supervisor/index.html"):
+        assert verify(path).status_code == 403
+
+    assert verify("/app1/employees").status_code == 200
+
+
+def test_login_ignores_next_for_another_role_folder(auth_client):
+    username, password = _role_user("employee")
+    r = auth_client.post(
+        "/login",
+        data={"username": username, "password": password,
+              "next": "/hr/index.html"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"] == "/employee/index.html"
