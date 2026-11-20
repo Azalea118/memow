@@ -4,7 +4,9 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, HTTPException, Path, Query, status
 from pydantic import BaseModel
 
-from app.deps import ActorDep, DbSession, PaginationDep
+from app.deps import (
+    ActorDep, DbSession, IdentityDep, IssuerDep, PaginationDep, check_self_or_staff,
+)
 from app.schemas.removal import ViolationRemovalCreate, ViolationRemovalRead
 from app.schemas.violation import (
     EmployeeOffenseSummaryRow, ViolationAssign, ViolationHistoryRow,
@@ -33,7 +35,7 @@ class ClearResult(BaseModel):
 )
 def assign(
     db: DbSession, employee_id: Annotated[int, Path(ge=1)],
-    payload: ViolationAssign, actor: ActorDep,
+    payload: ViolationAssign, actor: ActorDep, _: IssuerDep,
 ):
     return assign_violation(
         db, employee_id=employee_id, actor=actor, **payload.model_dump(exclude_unset=True),
@@ -76,6 +78,7 @@ def violation_history(
     db: DbSession,
     employee_id: Annotated[int, Path(ge=1)],
     page: PaginationDep,
+    identity: IdentityDep,
     status: Annotated[
         Literal["active", "removed"] | None,
         Query(description="Filter by status; omit for both"),
@@ -84,6 +87,7 @@ def violation_history(
     since: Annotated[datetime | None, Query(description="Inclusive, on issued_at (UTC)")] = None,
     until: Annotated[datetime | None, Query(description="Inclusive, on issued_at (UTC)")] = None,
 ):
+    check_self_or_staff(identity, employee_id)
     items = list_employee_violation_history(
         db, employee_id,
         status=status, subsection_id=subsection_id,
