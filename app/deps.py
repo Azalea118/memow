@@ -31,3 +31,54 @@ def get_actor(x_actor: Annotated[str | None, Header()] = None) -> str:
 
 ActorDep = Annotated[str, Depends(get_actor)]
 PaginationDep = Annotated[Pagination, Depends()]
+
+
+class Identity:
+    def __init__(self, role: str | None, employee_id: int | None) -> None:
+        self.role = (role or "").strip().lower()
+        self.employee_id = employee_id
+
+
+def get_identity(
+    x_role: Annotated[str | None, Header()] = None,
+    x_employee_id: Annotated[str | None, Header()] = None,
+) -> Identity:
+    employee_id = None
+    if x_employee_id and x_employee_id.strip().isdigit():
+        employee_id = int(x_employee_id.strip())
+    return Identity(x_role, employee_id)
+
+
+def require_hr(identity: Annotated[Identity, Depends(get_identity)]) -> Identity:
+    if identity.role and identity.role != "hr":
+        raise HTTPException(status_code=403, detail="Only HR can manage employees.")
+    return identity
+
+
+def require_issuer(identity: Annotated[Identity, Depends(get_identity)]) -> Identity:
+    if identity.role and identity.role not in ("hr", "supervisor"):
+        raise HTTPException(
+            status_code=403,
+            detail="Only HR or a Supervisor can issue violations.")
+    return identity
+
+
+def require_self_or_staff(employee_id: int,
+                         identity: Annotated[Identity, Depends(get_identity)]) -> Identity:
+    if identity.role == "employee" and identity.employee_id != employee_id:
+        raise HTTPException(
+            status_code=403,
+            detail="You can only view your own violation records.")
+    return identity
+
+
+IdentityDep = Annotated[Identity, Depends(get_identity)]
+HrDep = Annotated[Identity, Depends(require_hr)]
+IssuerDep = Annotated[Identity, Depends(require_issuer)]
+
+
+def check_self_or_staff(identity: Identity, employee_id: int) -> None:
+    if identity.role == "employee" and identity.employee_id != employee_id:
+        raise HTTPException(
+            status_code=403,
+            detail="You can only view your own violation records.")
