@@ -8,7 +8,8 @@ Internal HR and tracking stack. One Docker Compose setup serves the dashboard, v
 
 | Area | Path | Purpose |
 |---|---|---|
-| Northpoint UI | `/` | HR dashboard, employees, rulebook, photos, reports, map |
+| Northpoint UI | `/northpoint/` | HR dashboard, employees, rulebook, photos, reports, map |
+| Role dashboards | `/c_manager/`, `/employee/`, `/hr/`, `/supervisor/` | Role-specific landing pages |
 | Violation tracker | `/app1/` | Rulebook, violations, audit history, analytics |
 | Photo library | `/app2/` | Employee photo uploads with GPS context |
 | GPS tracking | `/app3/` | Phone GPS batches, live state, daily routes |
