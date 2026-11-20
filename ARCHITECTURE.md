@@ -29,7 +29,7 @@ The backends all listen on container port `8000` and are not published to the ho
 | Public location | Upstream | Identity injected | On 401 |
 |---|---|---|---|
 | `/` | role dashboard | `X-Role` from auth | redirect to `/auth/login?next=...` |
-| `/app1/` | `app1:8000/` | `X-Actor` from `X-User` | 401 returned |
+| `/app1/` | `app1:8000/` | `X-Actor`, `X-Role`, `X-Employee-Id` from auth | 401 returned |
 | `/app2/` | `app2:8000/` | `X-Actor` from `X-User` | redirect to login |
 | `/app3/` | `app3:8000/` | `X-Device` from auth response | 401 returned |
 | `/auth/login`, `/auth/device-login`, `/auth/` | `auth:8000` | none | publicly proxied; app enforces its own auth |
@@ -54,14 +54,26 @@ Device tokens are limited to these original requests:
 
 A session cookie is ignored for those device-only requests, so a browser session cannot POST GPS data with an empty `X-Device`.
 
-For mobile photos, [auth/mobile_access.py](auth/mobile_access.py#L51) resolves the bearer token to a tracker, requires that tracker to be linked to an **active employee**, and returns the employee id/code/name to app2. HR manages the link through `/auth/employees/{id}/mobile-access` endpoints. Legacy `add-device` tokens are not tracker-linked and remain GPS-only.
+For mobile photos, [auth/mobile_access.py](auth/mobile_access.py#L51) resolves the bearer token to a tracker, requires that tracker to be linked to an **active employee whose type is Supervisor**, and returns the employee id/code/name to app2. Only HR can call the `/auth/employees/{id}/mobile-access` endpoints, and only a Supervisor employee is eligible for a tracker account. Legacy `add-device` tokens are not tracker-linked and remain GPS-only.
 
 `X-Actor` is required by app1 writes and by app2 mutation endpoints; reads are generally public behind the nginx gate. app3 uses `X-Device`, not `X-Actor`.
 
-Browser users have one role: `c_manager`, `employee`, `hr`, or `supervisor`. On successful
-login, and when an authenticated browser opens `/`, nginx sends the user to
-`/<role>/index.html`. The auth service also rejects requests for another role's folder
-with `403`, so the frontend folders are not just cosmetic redirects.
+Browser users have one role: `c_manager`, `employee`, `hr`, or `supervisor`. Creating an
+employee from the HR workspace is the normal account-creation path: app1 stores an
+`employee_type` (the auth role), creates the linked auth user through
+[auth/accounts.py](auth/accounts.py), and records `users.employee_id`. Employee edits,
+deactivation, reactivation and deletion keep that login account in sync. The auth CLI
+remains available for administrative recovery and legacy accounts.
+
+On successful login, and when an authenticated browser opens `/`, nginx sends the user
+to `/<role>/index.html`. The auth service also rejects requests for another role's
+folder with `403`, so the frontend folders are not just cosmetic redirects.
+
+`/auth/verify` enforces the app1 part of the role matrix. HR can manage employees and
+rulebook data; Supervisors can read records and issue violations; Chief Managers have
+read access; a Concerned Employee may only read
+`/app1/employees/{own_id}/violation-history`. app1 repeats the ownership and HR checks
+when it receives `X-Role` and `X-Employee-Id` from nginx.
 
 ## Services and data
 
@@ -93,7 +105,7 @@ Issuing a violation snapshots the subsection and penalty text onto the `Violatio
 
 Main route groups:
 
-- `/employees` — create/bulk update, search, filter, deactivate/reactivate, by-code lookup, totals, violation history
+- `/employees` — create/bulk update, search, filter, deactivate/reactivate, by-code lookup, totals, violation history. Each employee carries an `employee_type` of `hr`, `supervisor`, `c_manager`, or `employee`.
 - `/violation-types` — categories
 - `/violation-types/{id}/subsections` — specific violations and their penalty tiers
 - `/employees/{id}/violations` — issue/list, clear all, remove one, offense summary
