@@ -61,6 +61,13 @@ Each browser user has one role. After sign-in nginx sends the user to that role'
 `c_manager/`, `employee/`, `hr/`, or `supervisor/`. Users can open only their own role's
 folder; the auth service rejects cross-role folder requests with `403`.
 
+When HR adds an employee in Northpoint, the form also sets the employee type and the
+first login username/password. app1 creates the employee and the linked auth account
+together, so the employee can sign in immediately. Editing the type updates the auth
+role; deactivation disables the login; reactivation enables it; deletion removes it.
+The CLI account commands above remain available for recovery and for existing accounts
+that predate employee linking.
+
 ## Phone sign-in and mobile access
 
 The current phone flow is HTTP device login, not the older `add-device` helper:
@@ -79,7 +86,7 @@ Device-token permissions:
 - `POST /app2/mobile-upload` — employee photo upload
 - `PATCH /app2/mobile-photos/{id}/title` — employee title edit
 
-`POST /app2/mobile-upload` and the title endpoint additionally require the tracker to be linked to an **active employee**. HR sets that link in Northpoint's **Mobile App Access** screen; the underlying endpoints are under `/auth/employees/{id}/mobile-access`. A phone that is not linked can still send GPS but cannot upload photos.
+`POST /app2/mobile-upload` and the title endpoint additionally require the tracker to be linked to an **active employee whose type is Supervisor**. Only HR can issue tracker accounts, and only Supervisor employees are eligible. HR sets that link in Northpoint's **Mobile App Access** screen on a Supervisor profile; the underlying endpoints are under `/auth/employees/{id}/mobile-access`. A phone that is not linked can still send GPS but cannot upload photos.
 
 The legacy `add-device` CLI command still creates a GPS-only token and is kept for old clients:
 
