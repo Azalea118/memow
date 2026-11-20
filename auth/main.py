@@ -1,4 +1,4 @@
-import hashlib, hmac, html, os, secrets, sqlite3, time
+import html, os, secrets, sqlite3, time
 import unicodedata
 import re
 from contextlib import closing
@@ -7,6 +7,8 @@ from pathlib import Path
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response, JSONResponse
 from pydantic import BaseModel
+
+from auth.security import hash_password, check_password, hash_token
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = Path(os.getenv("AUTH_DB_PATH", BASE_DIR / "auth.db"))
@@ -31,7 +33,10 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS users(
   id INTEGER PRIMARY KEY, username TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL, created_at INTEGER NOT NULL,
-  role TEXT NOT NULL DEFAULT 'employee');
+  role TEXT NOT NULL DEFAULT 'employee',
+  first_name TEXT, last_name TEXT,
+  disabled INTEGER NOT NULL DEFAULT 0,
+  employee_id INTEGER, employee_code TEXT);
 CREATE TABLE IF NOT EXISTS sessions(
   token_hash TEXT PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -69,37 +74,27 @@ with closing(db()) as _c, _c:
 
 with closing(db()) as _c, _c:
     ucols = {r["name"] for r in _c.execute("PRAGMA table_info(users)")}
-    for col in ("first_name", "last_name"):
+    for col, ddl in (
+        ("first_name", "TEXT"), ("last_name", "TEXT"),
+        ("disabled", "INTEGER NOT NULL DEFAULT 0"),
+        ("employee_id", "INTEGER"), ("employee_code", "TEXT"),
+    ):
         if col not in ucols:
-            _c.execute(f"ALTER TABLE users ADD COLUMN {col} TEXT")
+            _c.execute(f"ALTER TABLE users ADD COLUMN {col} {ddl}")
     if "role" not in ucols:
         _c.execute(
             "ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'employee'")
     _c.execute(
         "UPDATE users SET role=? WHERE role IS NULL OR role NOT IN (?,?,?,?)",
         (DEFAULT_ROLE, *ROLES))
+    _c.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_user_employee "
+        "ON users(employee_id) WHERE employee_id IS NOT NULL")
 
 
 # ---------- hashing ----------
-def hash_password(pw: str) -> str:
-    salt = os.urandom(16)
-    h = hashlib.scrypt(pw.encode(), salt=salt, n=2**14, r=8, p=1, dklen=32)
-    return f"{salt.hex()}${h.hex()}"
-
-
-def check_password(pw: str, stored: str) -> bool:
-    try:
-        salt_hex, h_hex = stored.split("$")
-        h = hashlib.scrypt(pw.encode(), salt=bytes.fromhex(salt_hex),
-                           n=2**14, r=8, p=1, dklen=32)
-        return hmac.compare_digest(h, bytes.fromhex(h_hex))
-    except ValueError:
-        return False
-
-
-def hash_token(token: str) -> str:
-    return hashlib.sha256(token.encode()).hexdigest()
-
+# Re-exported for the tests and CLI through auth.main.
+__all__ = ["hash_password", "check_password", "hash_token"]
 
 DUMMY_HASH = hash_password("dummy")  # keeps timing similar for unknown users
 
@@ -131,6 +126,33 @@ def role_for_path(path: str) -> str | None:
         if path == f"/{role}" or path.startswith(f"/{role}/"):
             return role
     return None
+
+APP1_HISTORY_RE = re.compile(
+    r"^/app1/employees/([1-9][0-9]*)/violation-history$")
+APP1_ISSUE_RE = re.compile(r"^/app1/employees/[1-9][0-9]*/violations$")
+APP1_PRIVATE_READ_RE = re.compile(
+    r"^/app1/(?:activity|analytics|violation-removals)(?:/|$)")
+
+
+def app1_allowed(role: str, employee_id: int | None, method: str,
+                 path: str) -> bool:
+    """Server-side enforcement of the app1 part of the role matrix."""
+    if not path.startswith("/app1/"):
+        return True
+    if role == "hr":
+        return True
+    if role == "employee":
+        match = APP1_HISTORY_RE.fullmatch(path)
+        return (method == "GET" and match is not None
+                and employee_id is not None
+                and int(match.group(1)) == employee_id)
+    if role == "supervisor":
+        if method == "GET":
+            return APP1_PRIVATE_READ_RE.match(path) is None
+        return method == "POST" and APP1_ISSUE_RE.fullmatch(path) is not None
+    if role == "c_manager":
+        return method == "GET"
+    return False
 
 def role_home(role: str) -> str:
     return ROLE_HOME[normalize_role(role)]
@@ -172,8 +194,10 @@ def login_page(next: str = "/"):
 def login(username: str = Form(...), password: str = Form(...),
           next_url: str = Form("/", alias="next")):
     with closing(db()) as c, c:
-        row = c.execute("SELECT id, password_hash, role FROM users WHERE username=?",
-                        (username.strip(),)).fetchone()
+        row = c.execute(
+            "SELECT id, password_hash, role FROM users "
+            "WHERE username=? AND disabled=0",
+            (username.strip(),)).fetchone()
         ok = check_password(password, row["password_hash"] if row else DUMMY_HASH)
         if not (row and ok):
             return HTMLResponse(render_login(next_url, "Wrong username or password."),
@@ -219,19 +243,26 @@ def verify(request: Request):
         token = request.cookies.get(COOKIE)
         if token and not device_only:
             row = c.execute(
-                "SELECT u.username, u.first_name, u.last_name, u.role "
+                "SELECT u.username, u.first_name, u.last_name, u.role, "
+                "u.employee_id "
                 "FROM sessions s JOIN users u ON u.id=s.user_id "
-                "WHERE s.token_hash=? AND s.expires_at>?",
+                "WHERE s.token_hash=? AND s.expires_at>? AND u.disabled=0",
                 (hash_token(token), now)).fetchone()
             if row:
                 role = normalize_role(row["role"])
                 wanted = role_for_path(normalized)
                 if wanted and wanted != role:
                     return Response(status_code=403)
-                return Response(status_code=200, headers={
+                if not app1_allowed(role, row["employee_id"], method, path):
+                    return Response(status_code=403)
+                headers = {
                     "X-User": header_safe(full_name(row)),
                     "X-Username": row["username"],
-                    "X-Role": role})
+                    "X-Role": role,
+                }
+                if row["employee_id"] is not None:
+                    headers["X-Employee-Id"] = str(row["employee_id"])
+                return Response(status_code=200, headers=headers)
 
         bearer = request.headers.get("authorization", "")
         if bearer.lower().startswith("bearer "):
@@ -295,9 +326,10 @@ def me(request: Request):
     if token:
         with closing(db()) as c:
             row = c.execute(
-                "SELECT u.id, u.username, u.first_name, u.last_name, u.role "
+                "SELECT u.id, u.username, u.first_name, u.last_name, u.role, "
+                "u.employee_id, u.employee_code "
                 "FROM sessions s JOIN users u ON u.id=s.user_id "
-                "WHERE s.token_hash=? AND s.expires_at>?",
+                "WHERE s.token_hash=? AND s.expires_at>? AND u.disabled=0",
                 (hash_token(token), int(time.time()))).fetchone()
         if row:
             role = normalize_role(row["role"])
@@ -305,6 +337,8 @@ def me(request: Request):
                 {"id": row["id"], "username": row["username"],
                  "first_name": row["first_name"], "last_name": row["last_name"],
                  "full_name": full_name(row), "role": role,
+                 "employee_id": row["employee_id"],
+                 "employee_code": row["employee_code"],
                  "role_home": role_home(role)},
                 headers={"Cache-Control": "no-store"})
     return JSONResponse({"detail": "Not signed in"}, status_code=401)
