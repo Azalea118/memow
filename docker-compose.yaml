@@ -35,7 +35,7 @@ services:
 
   app1:
     <<: *app
-    environment: [TZ=Asia/Manila, APP1_DB_PATH=/app/data/app1/app.db]
+    environment: [TZ=Asia/Manila, APP1_DB_PATH=/app/data/app1/app.db, AUTH_DB_PATH=/app/data/auth/auth.db]
     command: uv run --no-sync uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers
 
   app2:

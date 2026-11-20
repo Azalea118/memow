@@ -16,7 +16,7 @@ services:
 
   app1:
     <<: *dev
-    environment: [TZ=Asia/Manila, APP1_DB_PATH=/app/data/app1/app.db]
+    environment: [TZ=Asia/Manila, APP1_DB_PATH=/app/data/app1/app.db, AUTH_DB_PATH=/app/data/auth/auth.db]
 
   app2:
     <<: *dev
