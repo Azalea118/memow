@@ -56,7 +56,7 @@ docker build --target prod -t ghcr.io/jooecoodes/cs317-swe:$TAG .
 docker run --rm ghcr.io/jooecoodes/cs317-swe:$TAG sh -c \
   'find /app -name "*.db*" -o -name "uploads" -type d | head'
 
-# frontend at the root nginx serves from (index.html, not northpoint/index.html)
+# frontend at the root nginx serves from (role folders + northpoint/)
 docker run --rm ghcr.io/jooecoodes/cs317-swe:$TAG ls /usr/share/nginx/html/
 ```
 
