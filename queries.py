@@ -15,6 +15,7 @@ from models import (
     ActivityEvent,
     Employee,
     EmployeeStatus,
+    EmployeeType,
     Penalty,
     ViolationRecord,
     ViolationRemoval,
@@ -151,6 +152,7 @@ def log_event(
 def create_employee(
     session: Session, *, employee_code: str, first_name: str, last_name: str,
     department: Optional[str] = None, position: Optional[str] = None,
+    employee_type: EmployeeType = EmployeeType.employee,
     status: EmployeeStatus = EmployeeStatus.active, actor: str, commit: bool = True,
 ) -> Employee:
     if session.execute(
@@ -159,7 +161,8 @@ def create_employee(
         raise DuplicateEmployeeCode(employee_code)
     employee = Employee(
         employee_code=employee_code, first_name=first_name, last_name=last_name,
-        department=department, position=position, status=status,
+        department=department, position=position, employee_type=employee_type,
+        status=status,
     )
     session.add(employee)
     session.flush()
@@ -168,7 +171,8 @@ def create_employee(
         target_type="employee", target_id=employee.id, employee_id=employee.id,
         summary=f"Added employee {employee.employee_code} ({employee.full_name})",
         metadata={"employee_code": employee.employee_code, "full_name": employee.full_name,
-                  "department": employee.department, "position": employee.position},
+                  "department": employee.department, "position": employee.position,
+                  "employee_type": employee.employee_type.value},
     )
     if commit:
         session.commit()
@@ -202,6 +206,7 @@ def update_employee(
     session: Session, employee_id: int, *,
     first_name: Optional[str] = None, last_name: Optional[str] = None,
     department: Optional[str] = None, position: Optional[str] = None,
+    employee_type: Optional[EmployeeType] = None,
     employee_code: Optional[str] = None, actor: str, commit: bool = True,
 ) -> Employee:
     employee = session.get(Employee, employee_id)
@@ -230,6 +235,9 @@ def update_employee(
     if position is not None:
         changes["position"] = position
         employee.position = position
+    if employee_type is not None and employee_type != employee.employee_type:
+        changes["employee_type"] = employee_type.value
+        employee.employee_type = employee_type
     if changes:
         log_event(
             session, actor=actor, action="employee.updated",
@@ -340,6 +348,7 @@ def search_employees(
         Employee.full_name,
         Employee.department,
         Employee.position,
+        Employee.employee_type,
         Employee.status,
         Employee.active_violation_count,
         total_offenses_sq,
