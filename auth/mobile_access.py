@@ -19,29 +19,34 @@ def auth():
     return main
 
 
-def employee(employee_id: int, *, active=False):
+def employee(employee_id: int, *, active=False, supervisor=False):
     path = Path(os.getenv('APP1_DB_PATH', Path(__file__).resolve().parents[1] / 'data/app1/app.db')).resolve()
     try:
         with closing(sqlite3.connect(path.as_uri() + '?mode=ro', uri=True)) as c:
             c.row_factory = sqlite3.Row
-            row = c.execute('SELECT id, employee_code, first_name, last_name, status FROM employees WHERE id=?', (employee_id,)).fetchone()
+            row = c.execute('SELECT id, employee_code, first_name, last_name, status, employee_type FROM employees WHERE id=?', (employee_id,)).fetchone()
     except sqlite3.Error:
         raise HTTPException(503, 'Employee records are temporarily unavailable. Please try again.')
     if not row:
         raise HTTPException(404, 'This employee no longer exists. Refresh the employee list.')
     if active and row['status'] != 'active':
         raise HTTPException(403, 'This employee is inactive. Ask HR to reactivate the employee profile first.')
+    if supervisor and row['employee_type'] != 'supervisor':
+        raise HTTPException(403, 'Only employees with the Supervisor type can have a mobile tracker account.')
     return {'employee_id': row['id'], 'employee_code': row['employee_code'],
-            'full_name': f"{row['first_name']} {row['last_name']}", 'status': row['status']}
+            'full_name': f"{row['first_name']} {row['last_name']}",
+            'status': row['status'], 'employee_type': row['employee_type']}
 
 
 def browser_user(request: Request):
     a = auth()
     with closing(a.db()) as c:
-        row = c.execute('SELECT u.id, u.username FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>?',
+        row = c.execute('SELECT u.id, u.username, u.role, u.employee_id FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>? AND u.disabled=0',
                         (a.hash_token(request.cookies.get(a.COOKIE, '')), int(time.time()))).fetchone()
     if not row:
         raise HTTPException(401, 'Please sign in to the HR website again.')
+    if row['role'] != 'hr':
+        raise HTTPException(403, 'Only HR can manage mobile tracker access.')
     # Custom header + JSON prevents cross-origin form submissions; no CORS grant.
     if request.method != 'GET' and request.headers.get('x-requested-with') != 'Northpoint':
         raise HTTPException(403, 'Please use Mobile App Access on the HR website.')
@@ -64,7 +69,7 @@ def tracker_identity(request: Request):
             raise HTTPException(401, 'Your mobile session has expired or was disabled. Please sign in again.')
         if not row['employee_id']:
             raise HTTPException(403, 'Your account is not linked to an employee. Ask HR to open Mobile App Access.')
-        info = employee(row['employee_id'], active=True)
+        info = employee(row['employee_id'], active=True, supervisor=True)
         if info['employee_code'] != row['employee_code']:
             raise HTTPException(403, 'The employee record has changed. Ask HR to check your mobile access.')
         c.execute('UPDATE devices SET last_used=?, expires_at=? WHERE id=?', (now, now+a.DEVICE_TTL, row['id']))
@@ -95,12 +100,13 @@ def access_status(employee_id: int, response: Response, user=Depends(browser_use
     response.headers['Cache-Control'] = 'no-store'
     with closing(auth().db()) as c:
         row = c.execute('SELECT username, disabled FROM trackers WHERE employee_id=?', (employee_id,)).fetchone()
-    return {**info, 'account': dict(row) if row else None}
+    return {**info, 'eligible': info['employee_type'] == 'supervisor',
+            'account': dict(row) if row else None}
 
 
 @router.post('/employees/{employee_id}/mobile-access', status_code=201)
 def create_access(employee_id: int, body: AccountCreate, response: Response, user=Depends(browser_user)):
-    info = employee(employee_id, active=True)
+    info = employee(employee_id, active=True, supervisor=True)
     a = auth()
     try:
         with closing(a.db()) as c, c:
@@ -116,7 +122,7 @@ def create_access(employee_id: int, body: AccountCreate, response: Response, use
 @router.post('/employees/{employee_id}/mobile-access/link')
 def link_existing(employee_id: int, body: AccountCreate, response: Response, user=Depends(browser_user)):
     """HR may explicitly claim an unlinked legacy tracker and reset its password."""
-    info = employee(employee_id, active=True)
+    info = employee(employee_id, active=True, supervisor=True)
     a = auth()
     try:
         with closing(a.db()) as c, c:
@@ -137,7 +143,7 @@ def link_existing(employee_id: int, body: AccountCreate, response: Response, use
 
 @router.patch('/employees/{employee_id}/mobile-access')
 def change_access(employee_id: int, body: AccountChange, user=Depends(browser_user)):
-    employee(employee_id, active=body.disabled is False)
+    employee(employee_id, active=body.disabled is False, supervisor=True)
     if body.password is None and body.disabled is None:
         raise HTTPException(422, 'Enter a new password or choose an access status.')
     a = auth()
