@@ -41,8 +41,8 @@ def test_verify_blocks_without_credentials(auth_client):
     assert r.status_code == 401
 
 
-def test_verify_succeeds_with_session(auth_client, auth_user):
-    username, password = auth_user
+def test_verify_succeeds_with_session(auth_client):
+    username, password = _role_user("hr")
     auth_client.post(
         "/login", data={"username": username, "password": password},
         follow_redirects=False,
