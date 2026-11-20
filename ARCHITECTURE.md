@@ -17,7 +17,7 @@ nginx:80                         routing + auth_request gate
    |     |      +---------- /app2/*  -> app2:8000   (adds X-Actor)
    |     +----------------- /app1/*  -> app1:8000   (adds X-Actor)
    +----------------------- /auth/*  -> auth:8000   (public login/device login)
-                            /        -> static Northpoint UI
+                            /        -> static frontend (role dashboard)
 
 Every protected location first calls internal location /_auth,
 which proxies to auth:8000/verify with Cookie, Authorization,
@@ -28,7 +28,7 @@ The backends all listen on container port `8000` and are not published to the ho
 
 | Public location | Upstream | Identity injected | On 401 |
 |---|---|---|---|
-| `/` | static frontend | none | redirect to `/auth/login?next=...` |
+| `/` | role dashboard | `X-Role` from auth | redirect to `/auth/login?next=...` |
 | `/app1/` | `app1:8000/` | `X-Actor` from `X-User` | 401 returned |
 | `/app2/` | `app2:8000/` | `X-Actor` from `X-User` | redirect to login |
 | `/app3/` | `app3:8000/` | `X-Device` from auth response | 401 returned |
@@ -43,7 +43,7 @@ Two credential types are accepted by `/auth/verify` ([auth/main.py](auth/main.py
 
 | Credential | Created by | Sent as | Becomes | Used for |
 |---|---|---|---|---|
-| Browser session (7 days) | `POST /auth/login` | `auth_session` cookie | `X-Actor` = full name, `X-Username` | Northpoint UI, app1/app2 reads and writes |
+| Browser session (7 days) | `POST /auth/login` | `auth_session` cookie | `X-Actor` = full name, `X-Username`, `X-Role` | role dashboard, app1/app2 reads and writes |
 | Device token (7 days, sliding) | `POST /auth/device-login` | `Authorization: Bearer ...` | `X-Device` = `tracker:device_id` | GPS ingest and employee mobile photo flows |
 
 Device tokens are limited to these original requests:
@@ -57,6 +57,11 @@ A session cookie is ignored for those device-only requests, so a browser session
 For mobile photos, [auth/mobile_access.py](auth/mobile_access.py#L51) resolves the bearer token to a tracker, requires that tracker to be linked to an **active employee**, and returns the employee id/code/name to app2. HR manages the link through `/auth/employees/{id}/mobile-access` endpoints. Legacy `add-device` tokens are not tracker-linked and remain GPS-only.
 
 `X-Actor` is required by app1 writes and by app2 mutation endpoints; reads are generally public behind the nginx gate. app3 uses `X-Device`, not `X-Actor`.
+
+Browser users have one role: `c_manager`, `employee`, `hr`, or `supervisor`. On successful
+login, and when an authenticated browser opens `/`, nginx sends the user to
+`/<role>/index.html`. The auth service also rejects requests for another role's folder
+with `403`, so the frontend folders are not just cosmetic redirects.
 
 ## Services and data
 
