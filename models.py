@@ -34,6 +34,13 @@ class EmployeeStatus(str, enum.Enum):
     inactive = "inactive"
 
 
+class EmployeeType(str, enum.Enum):
+    hr = "hr"
+    supervisor = "supervisor"
+    c_manager = "c_manager"
+    employee = "employee"
+
+
 # ============================================================================
 # EMPLOYEE
 # ============================================================================
@@ -47,6 +54,13 @@ class Employee(Base):
     last_name: Mapped[str] = mapped_column(String(100), nullable=False)
     department: Mapped[Optional[str]] = mapped_column(String(100))
     position: Mapped[Optional[str]] = mapped_column(String(100))
+    employee_type: Mapped[EmployeeType] = mapped_column(
+        SAEnum(EmployeeType, name="employee_type", native_enum=False, length=20),
+        default=EmployeeType.employee,
+        server_default=EmployeeType.employee.value,
+        nullable=False,
+        index=True,
+    )
     status: Mapped[EmployeeStatus] = mapped_column(
         SAEnum(EmployeeStatus, name="employee_status", native_enum=False, length=20),
         default=EmployeeStatus.active,
