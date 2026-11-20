@@ -37,17 +37,22 @@ export function employeeUpdatePayload(values,original) {
     const before=original[input]||'';
     if(value!==before)result[key]=required?value:value||null;
   }
+  if(Object.hasOwn(values,'employeeType')){
+    const type=String(values.employeeType||'').trim().toLowerCase();
+    if(!['hr','supervisor','c_manager','employee'].includes(type))throw new Error('Choose a valid employee type.');
+    if(type!==(original.employeeType||'employee'))result.employee_type=type;
+  }
   return result;
 }
 export function employeeMatchesUpdate(employee,payload) {
-  const names={first_name:'firstName',last_name:'lastName',department:'department',position:'position'};
+  const names={first_name:'firstName',last_name:'lastName',department:'department',position:'position',employee_type:'employeeType'};
   return Object.entries(payload).every(([key,value])=>(employee[names[key]]||'')===(value||''));
 }
 function unverified(){return Object.assign(new Error('The server accepted the request, but its employee reply could not be verified. Check save status before another attempt.'),{uncertain:true,accepted:true});}
 export async function patchEmployee(id,payload,actor) {
   id=apiId(id);
   if(!Object.keys(payload).length)throw new Error('No employee details have changed.');
-  if(Object.keys(payload).some(key=>!['first_name','last_name','department','position'].includes(key)))throw new Error('This employee field cannot be edited here.');
+  if(Object.keys(payload).some(key=>!['first_name','last_name','department','position','employee_type'].includes(key)))throw new Error('This employee field cannot be edited here.');
   const raw=await apiRequest('/employees/'+id,{method:'PATCH',body:payload,actor});
   try{const employee=normalizeApiEmployee(raw);if(employee.apiId!==id||!employeeMatchesUpdate(employee,payload))throw new Error();return employee;}catch{throw unverified();}
 }
